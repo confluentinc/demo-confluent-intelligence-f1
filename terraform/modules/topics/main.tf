@@ -53,7 +53,7 @@ resource "confluent_flink_statement" "create_car_telemetry_table" {
       `event_time` TIMESTAMP(3),
       WATERMARK FOR `event_time` AS `event_time` - INTERVAL '5' SECOND,
       PRIMARY KEY (`car_number`) NOT ENFORCED
-    );
+    ) DISTRIBUTED BY (`car_number`) INTO 1 BUCKETS;
   EOT
 
   properties = {
@@ -103,7 +103,7 @@ resource "confluent_flink_statement" "create_race_standings_table" {
       `event_time` TIMESTAMP(3),
       WATERMARK FOR `event_time` AS `event_time` - INTERVAL '10' SECOND,
       PRIMARY KEY (`car_number`) NOT ENFORCED
-    );
+    ) DISTRIBUTED BY (`car_number`) INTO 1 BUCKETS;
   EOT
 
   properties = {
