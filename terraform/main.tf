@@ -58,7 +58,7 @@ module "topics" {
   demo_name           = var.demo_name
   owner_email         = var.owner_email
 
-  depends_on = [module.flink]
+  depends_on = [module.flink, module.cluster]
 }
 
 module "mq" {
