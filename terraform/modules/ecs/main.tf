@@ -1,0 +1,127 @@
+data "aws_caller_identity" "current" {}
+data "aws_vpc" "default" { default = true }
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
+# --- ECR Repository ---
+
+resource "aws_ecr_repository" "simulator" {
+  name         = "f1-demo-${var.demo_name}-simulator"
+  force_delete = true
+}
+
+# --- Build and push Docker image ---
+
+resource "null_resource" "docker_build_push" {
+  triggers = {
+    dockerfile_hash   = filemd5("${var.dockerfile_path}/Dockerfile")
+    requirements_hash = filemd5("${var.dockerfile_path}/requirements.txt")
+    simulator_hash    = filemd5("${var.dockerfile_path}/simulator.py")
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws ecr get-login-password --region ${var.aws_region} | \
+        docker login --username AWS --password-stdin ${aws_ecr_repository.simulator.repository_url}
+      docker build -t ${aws_ecr_repository.simulator.repository_url}:latest ${var.dockerfile_path}
+      docker push ${aws_ecr_repository.simulator.repository_url}:latest
+    EOT
+  }
+
+  depends_on = [aws_ecr_repository.simulator]
+}
+
+# --- IAM Roles ---
+
+resource "aws_iam_role" "ecs_execution" {
+  name = "f1-demo-${var.demo_name}-ecs-execution"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution" {
+  role       = aws_iam_role.ecs_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+# --- CloudWatch Logs ---
+
+resource "aws_cloudwatch_log_group" "simulator" {
+  name              = "/ecs/f1-${var.demo_name}-simulator"
+  retention_in_days = 7
+}
+
+# --- Security Group ---
+
+resource "aws_security_group" "ecs" {
+  name_prefix = "f1-demo-${var.demo_name}-ecs-"
+  description = "Security group for F1 simulator ECS task"
+  vpc_id      = data.aws_vpc.default.id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "f1-demo-${var.demo_name}-ecs"
+    owner_email = var.owner_email
+  }
+}
+
+# --- ECS Cluster ---
+
+resource "aws_ecs_cluster" "simulator" {
+  name = "f1-demo-${var.demo_name}-simulator"
+}
+
+# --- ECS Task Definition ---
+
+resource "aws_ecs_task_definition" "simulator" {
+  family                   = "f1-${var.demo_name}-simulator"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "512"
+  memory                   = "1024"
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+
+  container_definitions = jsonencode([{
+    name      = "f1-simulator"
+    image     = "${aws_ecr_repository.simulator.repository_url}:latest"
+    essential = true
+
+    environment = [
+      { name = "KAFKA_BOOTSTRAP", value = var.kafka_bootstrap },
+      { name = "KAFKA_API_KEY", value = var.kafka_api_key },
+      { name = "KAFKA_API_SECRET", value = var.kafka_api_secret },
+      { name = "SR_URL", value = var.sr_url },
+      { name = "SR_API_KEY", value = var.sr_api_key },
+      { name = "SR_API_SECRET", value = var.sr_api_secret },
+      { name = "MQ_HOST", value = var.mq_host },
+    ]
+
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.simulator.name
+        "awslogs-region"        = var.aws_region
+        "awslogs-stream-prefix" = "simulator"
+      }
+    }
+  }])
+
+  depends_on = [null_resource.docker_build_push]
+}

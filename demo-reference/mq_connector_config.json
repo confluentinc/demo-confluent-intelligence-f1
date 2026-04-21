@@ -1,0 +1,24 @@
+{
+  "name": "f1-mq-source",
+  "config": {
+    "connector.class": "IbmMQSource",
+    "kafka.auth.mode": "SERVICE_ACCOUNT",
+    "kafka.service.account.id": "<SERVICE_ACCOUNT_ID>",
+    "kafka.topic": "race-standings",
+    "mq.hostname": "<MQ_PUBLIC_IP>",
+    "mq.port": "1414",
+    "mq.queue.manager": "QM1",
+    "mq.channel": "DEV.APP.SVRCONN",
+    "mq.queue": "DEV.QUEUE.1",
+    "mq.username": "app",
+    "mq.password": "passw0rd",
+    "jms.destination.type": "queue",
+    "kafka.api.key": "<KAFKA_API_KEY>",
+    "kafka.api.secret": "<KAFKA_API_SECRET>",
+    "output.data.format": "AVRO",
+    "transforms": "extractKey",
+    "transforms.extractKey.type": "org.apache.kafka.connect.transforms.ValueToKey",
+    "transforms.extractKey.fields": "car_number",
+    "tasks.max": "1"
+  }
+}

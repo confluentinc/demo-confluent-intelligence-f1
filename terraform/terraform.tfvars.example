@@ -1,0 +1,5 @@
+confluent_cloud_api_key    = "YOUR_CONFLUENT_CLOUD_API_KEY"
+confluent_cloud_api_secret = "YOUR_CONFLUENT_CLOUD_API_SECRET"
+region                     = "us-east-2"
+demo_name                  = "your-name"
+owner_email                = "you@example.com"

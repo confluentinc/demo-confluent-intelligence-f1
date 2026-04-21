@@ -1,0 +1,35 @@
+# Terraform
+*.tfvars
+!terraform.tfvars.example
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+terraform.tfplan
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+*.egg
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets
+.env
+*.pem
+*.key
+
+# Scripts runtime
+scripts/.race-task-arn
