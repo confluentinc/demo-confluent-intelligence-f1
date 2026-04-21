@@ -109,10 +109,10 @@ resource "local_file" "mq_connector_config" {
       "mq.hostname"                  = module.mq.mq_public_ip
       "mq.port"                      = "1414"
       "mq.queue.manager"             = "QM1"
-      "mq.channel"                   = "DEV.APP.SVRCONN"
-      "jms.destination.name"         = "DEV.QUEUE.1"
-      "jms.destination.type"         = "queue"
-      "mq.username"                  = "app"
+      "mq.channel"                   = "DEV.ADMIN.SVRCONN"
+      "jms.destination.name"         = "dev/race-standings"
+      "jms.destination.type"         = "topic"
+      "mq.username"                  = "admin"
       "mq.password"                  = "passw0rd"
       "kafka.api.key"                = module.cluster.app_api_key
       "kafka.api.secret"             = module.cluster.app_api_secret

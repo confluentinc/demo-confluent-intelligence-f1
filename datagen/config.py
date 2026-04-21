@@ -16,9 +16,9 @@ SR_API_SECRET = os.environ.get("SR_API_SECRET", "")
 MQ_HOST = os.environ.get("MQ_HOST", "localhost")
 MQ_PORT = int(os.environ.get("MQ_PORT", "1414"))
 MQ_QUEUE_MANAGER = os.environ.get("MQ_QUEUE_MANAGER", "QM1")
-MQ_CHANNEL = os.environ.get("MQ_CHANNEL", "DEV.APP.SVRCONN")
-MQ_QUEUE = os.environ.get("MQ_QUEUE", "DEV.QUEUE.1")
-MQ_USER = os.environ.get("MQ_USER", "app")
+MQ_CHANNEL = os.environ.get("MQ_CHANNEL", "DEV.ADMIN.SVRCONN")
+MQ_TOPIC = os.environ.get("MQ_TOPIC", "dev/race-standings")
+MQ_USER = os.environ.get("MQ_USER", "admin")
 MQ_PASSWORD = os.environ.get("MQ_PASSWORD", "passw0rd")
 
 # Race timing
