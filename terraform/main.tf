@@ -45,15 +45,18 @@ module "flink" {
 }
 
 module "topics" {
-  source             = "./modules/topics"
-  organization_id    = data.confluent_organization.main.id
-  environment_id     = module.environment.environment_id
-  environment_name   = "prod-f1-${var.demo_name}-env"
-  cluster_name       = "prod-f1-${var.demo_name}-cluster"
-  compute_pool_id    = module.flink.compute_pool_id
-  service_account_id = module.cluster.service_account_id
-  demo_name          = var.demo_name
-  owner_email        = var.owner_email
+  source              = "./modules/topics"
+  organization_id     = data.confluent_organization.main.id
+  environment_id      = module.environment.environment_id
+  environment_name    = "prod-f1-${var.demo_name}-env"
+  cluster_name        = "prod-f1-${var.demo_name}-cluster"
+  compute_pool_id     = module.flink.compute_pool_id
+  service_account_id  = module.cluster.service_account_id
+  flink_rest_endpoint = module.flink.flink_rest_endpoint
+  flink_api_key       = module.flink.flink_api_key
+  flink_api_secret    = module.flink.flink_api_secret
+  demo_name           = var.demo_name
+  owner_email         = var.owner_email
 
   depends_on = [module.flink]
 }

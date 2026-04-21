@@ -27,7 +27,7 @@ resource "null_resource" "docker_build_push" {
     command = <<-EOT
       aws ecr get-login-password --region ${var.aws_region} | \
         docker login --username AWS --password-stdin ${aws_ecr_repository.simulator.repository_url}
-      docker build -t ${aws_ecr_repository.simulator.repository_url}:latest ${var.dockerfile_path}
+      docker build --platform linux/amd64 -t ${aws_ecr_repository.simulator.repository_url}:latest ${var.dockerfile_path}
       docker push ${aws_ecr_repository.simulator.repository_url}:latest
     EOT
   }
@@ -53,6 +53,7 @@ resource "aws_iam_role" "ecs_execution" {
 resource "aws_iam_role_policy_attachment" "ecs_execution" {
   role       = aws_iam_role.ecs_execution.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+
 }
 
 # --- CloudWatch Logs ---

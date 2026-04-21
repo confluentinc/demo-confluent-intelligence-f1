@@ -28,6 +28,22 @@ variable "service_account_id" {
   type        = string
 }
 
+variable "flink_rest_endpoint" {
+  description = "Flink REST endpoint URL"
+  type        = string
+}
+
+variable "flink_api_key" {
+  description = "Flink API key"
+  type        = string
+}
+
+variable "flink_api_secret" {
+  description = "Flink API secret"
+  type        = string
+  sensitive   = true
+}
+
 variable "demo_name" {
   description = "Unique demo instance name for resource prefixing"
   type        = string

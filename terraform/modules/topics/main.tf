@@ -1,3 +1,11 @@
+terraform {
+  required_providers {
+    confluent = {
+      source = "confluentinc/confluent"
+    }
+  }
+}
+
 # Create car-telemetry topic via Flink CREATE TABLE
 # This auto-creates the backing Kafka topic + schema subjects
 resource "confluent_flink_statement" "create_car_telemetry_table" {
@@ -12,6 +20,13 @@ resource "confluent_flink_statement" "create_car_telemetry_table" {
   }
   principal {
     id = var.service_account_id
+  }
+
+  rest_endpoint = var.flink_rest_endpoint
+
+  credentials {
+    key    = var.flink_api_key
+    secret = var.flink_api_secret
   }
 
   statement = <<-EOT
@@ -62,6 +77,13 @@ resource "confluent_flink_statement" "create_race_standings_table" {
   }
   principal {
     id = var.service_account_id
+  }
+
+  rest_endpoint = var.flink_rest_endpoint
+
+  credentials {
+    key    = var.flink_api_key
+    secret = var.flink_api_secret
   }
 
   statement = <<-EOT

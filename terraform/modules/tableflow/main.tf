@@ -1,3 +1,11 @@
+terraform {
+  required_providers {
+    confluent = {
+      source = "confluentinc/confluent"
+    }
+  }
+}
+
 data "aws_caller_identity" "current" {}
 
 resource "random_id" "suffix" {
@@ -38,7 +46,7 @@ resource "confluent_provider_integration" "main" {
   }
 
   aws {
-    iam_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.role_name}"
+    customer_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.role_name}"
   }
 }
 

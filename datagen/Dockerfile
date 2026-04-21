@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 # Install IBM MQ C client libraries (required by pymqi)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl gnupg && \
+    apt-get install -y --no-install-recommends curl gnupg gcc libc6-dev && \
     curl -fsSL https://public.dhe.ibm.com/ibmdl/export/pub/software/websphere/messaging/mqdev/redist/9.4.1.0-IBM-MQC-Redist-LinuxX64.tar.gz \
       -o /tmp/mq.tar.gz && \
     mkdir -p /opt/mqm && \

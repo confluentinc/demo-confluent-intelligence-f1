@@ -1,3 +1,11 @@
+terraform {
+  required_providers {
+    confluent = {
+      source = "confluentinc/confluent"
+    }
+  }
+}
+
 resource "confluent_kafka_cluster" "main" {
   display_name = var.cluster_name
   cloud        = var.cloud_provider
@@ -9,6 +17,10 @@ resource "confluent_kafka_cluster" "main" {
   environment {
     id = var.environment_id
   }
+}
+
+data "confluent_environment" "main" {
+  id = var.environment_id
 }
 
 resource "confluent_service_account" "app" {
@@ -25,7 +37,7 @@ resource "confluent_role_binding" "app_manager" {
 resource "confluent_role_binding" "app_environment_admin" {
   principal   = "User:${confluent_service_account.app.id}"
   role_name   = "EnvironmentAdmin"
-  crn_pattern = confluent_kafka_cluster.main.environment.0.resource_name
+  crn_pattern = data.confluent_environment.main.resource_name
 }
 
 resource "confluent_api_key" "app" {

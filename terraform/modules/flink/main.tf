@@ -1,3 +1,11 @@
+terraform {
+  required_providers {
+    confluent = {
+      source = "confluentinc/confluent"
+    }
+  }
+}
+
 data "confluent_flink_region" "main" {
   cloud  = var.cloud_provider
   region = var.cloud_region
