@@ -3,7 +3,7 @@
 Simulates a 57-lap race at Silverstone in ~9.5 minutes of real time.
 Two outputs:
   - Car telemetry (car #44 only) → Kafka topic 'car-telemetry' via confluent-kafka
-  - Race standings (all 22 cars) → IBM MQ via pymqi
+  - Race standings (all 22 cars) → IBM MQ topic via pymqi
 """
 import json
 import logging
@@ -56,7 +56,7 @@ def _create_kafka_producer():
 
 
 def _connect_mq():
-    """Connect to IBM MQ for race standings."""
+    """Connect to IBM MQ for race standings (pub/sub topic)."""
     conn_info = f"{config.MQ_HOST}({config.MQ_PORT})"
     qmgr = pymqi.connect(
         config.MQ_QUEUE_MANAGER,
@@ -65,8 +65,9 @@ def _connect_mq():
         config.MQ_USER,
         config.MQ_PASSWORD,
     )
-    queue = pymqi.Queue(qmgr, config.MQ_QUEUE)
-    return qmgr, queue
+    topic = pymqi.Topic(qmgr, config.MQ_TOPIC,
+                        open_opts=pymqi.CMQC.MQOO_OUTPUT | pymqi.CMQC.MQOO_FAIL_IF_QUIESCING)
+    return qmgr, topic
 
 
 def run_race():
@@ -78,7 +79,7 @@ def run_race():
 
     # Initialize connections
     producer, avro_serializer = _create_kafka_producer()
-    qmgr, mq_queue = _connect_mq()
+    qmgr, mq_topic = _connect_mq()
 
     # Initialize race state
     race = RaceState(GRID)
@@ -115,7 +116,7 @@ def run_race():
                 standing["event_time"] = int(
                     datetime.now(timezone.utc).timestamp() * 1000
                 )
-                mq_queue.put(json.dumps(standing).encode("utf-8"))
+                mq_topic.pub(json.dumps(standing).encode("utf-8"))
 
             # Produce car telemetry to Kafka (multiple readings per lap)
             readings_per_lap = config.SECONDS_PER_LAP // config.TELEMETRY_INTERVAL_SEC
@@ -163,7 +164,7 @@ def run_race():
 
     finally:
         producer.flush()
-        mq_queue.close()
+        mq_topic.close()
         qmgr.disconnect()
 
 
