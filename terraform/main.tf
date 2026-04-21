@@ -112,6 +112,8 @@ resource "local_file" "mq_connector_config" {
       "mq.channel"                   = "DEV.ADMIN.SVRCONN"
       "jms.destination.name"         = "dev/race-standings"
       "jms.destination.type"         = "topic"
+      "jms.subscription.durable"    = "true"
+      "jms.subscription.name"       = "f1-mq-source-sub"
       "mq.username"                  = "admin"
       "mq.password"                  = "passw0rd"
       "kafka.api.key"                = module.cluster.app_api_key
