@@ -81,6 +81,14 @@ def run_race():
     producer, avro_serializer = _create_kafka_producer()
     qmgr, mq_topic = _connect_mq()
 
+    # RFH2 header template — marks messages as JMS TextMessage
+    rfh2 = pymqi.RFH2()
+    rfh2["Format"] = pymqi.CMQC.MQFMT_STRING
+    rfh2["CodedCharSetId"] = 1208
+    rfh2["NameValueCCSID"] = 1208
+    rfh2.add_folder(b"<mcd><Msd>jms_text</Msd></mcd>")
+    rfh2.add_folder(b"<jms><Dst>topic://dev/race-standings</Dst><Dlv>2</Dlv></jms>")
+
     # Initialize race state
     race = RaceState(GRID)
 
@@ -116,7 +124,15 @@ def run_race():
                 standing["event_time"] = int(
                     datetime.now(timezone.utc).timestamp() * 1000
                 )
-                mq_topic.pub(json.dumps(standing).encode("utf-8"))
+                md = pymqi.MD()
+                md.Format = pymqi.CMQC.MQFMT_RF_HEADER_2
+                md.Encoding = 273
+                md.CodedCharSetId = 1208
+                pmo = pymqi.PMO()
+                mq_topic.pub_rfh2(
+                    json.dumps(standing).encode("utf-8"),
+                    md, pmo, [rfh2]
+                )
 
             # Produce car telemetry to Kafka (multiple readings per lap)
             readings_per_lap = config.SECONDS_PER_LAP // config.TELEMETRY_INTERVAL_SEC
