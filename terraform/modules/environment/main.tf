@@ -13,9 +13,3 @@ resource "confluent_environment" "main" {
     package = "ESSENTIALS"
   }
 }
-
-data "confluent_schema_registry_cluster" "main" {
-  environment {
-    id = confluent_environment.main.id
-  }
-}

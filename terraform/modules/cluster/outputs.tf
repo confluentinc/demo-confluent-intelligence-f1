@@ -37,3 +37,7 @@ output "sr_api_secret" {
   value     = confluent_api_key.schema_registry.secret
   sensitive = true
 }
+
+output "schema_registry_rest_endpoint" {
+  value = data.confluent_schema_registry_cluster.main.rest_endpoint
+}

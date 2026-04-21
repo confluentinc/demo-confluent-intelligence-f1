@@ -64,6 +64,14 @@ resource "confluent_api_key" "app" {
   ]
 }
 
+data "confluent_schema_registry_cluster" "main" {
+  environment {
+    id = var.environment_id
+  }
+
+  depends_on = [confluent_api_key.app]
+}
+
 resource "confluent_api_key" "schema_registry" {
   display_name = "f1-demo-${var.demo_name}-sr-key"
 
@@ -74,9 +82,9 @@ resource "confluent_api_key" "schema_registry" {
   }
 
   managed_resource {
-    id          = var.schema_registry_id
-    api_version = var.schema_registry_api_version
-    kind        = var.schema_registry_kind
+    id          = data.confluent_schema_registry_cluster.main.id
+    api_version = data.confluent_schema_registry_cluster.main.api_version
+    kind        = data.confluent_schema_registry_cluster.main.kind
 
     environment {
       id = var.environment_id

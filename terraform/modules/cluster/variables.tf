@@ -19,21 +19,6 @@ variable "cloud_region" {
   type        = string
 }
 
-variable "schema_registry_id" {
-  description = "Schema Registry cluster ID"
-  type        = string
-}
-
-variable "schema_registry_api_version" {
-  description = "Schema Registry API version"
-  type        = string
-}
-
-variable "schema_registry_kind" {
-  description = "Schema Registry cluster kind"
-  type        = string
-}
-
 variable "demo_name" {
   description = "Unique demo instance name for resource prefixing"
   type        = string
