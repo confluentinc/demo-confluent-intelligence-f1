@@ -31,5 +31,8 @@ Thumbs.db
 *.pem
 *.key
 
+# Generated configs (contain secrets)
+generated/
+
 # Scripts runtime
 scripts/.race-task-arn

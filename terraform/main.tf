@@ -94,3 +94,33 @@ module "tableflow" {
   demo_name      = var.demo_name
   owner_email    = var.owner_email
 }
+
+# --- Generated connector configs ---
+
+resource "local_file" "mq_connector_config" {
+  filename = "${path.module}/../generated/mq_connector_config.json"
+  content = jsonencode({
+    name = "f1-mq-source"
+    config = {
+      "connector.class"              = "IbmMQSource"
+      "kafka.auth.mode"              = "SERVICE_ACCOUNT"
+      "kafka.service.account.id"     = module.cluster.service_account_id
+      "kafka.topic"                  = "race-standings"
+      "mq.hostname"                  = module.mq.mq_public_ip
+      "mq.port"                      = "1414"
+      "mq.queue.manager"             = "QM1"
+      "mq.channel"                   = "DEV.APP.SVRCONN"
+      "jms.destination.name"         = "dev/race-standings"
+      "jms.destination.type"         = "topic"
+      "mq.username"                  = "app"
+      "mq.password"                  = "passw0rd"
+      "kafka.api.key"                = module.cluster.app_api_key
+      "kafka.api.secret"             = module.cluster.app_api_secret
+      "output.data.format"           = "AVRO"
+      "transforms"                   = "extractKey"
+      "transforms.extractKey.type"   = "org.apache.kafka.connect.transforms.ValueToKey"
+      "transforms.extractKey.fields" = "car_number"
+      "tasks.max"                    = "1"
+    }
+  })
+}
