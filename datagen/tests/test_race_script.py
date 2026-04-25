@@ -1,6 +1,7 @@
 """Tests for race state management."""
-from datagen.race_script import RaceState
+
 from datagen.drivers import GRID
+from datagen.race_script import RaceState
 
 
 def test_initial_positions():
@@ -52,9 +53,18 @@ def test_standings_dict_has_expected_keys():
     state.advance_lap()
     car44 = state.get_car(44)
     expected_keys = {
-        "car_number", "driver", "team", "lap", "position",
-        "gap_to_leader_sec", "gap_to_ahead_sec", "last_lap_time_sec",
-        "pit_stops", "tire_compound", "tire_age_laps", "in_pit_lane",
+        "car_number",
+        "driver",
+        "team",
+        "lap",
+        "position",
+        "gap_to_leader_sec",
+        "gap_to_ahead_sec",
+        "last_lap_time_sec",
+        "pit_stops",
+        "tire_compound",
+        "tire_age_laps",
+        "in_pit_lane",
     }
     assert set(car44.keys()) == expected_keys
     assert "timestamp" not in car44

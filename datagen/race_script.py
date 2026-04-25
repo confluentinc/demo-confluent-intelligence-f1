@@ -9,9 +9,9 @@ Uses a CUMULATIVE RACE TIME model (like real F1):
 
 # Tire degradation: seconds added to lap time per lap of tire age
 TIRE_DEGRADATION = {
-    "SOFT": 0.12,    # Fast initially but degrades quickly — 32 laps = +3.84s
+    "SOFT": 0.12,  # Fast initially but degrades quickly — 32 laps = +3.84s
     "MEDIUM": 0.08,  # Balanced — 25 laps = +2.00s
-    "HARD": 0.02,    # Slow but durable — 40 laps = +0.80s
+    "HARD": 0.02,  # Slow but durable — 40 laps = +0.80s
 }
 
 # Base lap time by compound (lower = faster)
@@ -125,9 +125,7 @@ class RaceState:
             if i == 0:
                 car.gap_to_ahead_sec = 0.0
             else:
-                car.gap_to_ahead_sec = round(
-                    car.total_race_time - self.cars[i - 1].total_race_time, 1
-                )
+                car.gap_to_ahead_sec = round(car.total_race_time - self.cars[i - 1].total_race_time, 1)
 
     def get_car(self, car_number):
         """Get current state for a specific car."""

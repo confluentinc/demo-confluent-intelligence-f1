@@ -54,7 +54,7 @@ Driver Profiles            ──→ Postgres ──→ CDC Debezium ──→ d
 
 ### Key Architecture Choices
 
-1. **Three data sources, three ingestion paths** — Car telemetry direct to Kafka (internal, modern), race standings via MQ queue (external FIA feed through legacy middleware), drivers via Postgres CDC (reference data).
+1. **Three data sources, three ingestion paths** — Car telemetry direct to Kafka (internal, modern), race standings via MQ pub/sub topic (external FIA feed through legacy middleware), drivers via Postgres CDC (reference data).
 2. **Three Flink jobs** — Job 0 parses JMS envelope + sets key. Job 1 enriches + detects anomalies. Job 2 runs the AI agent.
 3. **MQ connector writes JMS envelope** — The Confluent MQ Source connector always wraps messages in a JMS envelope schema (with `text`, `bytes`, `properties` fields). A separate Flink job (Job 0) extracts the raw JSON from `text` and writes to a clean `race-standings` topic with `car_number` as key.
 4. **JMS TextMessage via RFH2 headers** — The simulator sends messages to MQ using `put_rfh2()` with `<mcd><Msd>jms_text</Msd></mcd>` so the connector receives JMS TextMessages (payload in `text` field, not base64 in `bytes`).
@@ -64,6 +64,46 @@ Driver Profiles            ──→ Postgres ──→ CDC Debezium ──→ d
 8. **Tableflow on two topics** — `pit-decisions` and `drivers` materialize to Delta Lake for Genie analytics.
 9. **10 seconds per lap** — Simulated race completes in ~9.5 minutes (57 laps).
 10. **Auto-generated connector config** — Terraform generates `generated/mq_connector_config.json` with real values (MQ IP, API keys, service account ID). Deploy with `confluent connect cluster create --config-file`.
+
+---
+
+## Quick Commands
+
+```bash
+# Deploy all infrastructure (15-20 min) — prompts for CC API key, secret, owner email
+uv run deploy
+
+# Destroy all resources (demo first, then core)
+uv run destroy
+
+# Generate Confluent Cloud API keys
+uv run api-keys create
+
+# Set up Confluent MCP for Claude Code
+uv run setup-mcp
+
+# Start / stop race simulator (ECS Fargate)
+./scripts/start-race.sh        # launches task, saves ARN to scripts/.race-task-arn
+./scripts/stop-race.sh
+
+# Follow simulator logs (suffix comes from terraform output)
+aws logs tail /ecs/f1-$(cd terraform/core && terraform output -raw demo_name)-simulator --follow
+
+# Force ECS rebuild after changing datagen/
+terraform -chdir=terraform/demo taint module.ecs.null_resource.docker_build_push && terraform -chdir=terraform/demo apply -auto-approve
+
+# Run datagen tests
+cd datagen && python -m pytest tests/ -v
+
+# Deploy connectors (generated/ has real values; demo-reference/ has placeholders)
+confluent connect cluster create --config-file generated/mq_connector_config.json \
+  --environment $(cd terraform/core && terraform output -raw environment_id) \
+  --cluster $(cd terraform/core && terraform output -raw cluster_id)
+
+# Read terraform outputs
+cd terraform/core && terraform output       # CC infra (env, cluster, flink, API keys)
+cd terraform/demo && terraform output       # AWS infra (MQ, Postgres, ECS, Tableflow)
+```
 
 ---
 
@@ -89,7 +129,7 @@ Sensor readings from car #44 only. Race simulator produces directly to Kafka via
 
 ### Data Source 2: Race Standings (External — FIA via MQ)
 
-Position, gaps, pit status, and tire info for ALL 22 cars. FIA feed arrives through IBM MQ (legacy middleware for external data). Simulator writes to MQ queue `DEV.QUEUE.1` as JMS TextMessages (via RFH2 headers). MQ Source Connector reads from the queue and writes to `race-standings-raw` (JMS envelope schema). A Flink parsing job (Job 0) extracts JSON from the `text` field and writes to clean `race-standings` topic with `car_number` as key. 22 messages per lap.
+Position, gaps, pit status, and tire info for ALL 22 cars. FIA feed arrives through IBM MQ (legacy middleware for external data). Simulator publishes to MQ topic `dev/race-standings` as JMS TextMessages (via RFH2 headers). MQ Source Connector subscribes via durable subscription `f1-mq-source-sub` and writes to `race-standings-raw` (JMS envelope schema). A Flink parsing job (Job 0) extracts JSON from the `text` field and writes to clean `race-standings` topic with `car_number` as key. 22 messages per lap.
 
 **Clean message (after Job 0 parsing):**
 ```json
@@ -116,7 +156,7 @@ Position, gaps, pit status, and tire info for ALL 22 cars. FIA feed arrives thro
 | `race-standings-raw` | MQ Connector (JMS envelope) | Job 0: Parse + Key | **MQ Connector** (auto-creates during demo) | No |
 | `race-standings` | Job 0: Parse + Key | Job 1: Enrichment (temporal join) + RTCE | **Terraform** (Flink CREATE TABLE) | No |
 | `drivers` | Postgres → CDC Debezium | — | **CDC Connector** (during demo) | **Yes** |
-| `car-state` | Job 1: Enrichment + Anomaly | Job 2: Agent | **DBT** (streaming_table materialization) | No |
+| `car-state` | Job 1: Enrichment + Anomaly | Job 2: Agent | **Flink statement** (direct SQL; DBT planned, not yet implemented) | No |
 | `pit-decisions` | Job 2: Agent | — | **Agent** (during demo) | **Yes** |
 
 **Only `car-telemetry` and `race-standings` are created by Terraform** (need schemas, watermarks, primary keys for temporal joins). `race-standings-raw` is created by the MQ connector with its JMS envelope schema. The other topics are created during the demo.
@@ -220,7 +260,7 @@ FROM `race-standings-raw`;
 
 ## Flink Job 1: Enrichment + Anomaly Detection
 
-Single Flink SQL statement using CTEs. Deployed via DBT (`streaming_table` materialization).
+Single Flink SQL statement using CTEs. Currently deployed directly via Confluent CLI (`demo-reference/enrichment_anomaly.sql`). DBT integration (`streaming_table` materialization via `docs/SETUP-DBT-ADAPTER.md`) is planned but not yet implemented — no dbt project exists in the repo yet.
 
 **Input:** `car-telemetry` (stream), `race-standings` (versioned table for temporal join)
 **Output:** `car-state` (one record per lap)
@@ -290,11 +330,11 @@ Reads `car-state`, uses RTCE for competitor context, produces `pit-decisions`.
 
 ### MQ Message Format
 
-Messages are sent as **JMS TextMessages** using `pymqi.Queue.put_rfh2()` with RFH2 headers:
+Messages are sent as **JMS TextMessages** to MQ topic `dev/race-standings` using `pymqi.Topic` with RFH2 headers:
 - `md.Format = MQFMT_RF_HEADER_2` — tells MQ the body starts with an RFH2 header
 - `rfh2["Format"] = MQFMT_STRING` — tells MQ the payload after RFH2 is a string
 - `<mcd><Msd>jms_text</Msd></mcd>` — marks message as JMS TextMessage
-- `<jms><Dst>queue:///DEV.QUEUE.1</Dst></jms>` — JMS destination
+- `<jms><Dst>topic://dev/race-standings</Dst><Dlv>2</Dlv></jms>` — JMS destination (pub/sub topic, persistent delivery)
 
 This ensures the MQ connector receives TextMessages (JSON in `text` field) rather than BytesMessages (base64 in `bytes` field).
 
@@ -306,61 +346,64 @@ Car telemetry is sent as **Avro** via `confluent-kafka[avro]` with `AvroSerializ
 
 ## Terraform Configuration
 
-### Variables (5 Total)
+### Two-Stack Architecture
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `confluent_cloud_api_key` | **Yes** | — | Confluent Cloud API Key |
-| `confluent_cloud_api_secret` | **Yes** | — | Confluent Cloud API Secret |
-| `region` | No | `us-east-2` | Single region for both AWS and Confluent Cloud |
-| `demo_name` | **Yes** | — | Unique name prefix for all resources (e.g., your first name) |
-| `owner_email` | **Yes** | — | Email tagged on all AWS resources |
+Terraform is split into two independent root configs that share modules:
 
-**AWS credentials** use the default provider chain (`~/.aws/credentials`, env vars, or IAM role).
+**`terraform/core/`** — Confluent Cloud infrastructure. Survives demo teardown/redeploy.
+- Environment, Kafka cluster, Schema Registry
+- Service account + API keys (Kafka, SR, Flink)
+- Flink compute pool
+- Auto-generates a unique resource prefix via `random_string` (e.g., `f1-demo-a1b2c3d4`)
+
+**`terraform/demo/`** — AWS infrastructure + Flink tables. Can be torn down and redeployed independently.
+- `car-telemetry` and `race-standings` topics (Flink CREATE TABLE)
+- EC2 with IBM MQ (pub/sub topic, durable subscription)
+- ECR + ECS Fargate (race simulator)
+- EC2 with Postgres (22 drivers pre-loaded)
+- S3 + IAM for Tableflow
+- Auto-generated MQ connector config (`generated/mq_connector_config.json`)
+
+Demo reads all values from core via `terraform_remote_state` (local backend). Demo has zero variables.
+
+### Core Variables (3 Total)
+
+| Variable | Description |
+|---|---|
+| `confluent_cloud_api_key` | Confluent Cloud API Key (prompted by `uv run deploy`) |
+| `confluent_cloud_api_secret` | Confluent Cloud API Secret (prompted by `uv run deploy`) |
+| `owner_email` | Email tagged on all AWS resources (prompted by `uv run deploy`) |
+
+Region is hardcoded to `us-east-2`. Resource names use the auto-generated prefix `f1-demo-<random>`. AWS credentials use the default provider chain (`~/.aws/credentials`, env vars, or IAM role).
 
 ### Modules (8 Total)
 
-| Module | What It Creates |
-|---|---|
-| `modules/environment/` | Confluent Cloud environment |
-| `modules/cluster/` | Kafka cluster + service accounts + API keys (Kafka + Schema Registry). SR data source lives here (depends on app API key for timing). |
-| `modules/topics/` | `car-telemetry` + `race-standings` topics (Flink CREATE TABLE with schema, watermarks, COMMENT, DISTRIBUTED BY INTO 1 BUCKETS) |
-| `modules/flink/` | Compute pool + Flink API key |
-| `modules/mq/` | EC2 + Docker IBM MQ (queue: DEV.QUEUE.1) |
-| `modules/ecs/` | ECR repo + ECS Fargate cluster + task definition for race simulator. Builds Docker image with `--platform linux/amd64`. |
-| `modules/postgres/` | EC2 + Docker Postgres (pre-loaded with 22 drivers) |
-| `modules/tableflow/` | S3 bucket + IAM role + provider integration (uses `customer_role_arn`) |
-
-### Auto-Generated Connector Config
-
-Terraform generates `generated/mq_connector_config.json` via `local_file` resource with real values from module outputs (MQ IP, service account ID, API keys). The `generated/` directory is gitignored (contains secrets).
-
-### Module Dependencies
-
-- Topics module `depends_on = [module.flink, module.cluster]` — ensures Flink compute pool exists AND Schema Registry is ready before CREATE TABLE statements run.
-- SR data source in cluster module `depends_on = [confluent_api_key.app]` — the app API key takes ~2 minutes to create, giving SR time to provision. No artificial `time_sleep` needed.
-- Flink statements require `rest_endpoint` + `credentials` block (not just provider config).
+| Module | Stack | What It Creates |
+|---|---|---|
+| `modules/environment/` | core | Confluent Cloud environment |
+| `modules/cluster/` | core | Kafka cluster + service accounts + API keys (Kafka + SR) |
+| `modules/flink/` | core | Compute pool + Flink API key |
+| `modules/topics/` | demo | `car-telemetry` + `race-standings` topics (Flink CREATE TABLE) |
+| `modules/mq/` | demo | EC2 + Docker IBM MQ (topic: dev/race-standings, durable subscription) |
+| `modules/ecs/` | demo | ECR repo + ECS Fargate cluster + task definition. Docker `--platform linux/amd64`. |
+| `modules/postgres/` | demo | EC2 + Docker Postgres (pre-loaded with 22 drivers) |
+| `modules/tableflow/` | demo | S3 bucket + IAM role + provider integration (`customer_role_arn`) |
 
 ### What Terraform Deploys vs. Demo Hero Moments
 
-**Terraform deploys (before demo):**
-- Confluent Cloud environment + schema registry
-- Kafka cluster + service accounts + API keys (Kafka + Schema Registry)
-- `car-telemetry` + `race-standings` topics with schemas/watermarks/comments (Flink CREATE TABLE)
-- Flink compute pool + API key
-- EC2 with IBM MQ (queue: DEV.QUEUE.1)
-- ECR + ECS Fargate task definition for race simulator (not started)
-- EC2 with Postgres + drivers table (pre-loaded)
-- S3 bucket + IAM role for Tableflow
-- Auto-generated MQ connector config (`generated/mq_connector_config.json`)
+**`uv run deploy` creates (before demo):**
+- All Confluent Cloud resources (environment, cluster, SR, Flink pool, API keys)
+- `car-telemetry` + `race-standings` topics with schemas/watermarks/comments
+- All AWS resources (MQ EC2, Postgres EC2, ECS task definition, S3 for Tableflow)
+- Auto-generated connector configs at `generated/mq_connector_config.json` and `generated/cdc_connector_config.json`
 
 **Left for demo (hero moments):**
-1. Deploy MQ Source Connector (creates `race-standings-raw` topic with JMS envelope schema)
+1. Deploy MQ Source Connector (creates `race-standings-raw` topic)
 2. Start race simulator (`./scripts/start-race.sh`)
-3. Deploy Job 0: Parse standings (`parse_standings.sql`) — extracts JSON from JMS text, sets key
+3. Deploy Job 0: Parse standings (Flink SQL in SQL Workspace)
 4. Deploy CDC Debezium Connector (creates `drivers` topic)
-5. Deploy Job 1: Enrichment + anomaly detection via DBT (creates `car-state` topic)
-6. Deploy Job 2: Streaming Agent (creates `pit-decisions` topic)
+5. Deploy Job 1: Enrichment + anomaly detection (Flink SQL)
+6. Deploy Job 2: Streaming Agent (Flink SQL — has placeholder endpoints)
 7. Enable Tableflow on `pit-decisions` and `drivers`
 8. Query with Databricks Genie
 
@@ -421,35 +464,44 @@ Reference queries in `tableflow/EXAMPLE-QUERIES.md`.
 ## File Structure
 
 ```
-F1/
-├── CLAUDE.md                       # This file
-├── README.md                       # Quick start guide with all SQL queries
-├── .gitignore                      # Excludes tfvars, .terraform, generated/, __pycache__
-├── terraform/                      # Infrastructure (8 modules)
-│   ├── main.tf                     # Providers + modules + auto-generated connector config
-│   ├── variables.tf, outputs.tf, versions.tf, terraform.tfvars.example
-│   └── modules/{environment,cluster,topics,flink,mq,ecs,postgres,tableflow}/
-├── generated/                      # Auto-generated by Terraform (gitignored, contains secrets)
-│   └── mq_connector_config.json    # Ready-to-deploy connector config with real values
-├── demo-reference/                 # SQL + connector configs for demo hero moments
-│   ├── parse_standings.sql         # Job 0: Parse JMS envelope + set key
-│   ├── enrichment_anomaly.sql      # Job 1: Flink SQL (enrichment + anomaly detection)
-│   ├── streaming_agent.sql         # Job 2: Flink SQL (streaming agent)
-│   ├── mq_connector_config.json    # MQ connector template (with placeholders)
-│   └── cdc_connector_config.json   # CDC connector template
-├── datagen/                        # Race simulator (ECS Fargate / Docker)
-│   ├── Dockerfile                  # Python 3.11-slim + IBM MQ C client + gcc
-│   ├── requirements.txt            # pymqi, confluent-kafka[avro], faker
-│   ├── config.py                   # MQ + Kafka + race config
-│   ├── simulator.py                # Main entry point (Avro to Kafka, RFH2 TextMessage to MQ)
-│   ├── telemetry.py                # Sensor curves + lap 32 anomaly
-│   ├── race_script.py              # State management + gap calculations
-│   ├── drivers.py                  # 22 fictional drivers grid (pit_lap, pit_tire per driver)
-│   └── tests/                      # test_simulator.py, test_telemetry.py, test_race_script.py
-├── data/                           # drivers.csv + drivers_seed.sql (Postgres INSERT statements)
-├── docs/                           # SETUP-DBT-ADAPTER.md, SETUP-TABLEFLOW.md, SETUP-GENIE.md
-├── scripts/                        # setup.sh, teardown.sh, start-race.sh, stop-race.sh
-└── tableflow/                      # EXAMPLE-QUERIES.md (Genie reference queries)
+├── CLAUDE.md                           # This file — architecture, schemas, constraints
+├── PLAN.md                             # Project plan — progress, to-dos, context for handoff
+├── Walkthrough.md                      # Step-by-step demo guide for end users
+├── README.md                           # Quick start (references Walkthrough.md)
+├── pyproject.toml                      # uv project definition (deploy, destroy, api-keys, setup-mcp)
+├── deploy.py                           # Interactive deployment: prompts → tfvars → terraform
+├── .gitignore                          # Excludes credentials.env, tfvars, generated/, etc.
+├── scripts/
+│   ├── __init__.py, setup_mcp.py       # MCP server config for Claude Code
+│   ├── common/                         # Shared Python utilities (credentials, terraform, UI)
+│   │   ├── api_keys.py, credentials.py, destroy.py, login_checks.py
+│   │   ├── terraform.py, terraform_runner.py, tfvars.py, ui.py
+│   ├── setup.sh, teardown.sh           # Legacy bash (still work, prefer uv run)
+│   └── start-race.sh, stop-race.sh     # ECS task management
+├── terraform/
+│   ├── core/                           # CC infra (environment, cluster, flink pool)
+│   │   ├── main.tf, variables.tf, outputs.tf, versions.tf
+│   ├── demo/                           # AWS + Flink tables (reads core via remote state)
+│   │   ├── main.tf, variables.tf, outputs.tf, versions.tf
+│   └── modules/                        # 8 reusable modules
+│       ├── environment/, cluster/, flink/, topics/
+│       └── mq/, ecs/, postgres/, tableflow/
+├── generated/                          # Auto-generated by Terraform (gitignored, contains secrets)
+│   └── mq_connector_config.json        # Ready-to-deploy with real values
+├── demo-reference/                     # SQL + connector configs for demo hero moments
+│   ├── parse_standings.sql             # Job 0: Parse JMS envelope + set key
+│   ├── enrichment_anomaly.sql          # Job 1: Enrichment + anomaly detection
+│   ├── streaming_agent.sql             # Job 2: Streaming agent (has placeholder endpoints)
+│   ├── mq_connector_config.json        # MQ connector template (with placeholders)
+│   └── cdc_connector_config.json       # CDC connector template (with placeholders)
+├── datagen/                            # Race simulator (Python, ECS Fargate / Docker)
+│   ├── Dockerfile                      # Python 3.11-slim + IBM MQ C client + gcc
+│   ├── requirements.txt               # pymqi, confluent-kafka[avro]
+│   ├── config.py, simulator.py, telemetry.py, race_script.py, drivers.py
+│   └── tests/                          # test_simulator.py, test_telemetry.py, test_race_script.py
+├── data/                               # drivers.csv + drivers_seed.sql (Postgres seed data)
+├── docs/                               # SETUP-DBT-ADAPTER.md, SETUP-TABLEFLOW.md, SETUP-GENIE.md
+└── tableflow/                          # EXAMPLE-QUERIES.md (Genie reference queries)
 ```
 
 ---
@@ -457,7 +509,7 @@ F1/
 ## Constraints & Preferences
 
 ### Must Have
-- Three data sources, three ingestion paths (direct Kafka, MQ queue, Postgres CDC)
+- Three data sources, three ingestion paths (direct Kafka, MQ pub/sub topic, Postgres CDC)
 - AI_DETECT_ANOMALIES on all metrics, only tire_temp_fl fires
 - Single anomaly at lap 32 — no other anomalies in the entire race
 - AI agent decides pit strategy (no formulas in SQL)
@@ -480,7 +532,7 @@ F1/
 - A Copilot layer (agent output is sufficient)
 - Tableflow on race-standings or car-telemetry
 - Batch processing
-- MQ pub/sub topics (connector wraps in JMS envelope; use queues instead)
+- MQ queues (switched to pub/sub topic `dev/race-standings` with durable subscription `f1-mq-source-sub`; do not revert to queues)
 
 ---
 
@@ -501,16 +553,16 @@ F1/
 10. **`jms.destination.name` not `mq.queue`** — Confluent Cloud managed MQ connector uses `jms.destination.name` for the queue/topic name, not `mq.queue`.
 11. **ValueToKey SMT fails on JMS envelope** — Can't extract `car_number` from nested `text` field. Solution: skip SMT, use Flink Job 0 to parse + key.
 12. **Schema compatibility conflicts** — Pre-created Flink schema (flat) conflicts with connector's JMS envelope schema. Solution: connector writes to `-raw` topic, Flink Job 0 transforms to clean topic.
-13. **MQ pub/sub not viable** — Tested pub/sub topics extensively. Connector still wraps in JMS envelope. Also: `pymqi.Topic` requires `SYSTEM.BASE.TOPIC` auth, `app` user lacks topic permissions on dev image, and `admin` channel needed. Reverted to queues.
+13. **MQ pub/sub works with `admin` channel** — Initially reverted to queues (auth issues: `app` user lacked topic permissions, needed `SYSTEM.BASE.TOPIC` auth). Re-enabled pub/sub using `DEV.ADMIN.SVRCONN` channel and `admin` credentials. Connector uses durable subscription (`jms.subscription.durable: true`, name: `f1-mq-source-sub`). Topic: `dev/race-standings`. Do not revert to queues.
 
 ### Terraform & Infrastructure
 14. **SR data source timing** — Schema Registry takes time to provision after environment creation. Solution: move SR data source to cluster module with `depends_on = [confluent_api_key.app]` (app key takes ~2 min, natural delay). No `time_sleep` needed.
 15. **`customer_role_arn` not `iam_role_arn`** — `confluent_provider_integration` AWS block uses `customer_role_arn` for the IAM role Confluent assumes.
 16. **Docker `--platform linux/amd64`** — ECS Fargate runs x86_64. Mac builds ARM by default. IBM MQ C client tar is x86_64 only.
 17. **Dockerfile needs `gcc`** — `pymqi` compiles C extensions. Add `gcc libc6-dev` to `apt-get install`.
-18. **Auto-generate connector config** — `local_file` resource in Terraform generates `generated/mq_connector_config.json` with real values from module outputs. Gitignored.
-19. **ECS task definition versioning** — `null_resource.docker_build_push` triggers on file hashes. After code changes, `terraform taint module.ecs.null_resource.docker_build_push` forces rebuild.
-20. **Multi-tenant deployments** — All resources prefixed with `demo_name`. AWS resources tagged with `owner_email`.
+18. **Auto-generate connector configs** — `local_file` resources in Terraform generate `generated/mq_connector_config.json` and `generated/cdc_connector_config.json` with real values from module outputs. Gitignored. The managed Confluent Cloud `PostgresSource` connector uses `connection.host`, `connection.port`, `connection.user`, `connection.password`, and `db.name` — NOT Debezium-style `database.*` keys.
+19. **ECS task definition versioning** — `null_resource.docker_build_push` triggers on file hashes. After code changes, `terraform -chdir=terraform/demo taint module.ecs.null_resource.docker_build_push` forces rebuild.
+20. **Auto-generated naming** — All resources prefixed with `f1-demo-<random_string>`. The 8-char suffix is generated by `random_string` in `terraform/core/main.tf` and passed to all modules as `demo_name`. AWS resources tagged with `owner_email`.
 
 ### Data & Serialization
 21. **Avro serialization** — `confluent-kafka[avro]` with `AvroSerializer(schema_str=None, conf={'auto.register.schemas': False, 'use.latest.version': True})`. Uses schema registered by Flink CREATE TABLE.
@@ -524,6 +576,15 @@ F1/
 
 ---
 
-**Last Updated:** April 21, 2026
-**Document Version:** 4.0
+### Deployment Tooling
+27. **Two-stack Terraform split** — `terraform/core/` (CC infra) and `terraform/demo/` (AWS + Flink tables). Demo reads core outputs via `terraform_remote_state` with local backend. Demo has zero variables.
+28. **`uv run deploy` flow** — Checks CLI logins (confluent, terraform, aws), prompts for 3 values (CC API key, CC secret, owner email), writes `credentials.env` + `terraform.tfvars`, runs `terraform apply` on core then demo.
+29. **`credentials.env` is internal** — Created and managed by `deploy.py`. No example template. Users provide values through interactive prompts only. Gitignored.
+30. **Region hardcoded** — `us-east-2` is set as a `local` in `terraform/core/main.tf`. Not a variable, not prompted.
+
+---
+
+**Last Updated:** April 23, 2026
+**Document Version:** 5.0
+**Deployment Patterns:** Adapted from `confluentinc/quickstart-streaming-agents`
 **Parent Project:** World Cup Ticketing Demo (same repo structure pattern)

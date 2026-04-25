@@ -1,24 +1,4 @@
-output "environment_id" {
-  value = module.environment.environment_id
-}
-
-output "cluster_id" {
-  value = module.cluster.cluster_id
-}
-
-output "cluster_bootstrap" {
-  value = module.cluster.cluster_bootstrap
-}
-
-output "app_api_key" {
-  value     = module.cluster.app_api_key
-  sensitive = true
-}
-
-output "app_api_secret" {
-  value     = module.cluster.app_api_secret
-  sensitive = true
-}
+# --- MQ ---
 
 output "mq_public_ip" {
   value = module.mq.mq_public_ip
@@ -28,6 +8,8 @@ output "mq_connection_string" {
   value = module.mq.mq_connection_string
 }
 
+# --- Postgres ---
+
 output "postgres_public_ip" {
   value = module.postgres.postgres_public_ip
 }
@@ -35,6 +17,8 @@ output "postgres_public_ip" {
 output "postgres_connection_string" {
   value = module.postgres.postgres_connection_string
 }
+
+# --- Tableflow ---
 
 output "tableflow_s3_bucket" {
   value = module.tableflow.s3_bucket_name
@@ -47,6 +31,8 @@ output "tableflow_iam_role_arn" {
 output "tableflow_provider_integration_id" {
   value = module.tableflow.provider_integration_id
 }
+
+# --- ECS ---
 
 output "ecs_cluster_name" {
   value = module.ecs.cluster_name

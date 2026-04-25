@@ -1,4 +1,5 @@
 """Generates realistic car telemetry metrics with a single anomaly at lap 32."""
+
 import random
 
 # Starting values

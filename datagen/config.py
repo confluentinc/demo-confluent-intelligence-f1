@@ -1,4 +1,5 @@
 """Configuration for the F1 race simulator."""
+
 import os
 
 # Kafka settings (car-telemetry producer)
