@@ -5,6 +5,7 @@ Two outputs:
   - Car telemetry (car #44 only) → Kafka topic 'car-telemetry' via confluent-kafka
   - Race standings (all 22 cars) → IBM MQ queue via pymqi
 """
+
 import json
 import logging
 import time
@@ -14,7 +15,7 @@ import pymqi
 from confluent_kafka import Producer
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
-from confluent_kafka.serialization import SerializationContext, MessageField
+from confluent_kafka.serialization import MessageField, SerializationContext
 
 from datagen import config
 from datagen.drivers import GRID
@@ -30,10 +31,12 @@ logger = logging.getLogger(__name__)
 
 def _create_kafka_producer():
     """Create a Kafka producer with Avro serializer for car telemetry."""
-    sr_client = SchemaRegistryClient({
-        "url": config.SR_URL,
-        "basic.auth.user.info": f"{config.SR_API_KEY}:{config.SR_API_SECRET}",
-    })
+    sr_client = SchemaRegistryClient(
+        {
+            "url": config.SR_URL,
+            "basic.auth.user.info": f"{config.SR_API_KEY}:{config.SR_API_SECRET}",
+        }
+    )
 
     avro_serializer = AvroSerializer(
         sr_client,
@@ -44,13 +47,15 @@ def _create_kafka_producer():
         },
     )
 
-    producer = Producer({
-        "bootstrap.servers": config.KAFKA_BOOTSTRAP,
-        "security.protocol": "SASL_SSL",
-        "sasl.mechanisms": "PLAIN",
-        "sasl.username": config.KAFKA_API_KEY,
-        "sasl.password": config.KAFKA_API_SECRET,
-    })
+    producer = Producer(
+        {
+            "bootstrap.servers": config.KAFKA_BOOTSTRAP,
+            "security.protocol": "SASL_SSL",
+            "sasl.mechanisms": "PLAIN",
+            "sasl.username": config.KAFKA_API_KEY,
+            "sasl.password": config.KAFKA_API_SECRET,
+        }
+    )
 
     return producer, avro_serializer
 
@@ -65,8 +70,9 @@ def _connect_mq():
         config.MQ_USER,
         config.MQ_PASSWORD,
     )
-    topic = pymqi.Topic(qmgr, topic_string=config.MQ_TOPIC,
-                        open_opts=pymqi.CMQC.MQOO_OUTPUT | pymqi.CMQC.MQOO_FAIL_IF_QUIESCING)
+    topic = pymqi.Topic(
+        qmgr, topic_string=config.MQ_TOPIC, open_opts=pymqi.CMQC.MQOO_OUTPUT | pymqi.CMQC.MQOO_FAIL_IF_QUIESCING
+    )
     return qmgr, topic
 
 
@@ -121,18 +127,13 @@ def run_race():
             # Produce race standings to MQ (all 22 cars)
             standings = race.get_standings()
             for standing in standings:
-                standing["event_time"] = int(
-                    datetime.now(timezone.utc).timestamp() * 1000
-                )
+                standing["event_time"] = int(datetime.now(timezone.utc).timestamp() * 1000)
                 md = pymqi.MD()
                 md.Format = pymqi.CMQC.MQFMT_RF_HEADER_2
                 md.Encoding = 273
                 md.CodedCharSetId = 1208
                 pmo = pymqi.PMO()
-                mq_topic.pub_rfh2(
-                    json.dumps(standing).encode("utf-8"),
-                    md, pmo, [rfh2]
-                )
+                mq_topic.pub_rfh2(json.dumps(standing).encode("utf-8"), md, pmo, [rfh2])
 
             # Produce car telemetry to Kafka (multiple readings per lap)
             readings_per_lap = config.SECONDS_PER_LAP // config.TELEMETRY_INTERVAL_SEC
@@ -145,9 +146,7 @@ def run_race():
                 )
                 telemetry["car_number"] = config.OUR_CAR_NUMBER
                 telemetry["lap"] = lap
-                telemetry["event_time"] = int(
-                    datetime.now(timezone.utc).timestamp() * 1000
-                )
+                telemetry["event_time"] = int(datetime.now(timezone.utc).timestamp() * 1000)
 
                 producer.produce(
                     config.KAFKA_TOPIC,

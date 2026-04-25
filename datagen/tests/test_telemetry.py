@@ -1,4 +1,5 @@
 """Tests for telemetry metric generation."""
+
 from datagen.telemetry import generate_telemetry
 
 

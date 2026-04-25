@@ -1,4 +1,5 @@
 """Tests for simulator Avro serialization."""
+
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -6,11 +7,10 @@ from unittest.mock import MagicMock, patch
 # Mock it before importing the simulator module.
 sys.modules.setdefault("pymqi", MagicMock())
 
-from confluent_kafka.schema_registry.avro import AvroSerializer
-from confluent_kafka.serialization import SerializationContext, MessageField
+from confluent_kafka.schema_registry.avro import AvroSerializer  # noqa: E402
 
 # Import simulator once — pymqi is already mocked above.
-from datagen import simulator as sim
+from datagen import simulator as sim  # noqa: E402
 
 
 def test_create_kafka_producer_returns_avro_serializer():
@@ -21,7 +21,7 @@ def test_create_kafka_producer_returns_avro_serializer():
         with patch.object(sim, "AvroSerializer") as mock_avro_cls:
             mock_avro_cls.return_value = MagicMock(spec=AvroSerializer)
             with patch.object(sim, "Producer"):
-                producer, serializer = sim._create_kafka_producer()
+                _producer, serializer = sim._create_kafka_producer()
 
                 mock_avro_cls.assert_called_once_with(
                     mock_sr_client,
@@ -49,10 +49,12 @@ def test_sr_client_configured_with_basic_auth():
                 with patch.object(sim, "Producer"):
                     sim._create_kafka_producer()
 
-                    mock_sr_cls.assert_called_once_with({
-                        "url": "https://psrc-test.us-east-2.aws.confluent.cloud",
-                        "basic.auth.user.info": "test-key:test-secret",
-                    })
+                    mock_sr_cls.assert_called_once_with(
+                        {
+                            "url": "https://psrc-test.us-east-2.aws.confluent.cloud",
+                            "basic.auth.user.info": "test-key:test-secret",
+                        }
+                    )
 
 
 def test_event_time_is_epoch_millis():
@@ -64,6 +66,7 @@ def test_event_time_is_epoch_millis():
     telemetry["lap"] = 1
 
     from datetime import datetime, timezone
+
     telemetry["event_time"] = int(datetime.now(timezone.utc).timestamp() * 1000)
 
     assert isinstance(telemetry["event_time"], int)
