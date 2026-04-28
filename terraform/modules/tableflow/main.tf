@@ -14,7 +14,7 @@ resource "random_id" "suffix" {
 
 locals {
   bucket_name = "${var.bucket_name}-${random_id.suffix.hex}"
-  role_name   = "f1-demo-${var.demo_name}-tableflow-role-${random_id.suffix.hex}"
+  role_name   = "f1-demo-tableflow-role-${random_id.suffix.hex}"
 }
 
 # S3 Bucket
@@ -23,7 +23,7 @@ resource "aws_s3_bucket" "tableflow" {
   force_destroy = true
 
   tags = {
-    Name        = "f1-demo-${var.demo_name}-tableflow"
+    Name        = "f1-demo-tableflow"
     owner_email = var.owner_email
   }
 }
@@ -39,7 +39,7 @@ resource "aws_s3_bucket_public_access_block" "tableflow" {
 
 # Confluent Provider Integration
 resource "confluent_provider_integration" "main" {
-  display_name = "f1-demo-${var.demo_name}-aws-integration"
+  display_name = "f1-demo-aws-integration"
 
   environment {
     id = var.environment_id
@@ -75,7 +75,7 @@ resource "aws_iam_role" "tableflow" {
 
 # IAM Policy with S3 permissions
 resource "aws_iam_policy" "tableflow" {
-  name = "f1-demo-${var.demo_name}-tableflow-policy-${random_id.suffix.hex}"
+  name = "f1-demo-tableflow-policy-${random_id.suffix.hex}"
 
   policy = jsonencode({
     Version = "2012-10-17"

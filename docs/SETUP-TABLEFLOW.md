@@ -13,7 +13,7 @@ Continuously materializes Kafka topics as Delta Lake tables in S3. No ETL needed
 
 ## Prerequisites (Done by Terraform)
 
-- S3 bucket: `f1-demo-tableflow-<suffix>`
+- S3 bucket: `f1-demo-tableflow-<hex>`
 - IAM role with cross-account trust policy
 - Confluent provider integration
 
@@ -37,7 +37,7 @@ In Databricks Unity Catalog:
 
 ```sql
 CREATE EXTERNAL LOCATION f1_demo_tableflow
-  URL 's3://f1-demo-tableflow-<suffix>/'
+  URL 's3://f1-demo-tableflow-<hex>/'
   WITH (STORAGE CREDENTIAL f1_demo_credential);
 ```
 
@@ -46,11 +46,11 @@ CREATE EXTERNAL LOCATION f1_demo_tableflow
 ```sql
 CREATE TABLE f1_demo.pit_decisions
   USING DELTA
-  LOCATION 's3://f1-demo-tableflow-<suffix>/topics/pit-decisions/';
+  LOCATION 's3://f1-demo-tableflow-<hex>/topics/pit-decisions/';
 
 CREATE TABLE f1_demo.drivers
   USING DELTA
-  LOCATION 's3://f1-demo-tableflow-<suffix>/topics/drivers/';
+  LOCATION 's3://f1-demo-tableflow-<hex>/topics/drivers/';
 ```
 
 ### 3. Verify

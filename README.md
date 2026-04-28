@@ -79,7 +79,7 @@ This launches the race simulator on ECS Fargate. It runs a 57-lap race in ~9.5 m
 Monitor the race:
 
 ```bash
-aws logs tail /ecs/f1-$(terraform -chdir=terraform output -raw demo_name 2>/dev/null || echo zamzam)-simulator --follow
+aws logs tail /ecs/f1-simulator --follow
 ```
 
 ### 4. Deploy Flink Jobs

@@ -5,18 +5,9 @@ provider "confluent" {
 
 data "confluent_organization" "main" {}
 
-# --- Auto-generated unique suffix ---
-
-resource "random_string" "suffix" {
-  length  = 8
-  special = false
-  upper   = false
-}
-
 locals {
   region      = "us-east-2"
-  demo_name   = random_string.suffix.result
-  name_prefix = "f1-demo-${local.demo_name}"
+  name_prefix = "f1-demo"
 }
 
 # --- Modules ---
@@ -24,7 +15,6 @@ locals {
 module "environment" {
   source           = "../modules/environment"
   environment_name = "${local.name_prefix}-env"
-  demo_name        = local.demo_name
   owner_email      = var.owner_email
 }
 
@@ -34,7 +24,6 @@ module "cluster" {
   cluster_name   = "${local.name_prefix}-cluster"
   cloud_provider = "AWS"
   cloud_region   = local.region
-  demo_name      = local.demo_name
   owner_email    = var.owner_email
 }
 
@@ -47,6 +36,5 @@ module "flink" {
   cloud_provider     = "AWS"
   cloud_region       = local.region
   service_account_id = module.cluster.service_account_id
-  demo_name          = local.demo_name
   owner_email        = var.owner_email
 }

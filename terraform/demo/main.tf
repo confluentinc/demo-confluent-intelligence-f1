@@ -8,7 +8,6 @@ data "terraform_remote_state" "core" {
 
 locals {
   region      = data.terraform_remote_state.core.outputs.region
-  demo_name   = data.terraform_remote_state.core.outputs.demo_name
   owner_email = data.terraform_remote_state.core.outputs.owner_email
 }
 
@@ -36,14 +35,12 @@ module "topics" {
   flink_rest_endpoint = data.terraform_remote_state.core.outputs.flink_rest_endpoint
   flink_api_key       = data.terraform_remote_state.core.outputs.flink_api_key
   flink_api_secret    = data.terraform_remote_state.core.outputs.flink_api_secret
-  demo_name           = local.demo_name
   owner_email         = local.owner_email
 }
 
 module "mq" {
   source      = "../modules/mq"
   aws_region  = local.region
-  demo_name   = local.demo_name
   owner_email = local.owner_email
 }
 
@@ -58,22 +55,19 @@ module "ecs" {
   sr_api_secret    = data.terraform_remote_state.core.outputs.sr_api_secret
   mq_host          = module.mq.mq_public_ip
   dockerfile_path  = "${path.module}/../../datagen"
-  demo_name        = local.demo_name
   owner_email      = local.owner_email
 }
 
 module "postgres" {
   source      = "../modules/postgres"
   aws_region  = local.region
-  demo_name   = local.demo_name
   owner_email = local.owner_email
 }
 
 module "tableflow" {
   source         = "../modules/tableflow"
   environment_id = data.terraform_remote_state.core.outputs.environment_id
-  bucket_name    = "f1-demo-${local.demo_name}-tableflow"
-  demo_name      = local.demo_name
+  bucket_name    = "f1-demo-tableflow"
   owner_email    = local.owner_email
 }
 

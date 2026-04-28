@@ -98,10 +98,6 @@ output "region" {
   value = local.region
 }
 
-output "demo_name" {
-  value = local.demo_name
-}
-
 output "owner_email" {
   value = var.owner_email
 }

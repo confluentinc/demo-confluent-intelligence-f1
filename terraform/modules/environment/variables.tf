@@ -3,11 +3,6 @@ variable "environment_name" {
   type        = string
 }
 
-variable "demo_name" {
-  description = "Unique demo instance name for resource prefixing"
-  type        = string
-}
-
 variable "owner_email" {
   description = "Owner email for AWS resource tagging"
   type        = string

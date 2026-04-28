@@ -55,7 +55,7 @@ Deployment takes 15-20 minutes (mostly ECR image build + Flink compute pool prov
 ### Verify deployment
 
 After deployment completes, open the **Confluent Cloud UI** and confirm:
-- Environment exists (named `f1-demo-<suffix>-env`)
+- Environment exists (named `f1-demo-env`)
 - Kafka cluster exists with `car-telemetry` and `race-standings` topics
 - Flink compute pool is provisioned
 
@@ -107,7 +107,7 @@ This launches the race simulator on ECS Fargate. The simulator runs a 57-lap rac
 ### Monitor the race
 
 ```bash
-aws logs tail /ecs/f1-$(cd terraform/core && terraform output -raw demo_name)-simulator --follow
+aws logs tail /ecs/f1-simulator --follow
 ```
 
 You should see output like:
@@ -132,13 +132,9 @@ In the **Confluent Cloud UI**, check:
 Open the **Flink SQL Workspace** in Confluent Cloud. Set your catalog and database:
 
 ```sql
-USE CATALOG `f1-demo-<suffix>-env`;
-USE `f1-demo-<suffix>-cluster`;
+USE CATALOG `f1-demo-env`;
+USE `f1-demo-cluster`;
 ```
-
-> [!NOTE]
->
-> Replace `<suffix>` with the auto-generated suffix from your deployment. Find it in the Confluent Cloud UI environment name, or run: `cd terraform/core && terraform output -raw demo_name`
 
 Run Job 0 to extract structured fields from the JMS envelope and write to the clean `race-standings` topic:
 
@@ -428,11 +424,11 @@ In Databricks Unity Catalog, create external tables pointing to the Tableflow S3
 ```sql
 CREATE TABLE f1_demo.pit_decisions
   USING DELTA
-  LOCATION 's3://f1-demo-<suffix>-tableflow/topics/pit-decisions/';
+  LOCATION 's3://f1-demo-tableflow-<hex>/topics/pit-decisions/';
 
 CREATE TABLE f1_demo.drivers
   USING DELTA
-  LOCATION 's3://f1-demo-<suffix>-tableflow/topics/drivers/';
+  LOCATION 's3://f1-demo-tableflow-<hex>/topics/drivers/';
 ```
 
 ### Create a Genie Space

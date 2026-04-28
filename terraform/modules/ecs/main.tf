@@ -10,7 +10,7 @@ data "aws_subnets" "default" {
 # --- ECR Repository ---
 
 resource "aws_ecr_repository" "simulator" {
-  name         = "f1-demo-${var.demo_name}-simulator"
+  name         = "f1-demo-simulator"
   force_delete = true
 }
 
@@ -38,7 +38,7 @@ resource "null_resource" "docker_build_push" {
 # --- IAM Roles ---
 
 resource "aws_iam_role" "ecs_execution" {
-  name = "f1-demo-${var.demo_name}-ecs-execution"
+  name = "f1-demo-ecs-execution"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -59,14 +59,14 @@ resource "aws_iam_role_policy_attachment" "ecs_execution" {
 # --- CloudWatch Logs ---
 
 resource "aws_cloudwatch_log_group" "simulator" {
-  name              = "/ecs/f1-${var.demo_name}-simulator"
+  name              = "/ecs/f1-simulator"
   retention_in_days = 7
 }
 
 # --- Security Group ---
 
 resource "aws_security_group" "ecs" {
-  name_prefix = "f1-demo-${var.demo_name}-ecs-"
+  name_prefix = "f1-demo-ecs-"
   description = "Security group for F1 simulator ECS task"
   vpc_id      = data.aws_vpc.default.id
 
@@ -78,7 +78,7 @@ resource "aws_security_group" "ecs" {
   }
 
   tags = {
-    Name        = "f1-demo-${var.demo_name}-ecs"
+    Name        = "f1-demo-ecs"
     owner_email = var.owner_email
   }
 }
@@ -86,13 +86,13 @@ resource "aws_security_group" "ecs" {
 # --- ECS Cluster ---
 
 resource "aws_ecs_cluster" "simulator" {
-  name = "f1-demo-${var.demo_name}-simulator"
+  name = "f1-demo-simulator"
 }
 
 # --- ECS Task Definition ---
 
 resource "aws_ecs_task_definition" "simulator" {
-  family                   = "f1-${var.demo_name}-simulator"
+  family                   = "f1-simulator"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = "512"

@@ -25,5 +25,4 @@ TASK_ARN=$(aws ecs run-task \
 
 echo "Race started! Task: $TASK_ARN"
 echo "$TASK_ARN" > "$SCRIPT_DIR/.race-task-arn"
-DEMO_NAME=$(cd "$TF_DIR/../core" && terraform output -raw demo_name)
-echo "Logs: aws logs tail --region us-east-2 /ecs/f1-${DEMO_NAME}-simulator --follow"
+echo "Logs: aws logs tail --region us-east-2 /ecs/f1-simulator --follow"
