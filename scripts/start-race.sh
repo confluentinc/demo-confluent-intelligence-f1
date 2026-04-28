@@ -25,4 +25,5 @@ TASK_ARN=$(aws ecs run-task \
 
 echo "Race started! Task: $TASK_ARN"
 echo "$TASK_ARN" > "$SCRIPT_DIR/.race-task-arn"
-echo "Logs: aws logs tail --region us-east-2 /ecs/f1-simulator --follow"
+LOG_GROUP=$(cd "$TF_DIR" && terraform output -raw ecs_log_group)
+echo "Logs: aws logs tail --region us-east-2 $LOG_GROUP --follow"

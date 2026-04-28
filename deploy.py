@@ -82,6 +82,14 @@ def main():
         "Owner email (for AWS resource tagging)",
         creds.get("TF_VAR_owner_email", ""),
     )
+    while True:
+        deployment_id = prompt_with_default(
+            "Deployment ID (lowercase alphanumeric, max 8 chars, e.g. your initials)",
+            creds.get("TF_VAR_deployment_id", ""),
+        )
+        if deployment_id and deployment_id.isalnum() and deployment_id == deployment_id.lower() and len(deployment_id) <= 8:
+            break
+        print("  Must be lowercase alphanumeric, max 8 characters.")
     aws_bedrock_key = prompt_with_default(
         "AWS Bedrock Access Key",
         creds.get("TF_VAR_aws_bedrock_access_key", ""),
@@ -102,6 +110,7 @@ def main():
     set_key(str(creds_file), "TF_VAR_confluent_cloud_api_key", api_key)
     set_key(str(creds_file), "TF_VAR_confluent_cloud_api_secret", api_secret)
     set_key(str(creds_file), "TF_VAR_owner_email", owner_email)
+    set_key(str(creds_file), "TF_VAR_deployment_id", deployment_id)
     set_key(str(creds_file), "TF_VAR_aws_bedrock_access_key", aws_bedrock_key)
     set_key(str(creds_file), "TF_VAR_aws_bedrock_secret_key", aws_bedrock_secret)
     if aws_session_token:
@@ -112,6 +121,7 @@ def main():
         "TF_VAR_confluent_cloud_api_key": api_key,
         "TF_VAR_confluent_cloud_api_secret": api_secret,
         "TF_VAR_owner_email": owner_email,
+        "TF_VAR_deployment_id": deployment_id,
         "TF_VAR_aws_bedrock_access_key": aws_bedrock_key,
         "TF_VAR_aws_bedrock_secret_key": aws_bedrock_secret,
         "TF_VAR_aws_session_token": aws_session_token,
@@ -127,6 +137,7 @@ def main():
     print("\n--- Deployment Summary ---")
     print("  Region:     us-east-2")
     print(f"  Owner:      {owner_email}")
+    print(f"  Deploy ID:  {deployment_id}")
     print(f"  CC Key:     {api_key[:8]}...")
     print(f"  Bedrock:    {aws_bedrock_key[:8]}..." if aws_bedrock_key else "  Bedrock:    (not set)")
     print("  Deploys:    core -> demo")

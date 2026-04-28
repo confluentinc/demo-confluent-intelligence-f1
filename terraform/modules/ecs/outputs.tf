@@ -13,3 +13,7 @@ output "security_group_id" {
 output "subnets" {
   value = join(",", data.aws_subnets.default.ids)
 }
+
+output "log_group_name" {
+  value = aws_cloudwatch_log_group.simulator.name
+}

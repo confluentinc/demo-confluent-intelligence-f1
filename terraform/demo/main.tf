@@ -39,9 +39,10 @@ module "topics" {
 }
 
 module "mq" {
-  source      = "../modules/mq"
-  aws_region  = local.region
-  owner_email = local.owner_email
+  source        = "../modules/mq"
+  aws_region    = local.region
+  owner_email   = local.owner_email
+  deployment_id = var.deployment_id
 }
 
 module "ecs" {
@@ -56,18 +57,20 @@ module "ecs" {
   mq_host          = module.mq.mq_public_ip
   dockerfile_path  = "${path.module}/../../datagen"
   owner_email      = local.owner_email
+  deployment_id    = var.deployment_id
 }
 
 module "postgres" {
-  source      = "../modules/postgres"
-  aws_region  = local.region
-  owner_email = local.owner_email
+  source        = "../modules/postgres"
+  aws_region    = local.region
+  owner_email   = local.owner_email
+  deployment_id = var.deployment_id
 }
 
 module "tableflow" {
   source         = "../modules/tableflow"
   environment_id = data.terraform_remote_state.core.outputs.environment_id
-  bucket_name    = "f1-demo-tableflow"
+  bucket_name    = "f1-demo-${var.deployment_id}-tableflow"
   owner_email    = local.owner_email
 }
 

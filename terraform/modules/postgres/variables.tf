@@ -19,3 +19,8 @@ variable "owner_email" {
   description = "Owner email for AWS resource tagging"
   type        = string
 }
+
+variable "deployment_id" {
+  description = "Short unique identifier for this deployment. Namespaces AWS resource names."
+  type        = string
+}

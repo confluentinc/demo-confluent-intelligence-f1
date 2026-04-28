@@ -1,2 +1,4 @@
-# All variables come from core via terraform_remote_state.
-# No user-facing variables needed in this module.
+variable "deployment_id" {
+  description = "Short unique identifier for this deployment (e.g. initials). Used to namespace AWS resource names so multiple deployments can coexist in the same account."
+  type        = string
+}

@@ -14,7 +14,7 @@ data "aws_ami" "amazon_linux" {
 }
 
 resource "aws_security_group" "postgres" {
-  name_prefix = "f1-demo-postgres-"
+  name_prefix = "f1-demo-${var.deployment_id}-postgres-"
   description = "Security group for Postgres"
 
   ingress {
@@ -41,7 +41,7 @@ resource "aws_security_group" "postgres" {
   }
 
   tags = {
-    Name        = "f1-demo-postgres"
+    Name        = "f1-demo-${var.deployment_id}-postgres"
     owner_email = var.owner_email
   }
 }
@@ -55,7 +55,7 @@ resource "aws_instance" "postgres" {
   user_data = file("${path.module}/user_data.sh")
 
   tags = {
-    Name        = "f1-demo-postgres"
+    Name        = "f1-demo-${var.deployment_id}-postgres"
     owner_email = var.owner_email
   }
 }

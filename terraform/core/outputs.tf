@@ -92,6 +92,16 @@ output "confluent_cloud_api_secret" {
   sensitive = true
 }
 
+# --- LLM Connections ---
+
+output "llm_textgen_connection_name" {
+  value = confluent_flink_connection.bedrock_textgen_connection.display_name
+}
+
+output "llm_embedding_connection_name" {
+  value = confluent_flink_connection.bedrock_embedding_connection.display_name
+}
+
 # --- Deployment metadata ---
 
 output "region" {

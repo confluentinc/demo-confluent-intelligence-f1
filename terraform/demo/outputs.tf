@@ -49,3 +49,7 @@ output "ecs_security_group_id" {
 output "ecs_subnets" {
   value = module.ecs.subnets
 }
+
+output "ecs_log_group" {
+  value = module.ecs.log_group_name
+}
