@@ -114,7 +114,7 @@ resource "local_file" "cdc_connector_config" {
       "database.password"        = "f1passw0rd"
       "database.dbname"          = "f1demo"
       "topic.prefix"             = "f1demo"
-      "table.include.list"       = "public.drivers,public.race_results"
+      "table.include.list"       = "public.race_results"
       "output.data.format"       = "JSON"
       "tasks.max"                = "1"
       # Strip "f1demo.public." prefix so topics are just `drivers` and `race_results`.
