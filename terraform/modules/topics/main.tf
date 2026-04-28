@@ -51,9 +51,8 @@ resource "confluent_flink_statement" "create_car_telemetry_table" {
       `throttle_pct` DOUBLE COMMENT 'Throttle pedal position percentage (0-100)',
       `brake_pct` DOUBLE COMMENT 'Brake pedal position percentage (0-100)',
       `event_time` TIMESTAMP(3) COMMENT 'Sensor reading timestamp',
-      WATERMARK FOR `event_time` AS `event_time` - INTERVAL '5' SECOND,
-      PRIMARY KEY (`car_number`) NOT ENFORCED
-    ) DISTRIBUTED BY (`car_number`) INTO 1 BUCKETS;
+      WATERMARK FOR `event_time` AS `event_time` - INTERVAL '5' SECOND
+    ) DISTRIBUTED INTO 1 BUCKETS;
   EOT
 
   properties = {
