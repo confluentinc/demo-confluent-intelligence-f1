@@ -74,6 +74,48 @@ module "tableflow" {
   owner_email    = local.owner_email
 }
 
+# --- Readiness waiters ---
+# EC2 user_data runs asynchronously after the instance is created. These resources
+# poll the service ports until they accept connections before connectors are provisioned.
+
+resource "null_resource" "wait_for_mq" {
+  depends_on = [module.mq]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "Waiting for IBM MQ at ${module.mq.mq_public_ip}:1414..."
+      for i in $(seq 1 60); do
+        if nc -z -w5 ${module.mq.mq_public_ip} 1414 2>/dev/null; then
+          echo "IBM MQ port open after $((i * 15))s"
+          exit 0
+        fi
+        echo "  attempt $i/60 — retrying in 15s..."
+        sleep 15
+      done
+      echo "Timeout: IBM MQ not ready after 15 minutes" && exit 1
+    EOT
+  }
+}
+
+resource "null_resource" "wait_for_postgres" {
+  depends_on = [module.postgres]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "Waiting for Postgres at ${module.postgres.postgres_public_ip}:5432..."
+      for i in $(seq 1 60); do
+        if nc -z -w5 ${module.postgres.postgres_public_ip} 5432 2>/dev/null; then
+          echo "Postgres port open after $((i * 15))s"
+          exit 0
+        fi
+        echo "  attempt $i/60 — retrying in 15s..."
+        sleep 15
+      done
+      echo "Timeout: Postgres not ready after 15 minutes" && exit 1
+    EOT
+  }
+}
+
 # --- Managed connectors ---
 
 resource "confluent_connector" "mq_source" {
@@ -106,7 +148,7 @@ resource "confluent_connector" "mq_source" {
     "output.data.format"       = "AVRO"
     "tasks.max"                = "1"
   }
-  depends_on = [module.topics, module.mq]
+  depends_on = [module.topics, null_resource.wait_for_mq]
 }
 
 resource "confluent_connector" "postgres_cdc" {
@@ -141,7 +183,7 @@ resource "confluent_connector" "postgres_cdc" {
     "transforms.Unwrap.type"            = "io.debezium.transforms.ExtractNewRecordState"
     "transforms.Unwrap.drop.tombstones" = "false"
   }
-  depends_on = [module.postgres]
+  depends_on = [null_resource.wait_for_postgres]
 }
 
 # --- Generated connector configs (for manual CLI deployment fallback) ---

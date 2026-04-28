@@ -37,7 +37,7 @@ def test_create_kafka_producer_returns_avro_serializer():
 def test_sr_client_configured_with_basic_auth():
     """SchemaRegistryClient must use basic.auth.user.info from config."""
     with patch.object(sim, "config") as mock_config:
-        mock_config.SR_URL = "https://psrc-test.us-east-2.aws.confluent.cloud"
+        mock_config.SR_URL = "https://psrc-test.us-east-1.aws.confluent.cloud"
         mock_config.SR_API_KEY = "test-key"
         mock_config.SR_API_SECRET = "test-secret"
         mock_config.KAFKA_BOOTSTRAP = "localhost:9092"
@@ -51,7 +51,7 @@ def test_sr_client_configured_with_basic_auth():
 
                     mock_sr_cls.assert_called_once_with(
                         {
-                            "url": "https://psrc-test.us-east-2.aws.confluent.cloud",
+                            "url": "https://psrc-test.us-east-1.aws.confluent.cloud",
                             "basic.auth.user.info": "test-key:test-secret",
                         }
                     )

@@ -6,7 +6,7 @@ provider "confluent" {
 data "confluent_organization" "main" {}
 
 locals {
-  region      = "us-east-2"
+  region      = "us-east-1"
   name_prefix = "f1-demo"
 }
 
@@ -58,6 +58,8 @@ resource "confluent_flink_connection" "bedrock_textgen_connection" {
   aws_access_key    = var.aws_bedrock_access_key
   aws_secret_key    = var.aws_bedrock_secret_key
   aws_session_token = var.aws_session_token != "" ? var.aws_session_token : null
+
+  depends_on = [module.cluster]
 }
 
 resource "confluent_flink_connection" "bedrock_embedding_connection" {
@@ -77,6 +79,8 @@ resource "confluent_flink_connection" "bedrock_embedding_connection" {
   aws_access_key    = var.aws_bedrock_access_key
   aws_secret_key    = var.aws_bedrock_secret_key
   aws_session_token = var.aws_session_token != "" ? var.aws_session_token : null
+
+  depends_on = [module.cluster]
 }
 
 # --- LLM Models (Flink CREATE MODEL statements) ---

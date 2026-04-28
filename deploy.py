@@ -135,7 +135,7 @@ def main():
     # --- Confirm ---
 
     print("\n--- Deployment Summary ---")
-    print("  Region:     us-east-2")
+    print("  Region:     us-east-1")
     print(f"  Owner:      {owner_email}")
     print(f"  Deploy ID:  {deployment_id}")
     print(f"  CC Key:     {api_key[:8]}...")

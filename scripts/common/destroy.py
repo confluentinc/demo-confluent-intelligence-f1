@@ -87,6 +87,35 @@ def main():
             print(f"\nDestroy failed at {env}. Continuing with remaining...")
 
     print("\nDestroy process completed!")
+    _cleanup_mcp(root)
+
+
+def _cleanup_mcp(root: Path) -> None:
+    """Remove MCP server config files and deregister from Claude Code."""
+    import subprocess
+
+    mcp_env = root / "confluent-mcp.env"
+    if mcp_env.exists():
+        mcp_env.unlink()
+        print("✓ Removed confluent-mcp.env")
+
+    result = subprocess.run(
+        ["claude", "mcp", "remove", "confluent-f1-mcp", "-s", "local"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        print("✓ Removed confluent-f1-mcp from Claude Code")
+
+    node_modules = root / "node_modules"
+    if node_modules.exists():
+        shutil.rmtree(node_modules)
+        print("✓ Removed node_modules/")
+
+    pkg_lock = root / "package-lock.json"
+    if pkg_lock.exists():
+        pkg_lock.unlink()
+        print("✓ Removed package-lock.json")
 
 
 if __name__ == "__main__":

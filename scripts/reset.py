@@ -22,6 +22,7 @@ from pathlib import Path
 import boto3
 from dotenv import dotenv_values
 
+from scripts.common.login_checks import check_aws_configured, check_confluent_login
 from scripts.common.terraform import get_project_root, run_terraform_output
 
 # Deleted every reset. car-telemetry/race-standings are recreated; the others
@@ -251,6 +252,16 @@ def recreate_table(core: dict, label: str, sql: str) -> bool:
 
 def main() -> None:
     print("=== F1 Demo Reset ===\n")
+
+    if not check_confluent_login():
+        print("Error: Not logged into Confluent Cloud.")
+        print("Run: confluent login")
+        sys.exit(1)
+
+    if not check_aws_configured():
+        print("Error: AWS CLI not configured.")
+        print("Run: aws configure")
+        sys.exit(1)
 
     root = get_project_root()
 

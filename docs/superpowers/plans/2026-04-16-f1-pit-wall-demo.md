@@ -213,7 +213,7 @@ variable "confluent_cloud_api_secret" {
 variable "region" {
   description = "AWS and Confluent Cloud region"
   type        = string
-  default     = "us-east-2"
+  default     = "us-east-1"
 }
 ```
 
@@ -223,7 +223,7 @@ variable "region" {
 # terraform/terraform.tfvars.example
 confluent_cloud_api_key    = "YOUR_CONFLUENT_CLOUD_API_KEY"
 confluent_cloud_api_secret = "YOUR_CONFLUENT_CLOUD_API_SECRET"
-region                     = "us-east-2"
+region                     = "us-east-1"
 ```
 
 - [ ] **Step 4: Create main.tf with providers and module calls**

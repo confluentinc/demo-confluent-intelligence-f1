@@ -379,7 +379,7 @@ Demo reads all values from core via `terraform_remote_state` (local backend). De
 | `confluent_cloud_api_secret` | Confluent Cloud API Secret (prompted by `uv run deploy`) |
 | `owner_email` | Email tagged on all AWS resources (prompted by `uv run deploy`) |
 
-Region is hardcoded to `us-east-2`. Resource names use the auto-generated prefix `f1-demo-<random>`. AWS credentials use the default provider chain (`~/.aws/credentials`, env vars, or IAM role).
+Region is hardcoded to `us-east-1`. Resource names use the auto-generated prefix `f1-demo-<random>`. AWS credentials use the default provider chain (`~/.aws/credentials`, env vars, or IAM role).
 
 ### Modules (8 Total)
 
@@ -594,7 +594,7 @@ Reference queries in `tableflow/EXAMPLE-QUERIES.md`.
 34. **Two-stack Terraform split** — `terraform/core/` (CC infra) and `terraform/demo/` (AWS + Flink tables). Demo reads core outputs via `terraform_remote_state` with local backend. Demo has zero variables.
 35. **`uv run deploy` flow** — Checks CLI logins (confluent, terraform, aws), prompts for 3 values (CC API key, CC secret, owner email), writes `credentials.env` + `terraform.tfvars`, runs `terraform apply` on core then demo.
 36. **`credentials.env` is internal** — Created and managed by `deploy.py`. No example template. Users provide values through interactive prompts only. Gitignored.
-37. **Region hardcoded** — `us-east-2` is set as a `local` in `terraform/core/main.tf`. Not a variable, not prompted.
+37. **Region hardcoded** — `us-east-1` is set as a `local` in `terraform/core/main.tf`. Not a variable, not prompted.
 
 ---
 

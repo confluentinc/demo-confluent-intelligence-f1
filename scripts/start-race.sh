@@ -15,7 +15,7 @@ echo "  Cluster: $CLUSTER"
 echo "  Task: $TASK_DEF"
 
 TASK_ARN=$(aws ecs run-task \
-  --region us-east-2 \
+  --region us-east-1 \
   --cluster "$CLUSTER" \
   --task-definition "$TASK_DEF" \
   --launch-type FARGATE \
@@ -26,4 +26,4 @@ TASK_ARN=$(aws ecs run-task \
 echo "Race started! Task: $TASK_ARN"
 echo "$TASK_ARN" > "$SCRIPT_DIR/.race-task-arn"
 LOG_GROUP=$(cd "$TF_DIR" && terraform output -raw ecs_log_group)
-echo "Logs: aws logs tail --region us-east-2 $LOG_GROUP --follow"
+echo "Logs: aws logs tail --region us-east-1 $LOG_GROUP --follow"
