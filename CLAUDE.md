@@ -265,7 +265,7 @@ Single Flink SQL statement using CTEs. Currently deployed directly via Confluent
 **Input:** `car-telemetry` (stream), `race-standings` (versioned table for temporal join)
 **Output:** `car-state` (one record per lap)
 
-**CTE pattern:** `windowed` (10s TUMBLE on car-telemetry, AVG all metrics, MAX lap) → `anomaly` (AI_DETECT_ANOMALIES on 11 metrics with OVER window) → final SELECT (extract `.is_anomaly` booleans + temporal join with race-standings for position/gap/pit/tire context).
+**CTE pattern:** `enriched` (temporal join `car-telemetry` × `race-standings` on `event_time`) → `windowed` (10s TUMBLE, AVG all metrics, MAX lap + standings) → `anomaly` (AI_DETECT_ANOMALIES on `tire_temp_fl_c` only with OVER window) → final SELECT (CASE filter for upper-bound-only spikes).
 
 **Full SQL:** `demo-reference/enrichment_anomaly.sql`
 
@@ -273,12 +273,15 @@ Single Flink SQL statement using CTEs. Currently deployed directly via Confluent
 
 | Parameter | Value |
 |---|---|
-| `upperBoundConfidencePercentage` | 99.0 (sensitive to spikes) |
-| `lowerBoundConfidencePercentage` | 99.9 (tolerant of dips/declines) |
-| `minContextSize` / `maxContextSize` | Defaults (20 / 512) |
+| `upperBoundConfidencePercentage` | 99.99 (very strict — synthetic data is noisy) |
+| `lowerBoundConfidencePercentage` | 99.99 (very strict) |
+| `minContextSize` | 30 (delays warmup ~5 min, but stabilizes predictions) |
+| `maxContextSize` | 200 (caps history for faster inference) |
 | `model` | Default (`timesfm-2.5`) |
 
-**Only `tire_temp_fl_c` produces an anomaly** (spike to ~145C at lap 32). All other metrics follow gradual/predictable patterns.
+**Only `tire_temp_fl_c` runs through AI_DETECT_ANOMALIES.** Other metrics either carry too much noise (brake ±25°C, battery cycle) or are too gradual/predictable to be worth analyzing — they appear in the result row as raw values without anomaly flags. The hero anomaly at lap 32 (tire spike to ~145°C) is the entire demo story.
+
+**CASE filter:** Anomalies only fire when `actual_value > upper_bound`. Without this, the post-pit drop at lap 33 (145°C → 95°C) flags a second anomaly that's semantically a recovery, not a problem.
 
 ---
 
@@ -569,18 +572,27 @@ Reference queries in `tableflow/EXAMPLE-QUERIES.md`.
 22. **Schema Registry API key** — Separate from Kafka API key. Created in cluster module. `EnvironmentAdmin` role covers SR access.
 23. **Temporal join needs both watermarks** — Both sides need advancing watermarks. Versioned table needs PRIMARY KEY + watermark.
 24. **Semi-scripted simulator** — Stateful data generator. Script key events (pit laps per driver), simulate the rest (gaps, positions, degradation) via cumulative race time model.
+25. **PRIMARY KEY only on tables that semantically need upsert** — `car-telemetry` is single-car, append-only, windowed-aggregate consumed. PRIMARY KEY (car_number) was a copy-paste from `race-standings` and caused Flink to register an Avro INT key schema. The simulator writes string keys → Job 1 deserialization failures. Fix: drop PRIMARY KEY + DISTRIBUTED BY from `car-telemetry`. Keep PRIMARY KEY on `race-standings` because it needs versioned-table semantics for the temporal join.
+
+### Flink SQL Gotchas (Job 1 — Enrichment + AI)
+26. **Temporal join must be BEFORE OVER aggregations, not after** — `JOIN race-standings FOR SYSTEM_TIME AS OF a.window_time` placed in the final SELECT after multiple OVER aggregations silently emits zero rows. `window_time` loses its rowtime attribute through the OVER chain. Fix: put the temporal join in an `enriched` CTE on the raw stream (using `event_time`, still a clean rowtime), then window/aggregate the joined output.
+27. **Default Flink statement startup mode is `latest`** — A new INSERT INTO / SELECT statement only sees messages arriving AFTER it starts. If the race is mid-flight when you deploy a Flink job, you'll miss earlier laps. Either deploy Flink jobs BEFORE starting the race, or add the SQL hint `/*+ OPTIONS('scan.startup.mode'='earliest-offset') */` to the source.
+28. **AI_DETECT_ANOMALIES default thresholds are too loose for noisy synthetic data** — Default `confidencePercentage=99.0` flags ~1% of normal points just from variance. With 11 metrics × 57 windows that's a lot of false positives. For the simulator's noise levels, use `99.99` confidence + `minContextSize=30` + `maxContextSize=200`. Or just drop the noisy metrics from the AI calls entirely (recommended).
+29. **AI_DETECT_ANOMALIES output struct fields** — `is_anomaly` (BOOLEAN, NULL during warmup), `actual_value`, `forecast_value`, `lower_bound`, `upper_bound`, plus `timestamp`. Use `actual_value > upper_bound` to filter to upper-bound spikes only (avoids flagging post-pit drops as anomalies).
+30. **AI_DETECT_ANOMALIES warmup behavior** — During warmup (rows < `minContextSize`), the function still emits a row, but `is_anomaly` is NULL. Don't expect zero rows during warmup; expect rows with NULL anomaly fields.
+31. **Schema Registry hard-delete required after DROP TABLE** — Dropping a Flink table deletes the Kafka topic but leaves `<topic>-key` and `<topic>-value` subjects in Schema Registry. Recreating the table with a different schema fails until you `confluent schema-registry schema delete --subject X --version all` (soft) then `--permanent` (hard) for both subjects.
 
 ### Git & Deployment
-25. **Standalone git repo** — F1 project has its own `.git` at `F1/` root, separate from the parent monorepo. Remote: `confluentinc/demo-confluent-intelligence-f1`.
-26. **`git push-external`** — Required for pushing to `confluentinc` org repos (Confluent security policy). Goes through airlock proprietary code check.
+32. **Standalone git repo** — F1 project has its own `.git` at `F1/` root, separate from the parent monorepo. Remote: `confluentinc/demo-confluent-intelligence-f1`.
+33. **`git push-external`** — Required for pushing to `confluentinc` org repos (Confluent security policy). Goes through airlock proprietary code check.
 
 ---
 
 ### Deployment Tooling
-27. **Two-stack Terraform split** — `terraform/core/` (CC infra) and `terraform/demo/` (AWS + Flink tables). Demo reads core outputs via `terraform_remote_state` with local backend. Demo has zero variables.
-28. **`uv run deploy` flow** — Checks CLI logins (confluent, terraform, aws), prompts for 3 values (CC API key, CC secret, owner email), writes `credentials.env` + `terraform.tfvars`, runs `terraform apply` on core then demo.
-29. **`credentials.env` is internal** — Created and managed by `deploy.py`. No example template. Users provide values through interactive prompts only. Gitignored.
-30. **Region hardcoded** — `us-east-2` is set as a `local` in `terraform/core/main.tf`. Not a variable, not prompted.
+34. **Two-stack Terraform split** — `terraform/core/` (CC infra) and `terraform/demo/` (AWS + Flink tables). Demo reads core outputs via `terraform_remote_state` with local backend. Demo has zero variables.
+35. **`uv run deploy` flow** — Checks CLI logins (confluent, terraform, aws), prompts for 3 values (CC API key, CC secret, owner email), writes `credentials.env` + `terraform.tfvars`, runs `terraform apply` on core then demo.
+36. **`credentials.env` is internal** — Created and managed by `deploy.py`. No example template. Users provide values through interactive prompts only. Gitignored.
+37. **Region hardcoded** — `us-east-2` is set as a `local` in `terraform/core/main.tf`. Not a variable, not prompted.
 
 ---
 
