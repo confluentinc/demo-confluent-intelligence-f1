@@ -6,12 +6,11 @@ yum install -y docker
 systemctl start docker
 systemctl enable docker
 
-# Init SQL — content injected by terraform templatefile() from data/*.sql
-# Files are gzip+base64 encoded to fit within EC2 user_data's 16KB limit.
+# Init SQL — content injected by terraform templatefile() from data/race_results_seed.sql
+# Gzip+base64 encoded to fit within EC2 user_data's 16KB limit.
 mkdir -p /opt/postgres-init
 
-echo "${drivers_seed_b64}" | base64 -d | gunzip > /opt/postgres-init/01_drivers.sql
-echo "${race_results_seed_b64}" | base64 -d | gunzip > /opt/postgres-init/02_race_results.sql
+echo "${race_results_seed_b64}" | base64 -d | gunzip > /opt/postgres-init/01_race_results.sql
 
 # Start Postgres with CDC-ready config
 docker run -d \

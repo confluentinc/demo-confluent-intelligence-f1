@@ -180,7 +180,7 @@ confluent connect cluster create \
   --cluster $(cd terraform/core && terraform output -raw cluster_id)
 ```
 
-**What this creates:** A `drivers` topic with 22 records (car_number, driver, team, nationality, championships, etc.).
+**What this creates:** A `race_results` topic with 198 records (22 drivers × 9 prior GPs), each with starting/finishing positions, pit_stops, and tire stints. Composite primary key `(race_id, car_number)`.
 
 ---
 
@@ -381,7 +381,7 @@ In the **Confluent Cloud UI**:
    - Format: **Delta Lake**
    - Storage: **BYOS** (Bring Your Own Storage)
    - Provider integration: select `f1-demo-aws-integration`
-3. Repeat for `drivers`
+3. Repeat for `race_results`
 
 These topics are now continuously materialized as Delta Lake tables in S3.
 
@@ -398,16 +398,16 @@ CREATE TABLE f1_demo.pit_decisions
   USING DELTA
   LOCATION 's3://f1-demo-tableflow-<hex>/topics/pit-decisions/';
 
-CREATE TABLE f1_demo.drivers
+CREATE TABLE f1_demo.race_results
   USING DELTA
-  LOCATION 's3://f1-demo-tableflow-<hex>/topics/drivers/';
+  LOCATION 's3://f1-demo-tableflow-<hex>/topics/race_results/';
 ```
 
 ### Create a Genie Space
 
 1. In Databricks, go to **Genie** -> **Create Space**
 2. Name: `F1 Pit Strategy Analytics`
-3. Add tables: `f1_demo.pit_decisions`, `f1_demo.drivers`
+3. Add tables: `f1_demo.pit_decisions`, `f1_demo.race_results`
 4. Description: *"Analyze F1 pit strategy decisions made by River Racing's AI agent during the Silverstone Grand Prix."*
 
 ### Ask Genie
