@@ -21,6 +21,7 @@ deploy = "deploy:main"
 destroy = "scripts.common.destroy:main"
 api-keys = "scripts.common.api_keys:main"
 setup-mcp = "scripts.setup_mcp:main"
+reset = "scripts.reset:main"
 
 [project.urls]
 Repository = "https://github.com/confluentinc/demo-confluent-intelligence-f1"

@@ -74,7 +74,77 @@ module "tableflow" {
   owner_email    = local.owner_email
 }
 
-# --- Generated connector configs ---
+# --- Managed connectors ---
+
+resource "confluent_connector" "mq_source" {
+  environment {
+    id = data.terraform_remote_state.core.outputs.environment_id
+  }
+  kafka_cluster {
+    id = data.terraform_remote_state.core.outputs.cluster_id
+  }
+  config_sensitive = {
+    "kafka.api.key"    = data.terraform_remote_state.core.outputs.app_api_key
+    "kafka.api.secret" = data.terraform_remote_state.core.outputs.app_api_secret
+    "mq.password"      = "passw0rd"
+  }
+  config_nonsensitive = {
+    "connector.class"          = "IbmMQSource"
+    "name"                     = "f1-mq-source"
+    "kafka.auth.mode"          = "SERVICE_ACCOUNT"
+    "kafka.service.account.id" = data.terraform_remote_state.core.outputs.service_account_id
+    "kafka.topic"              = "race-standings-raw"
+    "mq.hostname"              = module.mq.mq_public_ip
+    "mq.port"                  = "1414"
+    "mq.queue.manager"         = "QM1"
+    "mq.channel"               = "DEV.ADMIN.SVRCONN"
+    "jms.destination.name"     = "dev/race-standings"
+    "jms.destination.type"     = "topic"
+    "jms.subscription.durable" = "true"
+    "jms.subscription.name"    = "f1-mq-source-sub"
+    "mq.username"              = "admin"
+    "output.data.format"       = "AVRO"
+    "tasks.max"                = "1"
+  }
+  depends_on = [module.topics, module.mq]
+}
+
+resource "confluent_connector" "postgres_cdc" {
+  environment {
+    id = data.terraform_remote_state.core.outputs.environment_id
+  }
+  kafka_cluster {
+    id = data.terraform_remote_state.core.outputs.cluster_id
+  }
+  config_sensitive = {
+    "kafka.api.key"     = data.terraform_remote_state.core.outputs.app_api_key
+    "kafka.api.secret"  = data.terraform_remote_state.core.outputs.app_api_secret
+    "database.password" = "f1passw0rd"
+  }
+  config_nonsensitive = {
+    "connector.class"                   = "PostgresCdcSourceV2"
+    "name"                              = "f1-postgres-cdc"
+    "kafka.auth.mode"                   = "SERVICE_ACCOUNT"
+    "kafka.service.account.id"          = data.terraform_remote_state.core.outputs.service_account_id
+    "database.hostname"                 = module.postgres.postgres_public_ip
+    "database.port"                     = "5432"
+    "database.user"                     = "f1user"
+    "database.dbname"                   = "f1demo"
+    "topic.prefix"                      = "f1demo"
+    "table.include.list"                = "public.drivers,public.race_results"
+    "output.data.format"                = "JSON"
+    "tasks.max"                         = "1"
+    "transforms"                        = "Reroute,Unwrap"
+    "transforms.Reroute.type"           = "io.confluent.connect.cloud.transforms.TopicRegexRouter"
+    "transforms.Reroute.regex"          = "^.*\\.public\\.(.+)$"
+    "transforms.Reroute.replacement"    = "$1"
+    "transforms.Unwrap.type"            = "io.debezium.transforms.ExtractNewRecordState"
+    "transforms.Unwrap.drop.tombstones" = "false"
+  }
+  depends_on = [module.postgres]
+}
+
+# --- Generated connector configs (for manual CLI deployment fallback) ---
 
 resource "local_file" "mq_connector_config" {
   filename = "${path.module}/../../generated/mq_connector_config.json"
@@ -117,7 +187,7 @@ resource "local_file" "cdc_connector_config" {
       "database.password"        = "f1passw0rd"
       "database.dbname"          = "f1demo"
       "topic.prefix"             = "f1demo"
-      "table.include.list"       = "public.race_results"
+      "table.include.list"       = "public.drivers,public.race_results"
       "output.data.format"       = "JSON"
       "tasks.max"                = "1"
       # Strip "f1demo.public." prefix so topics are just `drivers` and `race_results`.

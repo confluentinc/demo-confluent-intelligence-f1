@@ -5,3 +5,7 @@ output "car_telemetry_topic" {
 output "race_standings_topic" {
   value = "race-standings"
 }
+
+output "race_standings_raw_topic" {
+  value = "race-standings-raw"
+}

@@ -112,3 +112,65 @@ resource "confluent_flink_statement" "create_race_standings_table" {
 
   depends_on = [confluent_flink_statement.create_car_telemetry_table]
 }
+
+# Pre-create race-standings-raw with the exact JMS Avro schema the MQ connector produces.
+# Avoids schema conflicts when the connector auto-creates the topic on first message.
+resource "confluent_flink_statement" "create_race_standings_raw_table" {
+  organization {
+    id = var.organization_id
+  }
+  environment {
+    id = var.environment_id
+  }
+  compute_pool {
+    id = var.compute_pool_id
+  }
+  principal {
+    id = var.service_account_id
+  }
+
+  rest_endpoint = var.flink_rest_endpoint
+
+  credentials {
+    key    = var.flink_api_key
+    secret = var.flink_api_secret
+  }
+
+  statement = <<-EOT
+    CREATE TABLE `race-standings-raw` (
+      `key` VARBINARY(2147483647),
+      `messageID` VARCHAR(2147483647) NOT NULL,
+      `messageType` VARCHAR(2147483647) NOT NULL,
+      `timestamp` BIGINT NOT NULL,
+      `deliveryMode` INT NOT NULL,
+      `correlationID` VARCHAR(2147483647),
+      `replyTo` ROW<`destinationType` VARCHAR(2147483647) NOT NULL, `name` VARCHAR(2147483647) NOT NULL>,
+      `destination` ROW<`destinationType` VARCHAR(2147483647) NOT NULL, `name` VARCHAR(2147483647) NOT NULL>,
+      `redelivered` BOOLEAN NOT NULL,
+      `type` VARCHAR(2147483647),
+      `expiration` BIGINT NOT NULL,
+      `priority` INT NOT NULL,
+      `properties` MAP<VARCHAR(2147483647) NOT NULL, ROW<`propertyType` VARCHAR(2147483647) NOT NULL, `boolean` BOOLEAN, `byte` TINYINT, `short` SMALLINT, `integer` INT, `long` BIGINT, `float` FLOAT, `double` DOUBLE, `string` VARCHAR(2147483647), `bytes` VARBINARY(2147483647)> NOT NULL> NOT NULL,
+      `bytes` VARBINARY(2147483647),
+      `map` MAP<VARCHAR(2147483647) NOT NULL, ROW<`propertyType` VARCHAR(2147483647) NOT NULL, `boolean` BOOLEAN, `byte` TINYINT, `short` SMALLINT, `integer` INT, `long` BIGINT, `float` FLOAT, `double` DOUBLE, `string` VARCHAR(2147483647), `bytes` VARBINARY(2147483647)> NOT NULL>,
+      `text` VARCHAR(2147483647)
+    )
+    DISTRIBUTED BY HASH(`key`) INTO 1 BUCKETS
+    WITH (
+      'changelog.mode' = 'append',
+      'connector' = 'confluent',
+      'kafka.cleanup-policy' = 'delete',
+      'kafka.max-message-size' = '8 mb',
+      'kafka.retention.time' = '7 d',
+      'key.format' = 'raw',
+      'value.format' = 'avro-registry'
+    );
+  EOT
+
+  properties = {
+    "sql.current-catalog"  = var.environment_name
+    "sql.current-database" = var.cluster_name
+  }
+
+  depends_on = [confluent_flink_statement.create_race_standings_table]
+}
