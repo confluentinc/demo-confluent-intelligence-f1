@@ -105,20 +105,26 @@ resource "local_file" "cdc_connector_config" {
   content = jsonencode({
     name = "f1-postgres-cdc"
     config = {
-      "connector.class"          = "PostgresSource"
+      "connector.class"          = "PostgresCdcSourceV2"
       "kafka.auth.mode"          = "SERVICE_ACCOUNT"
       "kafka.service.account.id" = data.terraform_remote_state.core.outputs.service_account_id
-      "connection.host"          = module.postgres.postgres_public_ip
-      "connection.port"          = "5432"
-      "connection.user"          = "f1user"
-      "connection.password"      = "f1passw0rd"
-      "db.name"                  = "f1demo"
-      "table.include.list"       = "public.drivers"
+      "database.hostname"        = module.postgres.postgres_public_ip
+      "database.port"            = "5432"
+      "database.user"            = "f1user"
+      "database.password"        = "f1passw0rd"
+      "database.dbname"          = "f1demo"
+      "topic.prefix"             = "f1demo"
+      "table.include.list"       = "public.drivers,public.race_results"
       "output.data.format"       = "JSON"
       "tasks.max"                = "1"
-      "topic.prefix"             = ""
-      "topic.creation.default.partitions"         = "1"
-      "topic.creation.default.replication.factor" = "3"
+      # Strip "f1demo.public." prefix so topics are just `drivers` and `race_results`.
+      "transforms"                       = "Reroute,Unwrap"
+      "transforms.Reroute.type"          = "io.confluent.connect.cloud.transforms.TopicRegexRouter"
+      "transforms.Reroute.regex"         = "^.*\\.public\\.(.+)$"
+      "transforms.Reroute.replacement"   = "$1"
+      # Unwrap Debezium envelope so the value is just the row, not the change-event metadata.
+      "transforms.Unwrap.type"            = "io.debezium.transforms.ExtractNewRecordState"
+      "transforms.Unwrap.drop.tombstones" = "false"
     }
   })
 }

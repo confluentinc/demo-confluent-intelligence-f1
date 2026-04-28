@@ -1,19 +1,23 @@
 {
   "name": "f1-postgres-cdc",
   "config": {
-    "connector.class": "PostgresSource",
+    "connector.class": "PostgresCdcSourceV2",
     "kafka.auth.mode": "SERVICE_ACCOUNT",
     "kafka.service.account.id": "<SERVICE_ACCOUNT_ID>",
-    "connection.host": "<POSTGRES_PUBLIC_IP>",
-    "connection.port": "5432",
-    "connection.user": "f1user",
-    "connection.password": "f1passw0rd",
-    "db.name": "f1demo",
-    "table.include.list": "public.drivers",
+    "database.hostname": "<POSTGRES_PUBLIC_IP>",
+    "database.port": "5432",
+    "database.user": "f1user",
+    "database.password": "f1passw0rd",
+    "database.dbname": "f1demo",
+    "topic.prefix": "f1demo",
+    "table.include.list": "public.drivers,public.race_results",
     "output.data.format": "JSON",
     "tasks.max": "1",
-    "topic.prefix": "",
-    "topic.creation.default.partitions": "1",
-    "topic.creation.default.replication.factor": "3"
+    "transforms": "Reroute,Unwrap",
+    "transforms.Reroute.type": "io.confluent.connect.cloud.transforms.TopicRegexRouter",
+    "transforms.Reroute.regex": "^.*\\.public\\.(.+)$",
+    "transforms.Reroute.replacement": "$1",
+    "transforms.Unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.Unwrap.drop.tombstones": "false"
   }
 }
