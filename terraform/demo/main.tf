@@ -131,7 +131,7 @@ resource "confluent_connector" "postgres_cdc" {
     "database.user"                     = "f1user"
     "database.dbname"                   = "f1demo"
     "topic.prefix"                      = "f1demo"
-    "table.include.list"                = "public.drivers,public.race_results"
+    "table.include.list"                = "public.race_results"
     "output.data.format"                = "JSON"
     "tasks.max"                         = "1"
     "transforms"                        = "Reroute,Unwrap"
