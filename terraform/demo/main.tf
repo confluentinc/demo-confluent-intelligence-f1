@@ -187,6 +187,45 @@ resource "confluent_connector" "postgres_cdc" {
   depends_on = [null_resource.wait_for_postgres]
 }
 
+# --- Job 0: Parse race-standings-raw → race-standings ---
+# Reads the SQL from demo-reference/parse_standings.sql so the file remains
+# the single source of truth (also referenced from README and Walkthrough).
+#
+# Dependency chain that guarantees race-standings-raw exists before this
+# statement deploys:
+#   module.mq                 → EC2 boots, user_data publishes a retained
+#                               warmup message to dev/race-standings
+#   confluent_connector.mq_source → subscribes (gets the retained warmup)
+#                                   and writes to race-standings-raw,
+#                                   materialising the topic + schema
+#   this statement            → deploys against the now-existing topic
+
+resource "confluent_flink_statement" "job0_parse_standings" {
+  organization {
+    id = data.confluent_organization.main.id
+  }
+  environment {
+    id = data.terraform_remote_state.core.outputs.environment_id
+  }
+  compute_pool {
+    id = data.terraform_remote_state.core.outputs.compute_pool_id
+  }
+  principal {
+    id = data.terraform_remote_state.core.outputs.service_account_id
+  }
+  rest_endpoint = data.terraform_remote_state.core.outputs.flink_rest_endpoint
+  credentials {
+    key    = data.terraform_remote_state.core.outputs.flink_api_key
+    secret = data.terraform_remote_state.core.outputs.flink_api_secret
+  }
+  statement = file("${path.module}/../../demo-reference/parse_standings.sql")
+  properties = {
+    "sql.current-catalog"  = data.terraform_remote_state.core.outputs.environment_name
+    "sql.current-database" = data.terraform_remote_state.core.outputs.cluster_name
+  }
+  depends_on = [confluent_connector.mq_source, module.topics]
+}
+
 # --- Generated connector configs (for manual CLI deployment fallback) ---
 
 resource "local_file" "mq_connector_config" {
@@ -234,10 +273,10 @@ resource "local_file" "cdc_connector_config" {
       "output.data.format"       = "JSON"
       "tasks.max"                = "1"
       # Strip "f1demo.public." prefix so the topic is just `driver_race_history`.
-      "transforms"                       = "Reroute,Unwrap"
-      "transforms.Reroute.type"          = "io.confluent.connect.cloud.transforms.TopicRegexRouter"
-      "transforms.Reroute.regex"         = "^.*\\.public\\.(.+)$"
-      "transforms.Reroute.replacement"   = "$1"
+      "transforms"                     = "Reroute,Unwrap"
+      "transforms.Reroute.type"        = "io.confluent.connect.cloud.transforms.TopicRegexRouter"
+      "transforms.Reroute.regex"       = "^.*\\.public\\.(.+)$"
+      "transforms.Reroute.replacement" = "$1"
       # Unwrap Debezium envelope so the value is just the row, not the change-event metadata.
       "transforms.Unwrap.type"            = "io.debezium.transforms.ExtractNewRecordState"
       "transforms.Unwrap.drop.tombstones" = "false"

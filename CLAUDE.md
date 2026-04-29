@@ -20,10 +20,12 @@
 Car Sensors (internal)     ──→ Direct to Kafka            ──→ car-telemetry
                                                                    │
 FIA Timing Feed (external) ──→ IBM MQ ──→ MQ Connector ──→ race-standings-raw
-                                                                   │
-                                                        Job 0: Parse + Key (Flink SQL)
+   (MQ EC2 user_data also publishes 1 retained warmup msg            │
+    so the connector materialises this topic at deploy time)         │
+                                                        Job 0: Parse + Key (Flink SQL, Terraform-managed)
                                                         - Extract JSON from JMS text
                                                         - Set car_number as key
+                                                        - WHERE car_number > 0 (drops warmup)
                                                                    │
                                                             race-standings
                                                                    │
@@ -158,13 +160,13 @@ Position, gaps, pit status, and tire info for ALL 22 cars. FIA feed arrives thro
 | Topic | Producer | Consumer | Created By | Tableflow |
 |---|---|---|---|---|
 | `car-telemetry` | Race simulator (direct to Kafka) | Job 1: Enrichment | **Terraform** (Flink CREATE TABLE) | No |
-| `race-standings-raw` | MQ Connector (JMS envelope) | Job 0: Parse + Key | **MQ Connector** (auto-creates during demo) | No |
+| `race-standings-raw` | MQ Connector (JMS envelope) | Job 0: Parse + Key | **MQ Connector** (auto-creates during `terraform apply` via MQ EC2 warmup) | No |
 | `race-standings` | Job 0: Parse + Key | Job 1: Enrichment (temporal join) + RTCE | **Terraform** (Flink CREATE TABLE) | No |
-| `driver_race_history` | Postgres → CDC Debezium | — | **CDC Connector** (during demo) | **Yes** |
+| `driver_race_history` | Postgres → CDC Debezium | — | **CDC Connector** (during `terraform apply`) | **Yes** |
 | `car-state` | Job 1: Enrichment + Anomaly | Job 2: Agent | **Flink statement** (direct SQL; DBT planned, not yet implemented) | No |
 | `pit-decisions` | Job 2: Agent | — | **Agent** (during demo) | **Yes** |
 
-**Only `car-telemetry` and `race-standings` are created by Terraform** (need schemas, watermarks, primary keys for temporal joins). `race-standings-raw` is created by the MQ connector with its JMS envelope schema. The other topics are created during the demo.
+**`car-telemetry` and `race-standings` are created by Terraform** via Flink CREATE TABLE (need schemas, watermarks, primary keys for temporal joins). **`race-standings-raw` is materialised at deploy time** — the MQ EC2's `user_data` publishes a single retained warmup message to `dev/race-standings`, the MQ Source Connector picks it up on subscribe, and the topic + JMS envelope schema appear in Kafka before Job 0 deploys. Job 0's `WHERE car_number > 0` filter discards the warmup record so it never reaches `race-standings`.
 
 ---
 
@@ -364,13 +366,15 @@ Terraform is split into two independent root configs that share modules:
 - Flink compute pool, Bedrock LLM connections + models
 - All resources use the branded prefix `RIVER-RACING-${var.deployment_id}` (uppercase). For demo recordings, use `deployment_id=PROD` so on-screen names read `RIVER-RACING-PROD-ENV`, `RIVER-RACING-PROD-CLUSTER`.
 
-**`terraform/demo/`** — AWS infrastructure + Flink tables. Can be torn down and redeployed independently.
+**`terraform/demo/`** — AWS infrastructure + Flink tables + managed connectors + Job 0. Can be torn down and redeployed independently.
 - `car-telemetry` and `race-standings` topics (Flink CREATE TABLE)
-- EC2 with IBM MQ (pub/sub topic, durable subscription)
+- EC2 with IBM MQ (pub/sub topic, durable subscription, retained warmup publisher in user_data)
 - ECR + ECS Fargate (race simulator)
 - EC2 with Postgres (198 historical driver_race_history pre-loaded)
 - S3 + IAM for Tableflow
-- Auto-generated MQ connector config (`generated/mq_connector_config.json`)
+- `confluent_connector.mq_source` and `confluent_connector.postgres_cdc` (managed connectors)
+- `confluent_flink_statement.job0_parse_standings` (Job 0, deploys after MQ connector is up)
+- Auto-generated connector configs in `generated/` (CLI fallback only)
 
 Demo reads all values from core via `terraform_remote_state` (local backend). Demo has zero variables.
 
@@ -396,7 +400,7 @@ Region is hardcoded to `us-east-1` (RTCE availability). All resources use the br
 | `modules/cluster/` | core | Kafka cluster + service accounts + API keys (Kafka + SR) |
 | `modules/flink/` | core | Compute pool + Flink API key |
 | `modules/topics/` | demo | `car-telemetry` + `race-standings` topics (Flink CREATE TABLE) |
-| `modules/mq/` | demo | EC2 + Docker IBM MQ (topic: dev/race-standings, durable subscription) |
+| `modules/mq/` | demo | EC2 + Docker IBM MQ (topic: dev/race-standings, durable subscription). `user_data` also installs pymqi + IBM MQ client and publishes one **retained** warmup message so `race-standings-raw` materialises before Job 0 deploys. |
 | `modules/ecs/` | demo | ECR repo + ECS Fargate cluster + task definition. Docker `--platform linux/amd64`. |
 | `modules/postgres/` | demo | EC2 + Docker Postgres (pre-loaded with 198 historical driver_race_history rows) |
 | `modules/tableflow/` | demo | S3 bucket + IAM role + provider integration (`customer_role_arn`) |
@@ -404,20 +408,19 @@ Region is hardcoded to `us-east-1` (RTCE availability). All resources use the br
 ### What Terraform Deploys vs. Demo Hero Moments
 
 **`uv run deploy` creates (before demo):**
-- All Confluent Cloud resources (environment, cluster, SR, Flink pool, API keys)
+- All Confluent Cloud resources (environment, cluster, SR, Flink pool, API keys, Bedrock model + connection)
 - `car-telemetry` + `race-standings` topics with schemas/watermarks/comments
-- All AWS resources (MQ EC2, Postgres EC2, ECS task definition, S3 for Tableflow)
-- Auto-generated connector configs at `generated/mq_connector_config.json` and `generated/cdc_connector_config.json`
+- All AWS resources (MQ EC2 with retained warmup publisher, Postgres EC2, ECS task definition, S3 for Tableflow)
+- Both managed connectors (`f1-mq-source`, `f1-postgres-cdc`) — `race-standings-raw` and `driver_race_history` topics materialise automatically
+- Job 0 (`parse_standings`) Flink statement — RUNNING, sees the warmup at offset 0, filters it via `WHERE car_number > 0`, sits idle waiting for laps
+- Auto-generated connector configs at `generated/mq_connector_config.json` and `generated/cdc_connector_config.json` (CLI fallback only)
 
 **Left for demo (hero moments):**
-1. Deploy MQ Source Connector (creates `race-standings-raw` topic)
-2. Start race simulator (`./scripts/start-race.sh`)
-3. Deploy Job 0: Parse standings (Flink SQL in SQL Workspace)
-4. Deploy CDC Debezium Connector (creates `driver_race_history` topic)
-5. Deploy Job 1: Enrichment + anomaly detection (Flink SQL)
-6. Deploy Job 2: Streaming Agent (Flink SQL — has placeholder endpoints)
-7. Enable Tableflow on `pit-decisions` and `driver_race_history`
-8. Query with Databricks Genie
+1. Start race simulator (`./scripts/start-race.sh`) — Job 0 immediately starts publishing parsed standings to `race-standings`
+2. Deploy Job 1: Enrichment + anomaly detection (Flink SQL in SQL Workspace)
+3. Deploy Job 2: Streaming Agent (Flink SQL — has placeholder endpoints)
+4. Enable Tableflow on `pit-decisions` and `driver_race_history`
+5. Query with Databricks Genie
 
 ---
 
@@ -606,10 +609,14 @@ Reference queries in `tableflow/EXAMPLE-QUERIES.md`.
 35. **`uv run deploy` flow** — Checks CLI logins (confluent, terraform, aws), prompts for 3 values (CC API key, CC secret, owner email), writes `credentials.env` + `terraform.tfvars`, runs `terraform apply` on core then demo.
 36. **`credentials.env` is internal** — Created and managed by `deploy.py`. No example template. Users provide values through interactive prompts only. Gitignored.
 37. **Region hardcoded** — `us-east-1` is set as a `local` in `terraform/core/main.tf`. Not a variable, not prompted.
+38. **`pymqi` requires `$HOME` set or it errors with `AMQ6235E: Directory '$HOME' missing`** — IBM MQ client probes `$HOME` for trace/error logs at connect time. EC2 user_data runs as root with no HOME by default, so any `pymqi.connect(...)` call dies immediately. Fix: `export HOME=/root` in user_data and prepend `HOME=/root` to the warmup-script invocation. Cost us a full deploy cycle to discover.
+39. **MQ retained publication + Confluent MQ Source Connector durable subscription = duplicate delivery on first subscribe** — One `MQPMO_RETAIN` publish lands in `race-standings-raw` as **two** identical Kafka records (same `event_time`). Cosmetic, not from the publisher. Job 0's `WHERE car_number > 0` filter handles it cleanly. If you ever need to eliminate it, publish a zero-length retained message right after the warmup to clear the retained state — but the filter is simpler.
+40. **`AWS_RETRY_MODE=adaptive` + `AWS_MAX_ATTEMPTS=10` in `deploy.py`** — Without this, a single transient DNS lookup failure against an AWS endpoint (e.g. `api.ecr.us-east-1.amazonaws.com`) fails the whole `terraform apply`. The AWS provider's default retry only handles HTTP-layer errors, not network-layer DNS hiccups. `adaptive` mode also retries on DNS/socket failures with exponential backoff. Set as env vars before `run_terraform()` is invoked.
+41. **MQ EC2 `user_data` is what materialises `race-standings-raw`** — Without something publishing to MQ before the connector subscribes, the durable subscription has nothing to pull and `race-standings-raw` never appears in Kafka. Without that topic, Job 0's Flink statement fails validation (`Table 'race-standings-raw' does not exist`). The user_data publishes ONE retained warmup message during boot — the connector picks it up on subscribe and creates the topic + schema. This is the load-bearing piece that lets Job 0 be Terraform-managed.
 
 ---
 
-**Last Updated:** April 23, 2026
-**Document Version:** 5.0
+**Last Updated:** April 29, 2026
+**Document Version:** 6.0
 **Deployment Patterns:** Adapted from `confluentinc/quickstart-streaming-agents`
 **Parent Project:** World Cup Ticketing Demo (same repo structure pattern)

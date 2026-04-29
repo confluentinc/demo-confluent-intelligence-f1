@@ -1,14 +1,11 @@
 -- Job 0: Parse race-standings-raw (JMS envelope) into clean race-standings
--- Deployed after the MQ Source Connector creates race-standings-raw
--- Extracts JSON fields from the JMS text payload and sets car_number as key
+-- Deployed by Terraform once race-standings-raw exists (created via the MQ
+-- EC2's user_data publishing a single retained warmup message that the MQ
+-- Source Connector picks up on subscribe).
+-- Extracts JSON fields from the JMS text payload and sets car_number as key.
+-- The WHERE clause discards the warmup record (car_number = 0) so it never
+-- reaches the clean race-standings topic.
 
--- Step 1: Run this first so Job 0 reads from the beginning of the topic
--- (the connector may have already written data before Job 0 is deployed)
-ALTER TABLE `race-standings-raw` SET (
-  'scan.startup.mode' = 'earliest-offset'
-);
-
--- Step 2: Run this as a separate statement in the SQL workspace
 INSERT INTO `race-standings`
 SELECT
   CAST(JSON_VALUE(`text`, '$.car_number') AS INT) AS `car_number`,
@@ -24,4 +21,5 @@ SELECT
   CAST(JSON_VALUE(`text`, '$.tire_age_laps') AS INT) AS `tire_age_laps`,
   CAST(JSON_VALUE(`text`, '$.in_pit_lane' RETURNING BOOLEAN) AS BOOLEAN) AS `in_pit_lane`,
   TO_TIMESTAMP_LTZ(CAST(JSON_VALUE(`text`, '$.event_time') AS BIGINT), 3) AS `event_time`
-FROM `race-standings-raw`;
+FROM `race-standings-raw`
+WHERE CAST(JSON_VALUE(`text`, '$.car_number') AS INT) > 0;

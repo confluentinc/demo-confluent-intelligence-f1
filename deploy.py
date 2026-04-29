@@ -155,6 +155,14 @@ def main():
     for key, value in creds.items():
         os.environ[key] = value
 
+    # Make AWS provider resilient to transient network failures (DNS hiccups,
+    # VPN reconnects, brief socket timeouts). Without this, a single failed
+    # DNS lookup against an AWS endpoint can fail the whole terraform apply.
+    # `adaptive` retry mode handles network-layer errors in addition to the
+    # default API-throttling retries.
+    os.environ.setdefault("AWS_RETRY_MODE", "adaptive")
+    os.environ.setdefault("AWS_MAX_ATTEMPTS", "10")
+
     # Deploy core first
     core_path = root / "terraform" / "core"
     if not run_terraform(core_path):

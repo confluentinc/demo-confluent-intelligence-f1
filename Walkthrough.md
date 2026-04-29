@@ -107,45 +107,30 @@ In the **Confluent Cloud UI**, check:
 
 ---
 
-## 4. Deploy Flink Job 0: Parse Race Standings
+## 4. Job 0 (Parse Race Standings) — auto-deployed
 
-Open the **Flink SQL Workspace** in Confluent Cloud. Set your catalog and database:
+Job 0 is deployed automatically by Terraform once `race-standings-raw` exists. The MQ EC2's `user_data` publishes a single retained warmup message to `dev/race-standings` during boot; the MQ Source Connector picks it up on subscribe, materialises `race-standings-raw` in Kafka, and Terraform then deploys the parse statement against it. Job 0's `WHERE car_number > 0` filter discards the warmup record so it never reaches `race-standings`.
 
-```sql
-USE CATALOG `f1-demo-env`;
-USE `f1-demo-cluster`;
+The full SQL lives in `demo-reference/parse_standings.sql`.
+
+### Verify Job 0 is running
+
+```bash
+ENV_ID=$(cd terraform/core && terraform output -raw environment_id)
+POOL_ID=$(cd terraform/core && terraform output -raw compute_pool_id)
+confluent flink statement list \
+  --cloud aws --region us-east-1 \
+  --environment $ENV_ID --compute-pool $POOL_ID \
+  --status running
 ```
 
-Run Job 0 to extract structured fields from the JMS envelope and write to the clean `race-standings` topic:
-
-```sql
-INSERT INTO `race-standings`
-SELECT
-  CAST(JSON_VALUE(`text`, '$.car_number') AS INT) AS `car_number`,
-  JSON_VALUE(`text`, '$.driver') AS `driver`,
-  JSON_VALUE(`text`, '$.team') AS `team`,
-  CAST(JSON_VALUE(`text`, '$.lap') AS INT) AS `lap`,
-  CAST(JSON_VALUE(`text`, '$.position') AS INT) AS `position`,
-  CAST(JSON_VALUE(`text`, '$.gap_to_leader_sec') AS DOUBLE) AS `gap_to_leader_sec`,
-  CAST(JSON_VALUE(`text`, '$.gap_to_ahead_sec') AS DOUBLE) AS `gap_to_ahead_sec`,
-  CAST(JSON_VALUE(`text`, '$.last_lap_time_sec') AS DOUBLE) AS `last_lap_time_sec`,
-  CAST(JSON_VALUE(`text`, '$.pit_stops') AS INT) AS `pit_stops`,
-  JSON_VALUE(`text`, '$.tire_compound') AS `tire_compound`,
-  CAST(JSON_VALUE(`text`, '$.tire_age_laps') AS INT) AS `tire_age_laps`,
-  CAST(JSON_VALUE(`text`, '$.in_pit_lane' RETURNING BOOLEAN) AS BOOLEAN) AS `in_pit_lane`,
-  TO_TIMESTAMP_LTZ(CAST(JSON_VALUE(`text`, '$.event_time') AS BIGINT), 3) AS `event_time`
-FROM `race-standings-raw`;
-```
-
-### Verify
-
-Query the clean `race-standings` topic to see parsed data:
+Look for a `RUNNING` statement starting `INSERT INTO \`race-standings\``. Then in the **Flink SQL Workspace**:
 
 ```sql
 SELECT * FROM `race-standings`;
 ```
 
-You should see rows with structured fields: `car_number`, `driver`, `team`, `position`, `gap_to_leader_sec`, etc. for all 22 cars.
+You should see rows with structured fields (`car_number`, `driver`, `team`, `position`, `gap_to_leader_sec`, etc.) for all 22 cars once the simulator is publishing.
 
 ---
 

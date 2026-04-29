@@ -109,8 +109,11 @@ SELECT
   CAST(JSON_VALUE(`text`, '$.tire_age_laps') AS INT) AS `tire_age_laps`,
   CAST(JSON_VALUE(`text`, '$.in_pit_lane' RETURNING BOOLEAN) AS BOOLEAN) AS `in_pit_lane`,
   TO_TIMESTAMP_LTZ(CAST(JSON_VALUE(`text`, '$.event_time') AS BIGINT), 3) AS `event_time`
-FROM `race-standings-raw`;
+FROM `race-standings-raw`
+WHERE CAST(JSON_VALUE(`text`, '$.car_number') AS INT) > 0;
 ```
+
+The `WHERE` filter discards the warmup heartbeat (`car_number = 0`) that the MQ EC2 publishes during boot so `race-standings-raw` exists before the connector starts.
 
 #### Job 1: Enrichment + Anomaly Detection
 
