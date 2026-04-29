@@ -24,7 +24,7 @@ data "confluent_environment" "main" {
 }
 
 resource "confluent_service_account" "app" {
-  display_name = "f1-demo-app"
+  display_name = "${var.name_prefix}-app"
   description  = "Service account for F1 demo application"
 }
 
@@ -41,7 +41,7 @@ resource "confluent_role_binding" "app_environment_admin" {
 }
 
 resource "confluent_api_key" "app" {
-  display_name = "f1-demo-app-key"
+  display_name = "${var.name_prefix}-app-key"
 
   owner {
     id          = confluent_service_account.app.id
@@ -73,7 +73,7 @@ data "confluent_schema_registry_cluster" "main" {
 }
 
 resource "confluent_api_key" "schema_registry" {
-  display_name = "f1-demo-sr-key"
+  display_name = "${var.name_prefix}-sr-key"
 
   owner {
     id          = confluent_service_account.app.id

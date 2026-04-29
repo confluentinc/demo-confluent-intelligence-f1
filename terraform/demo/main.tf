@@ -70,6 +70,7 @@ module "postgres" {
 module "tableflow" {
   source         = "../modules/tableflow"
   environment_id = data.terraform_remote_state.core.outputs.environment_id
+  name_prefix    = "f1-demo-${var.deployment_id}"
   bucket_name    = "f1-demo-${var.deployment_id}-tableflow"
   owner_email    = local.owner_email
 }

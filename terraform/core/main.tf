@@ -22,6 +22,7 @@ module "cluster" {
   source         = "../modules/cluster"
   environment_id = module.environment.environment_id
   cluster_name   = "${local.name_prefix}-cluster"
+  name_prefix    = local.name_prefix
   cloud_provider = "AWS"
   cloud_region   = local.region
   owner_email    = var.owner_email
@@ -33,6 +34,7 @@ module "flink" {
   environment_id     = module.environment.environment_id
   environment_name   = "${local.name_prefix}-env"
   cluster_name       = "${local.name_prefix}-cluster"
+  name_prefix        = local.name_prefix
   cloud_provider     = "AWS"
   cloud_region       = local.region
   service_account_id = module.cluster.service_account_id

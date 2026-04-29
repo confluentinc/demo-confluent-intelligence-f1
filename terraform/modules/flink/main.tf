@@ -12,7 +12,7 @@ data "confluent_flink_region" "main" {
 }
 
 resource "confluent_flink_compute_pool" "main" {
-  display_name = "f1-demo-pool"
+  display_name = "${var.name_prefix}-pool"
   cloud        = var.cloud_provider
   region       = var.cloud_region
   max_cfu      = 10
@@ -23,7 +23,7 @@ resource "confluent_flink_compute_pool" "main" {
 }
 
 resource "confluent_api_key" "flink" {
-  display_name = "f1-demo-flink-key"
+  display_name = "${var.name_prefix}-flink-key"
 
   owner {
     id          = var.service_account_id

@@ -3,6 +3,11 @@ variable "environment_id" {
   type        = string
 }
 
+variable "name_prefix" {
+  description = "Prefix for all named Confluent Cloud resources (e.g. f1-demo-bren)"
+  type        = string
+}
+
 variable "cluster_name" {
   description = "Name for the Kafka cluster"
   type        = string

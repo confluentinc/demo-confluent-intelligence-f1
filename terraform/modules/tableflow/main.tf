@@ -39,7 +39,7 @@ resource "aws_s3_bucket_public_access_block" "tableflow" {
 
 # Confluent Provider Integration
 resource "confluent_provider_integration" "main" {
-  display_name = "f1-demo-aws-integration"
+  display_name = "${var.name_prefix}-aws-integration"
 
   environment {
     id = var.environment_id
