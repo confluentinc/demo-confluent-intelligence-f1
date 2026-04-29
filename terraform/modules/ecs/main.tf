@@ -10,7 +10,7 @@ data "aws_subnets" "default" {
 # --- ECR Repository ---
 
 resource "aws_ecr_repository" "simulator" {
-  name         = "f1-demo-${var.deployment_id}-simulator"
+  name         = "${lower(var.name_prefix)}-simulator"
   force_delete = true
 }
 
@@ -38,7 +38,7 @@ resource "null_resource" "docker_build_push" {
 # --- IAM Roles ---
 
 resource "aws_iam_role" "ecs_execution" {
-  name = "f1-demo-${var.deployment_id}-ecs-execution"
+  name = "${lower(var.name_prefix)}-ecs-execution"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -59,14 +59,14 @@ resource "aws_iam_role_policy_attachment" "ecs_execution" {
 # --- CloudWatch Logs ---
 
 resource "aws_cloudwatch_log_group" "simulator" {
-  name              = "/ecs/f1-${var.deployment_id}-simulator"
+  name              = "/ecs/${lower(var.name_prefix)}-simulator"
   retention_in_days = 7
 }
 
 # --- Security Group ---
 
 resource "aws_security_group" "ecs" {
-  name_prefix = "f1-demo-${var.deployment_id}-ecs-"
+  name_prefix = "${lower(var.name_prefix)}-ecs-"
   description = "Security group for F1 simulator ECS task"
   vpc_id      = data.aws_vpc.default.id
 
@@ -78,7 +78,7 @@ resource "aws_security_group" "ecs" {
   }
 
   tags = {
-    Name        = "f1-demo-${var.deployment_id}-ecs"
+    Name        = "${lower(var.name_prefix)}-ecs"
     owner_email = var.owner_email
   }
 }
@@ -86,13 +86,13 @@ resource "aws_security_group" "ecs" {
 # --- ECS Cluster ---
 
 resource "aws_ecs_cluster" "simulator" {
-  name = "f1-demo-${var.deployment_id}-simulator"
+  name = "${lower(var.name_prefix)}-simulator"
 }
 
 # --- ECS Task Definition ---
 
 resource "aws_ecs_task_definition" "simulator" {
-  family                   = "f1-${var.deployment_id}-simulator"
+  family                   = "${lower(var.name_prefix)}-simulator"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = "512"
@@ -100,7 +100,7 @@ resource "aws_ecs_task_definition" "simulator" {
   execution_role_arn       = aws_iam_role.ecs_execution.arn
 
   container_definitions = jsonencode([{
-    name      = "f1-${var.deployment_id}-simulator"
+    name      = "${lower(var.name_prefix)}-simulator"
     image     = "${aws_ecr_repository.simulator.repository_url}:latest"
     essential = true
 

@@ -9,7 +9,7 @@ Car Sensors ──→ Direct to Kafka ──→ car-telemetry ──┐
                                                      ├──→ Flink Job 1: Enrichment + Anomaly Detection ──→ car-state
 FIA Timing  ──→ IBM MQ ──→ MQ Connector ──→ race-standings-raw ──→ Flink Job 0: Parse + Key ──→ race-standings ──┘
                                                                                                         │
-Postgres    ──→ CDC Debezium ──→ race_results ──→ Tableflow                          Flink Job 2: Streaming Agent
+Postgres    ──→ CDC Debezium ──→ driver_race_history ──→ Tableflow                          Flink Job 2: Streaming Agent
                                                                                                         │
                                                                                                         ▼
                                                                                      pit-decisions ──→ Tableflow ──→ Databricks Genie
@@ -259,7 +259,7 @@ FROM `car-state`;
 
 In the Confluent Cloud UI, enable Tableflow on:
 - `pit-decisions` — agent output (Delta Lake format, BYOS to S3)
-- `race_results` — historical season data, 198 rows (Delta Lake format, BYOS to S3)
+- `driver_race_history` — historical season data, 198 rows (Delta Lake format, BYOS to S3)
 
 ### 6. Query with Databricks Genie
 

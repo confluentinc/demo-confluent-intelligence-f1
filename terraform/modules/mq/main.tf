@@ -14,7 +14,7 @@ data "aws_ami" "amazon_linux" {
 }
 
 resource "aws_security_group" "mq" {
-  name_prefix = "f1-demo-${var.deployment_id}-mq-"
+  name_prefix = "${lower(var.name_prefix)}-mq-"
   description = "Security group for IBM MQ + race simulator"
 
   ingress {
@@ -49,7 +49,7 @@ resource "aws_security_group" "mq" {
   }
 
   tags = {
-    Name        = "f1-demo-${var.deployment_id}-mq"
+    Name        = "${lower(var.name_prefix)}-mq"
     owner_email = var.owner_email
   }
 }
@@ -63,7 +63,7 @@ resource "aws_instance" "mq" {
   user_data = file("${path.module}/user_data.sh")
 
   tags = {
-    Name        = "f1-demo-${var.deployment_id}-mq"
+    Name        = "${lower(var.name_prefix)}-mq"
     owner_email = var.owner_email
   }
 }

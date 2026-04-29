@@ -14,7 +14,7 @@ data "aws_ami" "amazon_linux" {
 }
 
 resource "aws_security_group" "postgres" {
-  name_prefix = "f1-demo-${var.deployment_id}-postgres-"
+  name_prefix = "${lower(var.name_prefix)}-postgres-"
   description = "Security group for Postgres"
 
   ingress {
@@ -41,7 +41,7 @@ resource "aws_security_group" "postgres" {
   }
 
   tags = {
-    Name        = "f1-demo-${var.deployment_id}-postgres"
+    Name        = "${lower(var.name_prefix)}-postgres"
     owner_email = var.owner_email
   }
 }
@@ -53,13 +53,13 @@ resource "aws_instance" "postgres" {
   key_name               = var.key_pair_name != "" ? var.key_pair_name : null
 
   # Seed SQL is injected as gzip+base64 (EC2 user_data has a 16KB limit;
-  # the 198-row race_results seed exceeds that uncompressed).
+  # the 198-row driver_race_history seed exceeds that uncompressed).
   user_data = templatefile("${path.module}/user_data.sh", {
-    race_results_seed_b64 = base64gzip(file("${path.module}/../../../data/race_results_seed.sql"))
+    driver_race_history_seed_b64 = base64gzip(file("${path.module}/../../../data/driver_race_history_seed.sql"))
   })
 
   tags = {
-    Name        = "f1-demo-${var.deployment_id}-postgres"
+    Name        = "${lower(var.name_prefix)}-postgres"
     owner_email = var.owner_email
   }
 }

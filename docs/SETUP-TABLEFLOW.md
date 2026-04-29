@@ -9,7 +9,7 @@ Continuously materializes Kafka topics as Delta Lake tables in S3. No ETL needed
 | Topic | Why |
 |---|---|
 | `pit-decisions` | Agent's AI output — the data product for Genie analytics |
-| `race_results` | Historical season-to-date race data (198 rows) — fact table for tire-strategy correlation queries |
+| `driver_race_history` | Historical season-to-date race data (198 rows) — fact table for tire-strategy correlation queries |
 
 ## Prerequisites (Done by Terraform)
 
@@ -27,7 +27,7 @@ Continuously materializes Kafka topics as Delta Lake tables in S3. No ETL needed
 6. Pick the `f1-demo-aws-integration` provider integration
 7. Confirm
 
-Repeat for `race_results` topic.
+Repeat for `driver_race_history` topic.
 
 ## Databricks Configuration
 
@@ -48,14 +48,14 @@ CREATE TABLE f1_demo.pit_decisions
   USING DELTA
   LOCATION 's3://f1-demo-tableflow-<hex>/topics/pit-decisions/';
 
-CREATE TABLE f1_demo.race_results
+CREATE TABLE f1_demo.driver_race_history
   USING DELTA
-  LOCATION 's3://f1-demo-tableflow-<hex>/topics/race_results/';
+  LOCATION 's3://f1-demo-tableflow-<hex>/topics/driver_race_history/';
 ```
 
 ### 3. Verify
 
 ```sql
 SELECT * FROM f1_demo.pit_decisions LIMIT 10;
-SELECT * FROM f1_demo.race_results LIMIT 10;
+SELECT * FROM f1_demo.driver_race_history LIMIT 10;
 ```

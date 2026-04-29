@@ -52,7 +52,7 @@ variable "owner_email" {
   type        = string
 }
 
-variable "deployment_id" {
-  description = "Short unique identifier for this deployment. Namespaces AWS resource names."
+variable "name_prefix" {
+  description = "Prefix for AWS resource names (e.g. RIVER-RACING-PROD). Lowercased internally where AWS requires."
   type        = string
 }

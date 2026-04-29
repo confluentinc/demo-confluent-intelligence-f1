@@ -15,7 +15,7 @@ output "cluster_id" {
 }
 
 output "cluster_name" {
-  value = "${local.name_prefix}-cluster"
+  value = module.cluster.cluster_name
 }
 
 output "cluster_bootstrap" {
