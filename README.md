@@ -84,36 +84,14 @@ aws logs tail /ecs/f1-simulator --follow
 
 ### 4. Deploy Flink Jobs
 
-All Flink SQL is run in the Confluent Cloud Flink SQL workspace. Set the catalog and database first:
+**Job 0** (parse `race-standings-raw` JMS envelope into clean `race-standings`) is **deployed automatically by Terraform** — see `demo-reference/parse_standings.sql` for the SQL. The MQ EC2 publishes a single retained warmup message during boot so the topic exists before Job 0 deploys, and Job 0's `WHERE car_number > 0` filter discards that warmup record.
+
+**Job 1** and **Job 2** are run manually in the **Confluent Cloud Flink SQL workspace** during the demo. Set the catalog and database first:
 
 ```sql
 USE CATALOG `<environment-name>`;
 USE `<cluster-name>`;
 ```
-
-#### Job 0: Parse Race Standings (extract from JMS envelope + set key)
-
-```sql
-INSERT INTO `race-standings`
-SELECT
-  CAST(JSON_VALUE(`text`, '$.car_number') AS INT) AS `car_number`,
-  JSON_VALUE(`text`, '$.driver') AS `driver`,
-  JSON_VALUE(`text`, '$.team') AS `team`,
-  CAST(JSON_VALUE(`text`, '$.lap') AS INT) AS `lap`,
-  CAST(JSON_VALUE(`text`, '$.position') AS INT) AS `position`,
-  CAST(JSON_VALUE(`text`, '$.gap_to_leader_sec') AS DOUBLE) AS `gap_to_leader_sec`,
-  CAST(JSON_VALUE(`text`, '$.gap_to_ahead_sec') AS DOUBLE) AS `gap_to_ahead_sec`,
-  CAST(JSON_VALUE(`text`, '$.last_lap_time_sec') AS DOUBLE) AS `last_lap_time_sec`,
-  CAST(JSON_VALUE(`text`, '$.pit_stops') AS INT) AS `pit_stops`,
-  JSON_VALUE(`text`, '$.tire_compound') AS `tire_compound`,
-  CAST(JSON_VALUE(`text`, '$.tire_age_laps') AS INT) AS `tire_age_laps`,
-  CAST(JSON_VALUE(`text`, '$.in_pit_lane' RETURNING BOOLEAN) AS BOOLEAN) AS `in_pit_lane`,
-  TO_TIMESTAMP_LTZ(CAST(JSON_VALUE(`text`, '$.event_time') AS BIGINT), 3) AS `event_time`
-FROM `race-standings-raw`
-WHERE CAST(JSON_VALUE(`text`, '$.car_number') AS INT) > 0;
-```
-
-The `WHERE` filter discards the warmup heartbeat (`car_number = 0`) that the MQ EC2 publishes during boot so `race-standings-raw` exists before the connector starts.
 
 #### Job 1: Enrichment + Anomaly Detection
 
