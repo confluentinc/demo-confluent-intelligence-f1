@@ -8,6 +8,8 @@ Two outputs:
 
 import json
 import logging
+import os
+import random
 import time
 from datetime import datetime, timezone
 
@@ -27,6 +29,13 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Optional deterministic mode: set RACE_SEED env var (any int) for reproducible
+# telemetry noise/sensor values. Unset for live-race-style variability.
+_seed = os.environ.get("RACE_SEED")
+if _seed:
+    random.seed(int(_seed))
+    logger.info(f"Deterministic mode: random.seed({_seed})")
 
 
 def _create_kafka_producer():
