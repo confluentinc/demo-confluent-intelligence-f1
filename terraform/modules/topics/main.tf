@@ -52,7 +52,21 @@ resource "confluent_flink_statement" "create_car_telemetry_table" {
       `brake_pct` DOUBLE COMMENT 'Brake pedal position percentage (0-100)',
       `event_time` TIMESTAMP(3) COMMENT 'Sensor reading timestamp',
       WATERMARK FOR `event_time` AS `event_time` - INTERVAL '5' SECOND
-    ) DISTRIBUTED INTO 1 BUCKETS;
+    )
+    DISTRIBUTED INTO 1 BUCKETS
+    WITH (
+      'changelog.mode' = 'append',
+      'connector' = 'confluent',
+      'kafka.cleanup-policy' = 'delete',
+      'kafka.compaction.time' = '0 ms',
+      'kafka.max-message-size' = '2097164 bytes',
+      'kafka.message-timestamp-type' = 'create-time',
+      'kafka.retention.size' = '0 bytes',
+      'kafka.retention.time' = '0 ms',
+      'scan.bounded.mode' = 'unbounded',
+      'scan.startup.mode' = 'earliest-offset',
+      'value.format' = 'avro-registry'
+    );
   EOT
 
   properties = {
@@ -160,9 +174,14 @@ resource "confluent_flink_statement" "create_race_standings_raw_table" {
       'changelog.mode' = 'append',
       'connector' = 'confluent',
       'kafka.cleanup-policy' = 'delete',
+      'kafka.compaction.time' = '0 ms',
       'kafka.max-message-size' = '8 mb',
+      'kafka.message-timestamp-type' = 'create-time',
+      'kafka.retention.size' = '0 bytes',
       'kafka.retention.time' = '7 d',
       'key.format' = 'raw',
+      'scan.bounded.mode' = 'unbounded',
+      'scan.startup.mode' = 'earliest-offset',
       'value.format' = 'avro-registry'
     );
   EOT

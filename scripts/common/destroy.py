@@ -109,8 +109,11 @@ def _cleanup_mcp(root: Path) -> None:
 
     node_modules = root / "node_modules"
     if node_modules.exists():
-        shutil.rmtree(node_modules)
-        print("✓ Removed node_modules/")
+        try:
+            shutil.rmtree(node_modules)
+            print("✓ Removed node_modules/")
+        except Exception:
+            pass
 
     pkg_lock = root / "package-lock.json"
     if pkg_lock.exists():
