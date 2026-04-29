@@ -103,6 +103,9 @@ PLAN.md
 # Scripts runtime
 scripts/.race-task-arn
 
+# Storyboard / recording prep (local only)
+storyboard/
+
 # Logs
 *.log
 logs/

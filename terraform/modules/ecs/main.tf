@@ -112,6 +112,9 @@ resource "aws_ecs_task_definition" "simulator" {
       { name = "SR_API_KEY", value = var.sr_api_key },
       { name = "SR_API_SECRET", value = var.sr_api_secret },
       { name = "MQ_HOST", value = var.mq_host },
+      # Set for reproducible telemetry noise (demo recordings). Remove for
+      # live-race-style variability.
+      { name = "RACE_SEED", value = "42" },
     ]
 
     logConfiguration = {
