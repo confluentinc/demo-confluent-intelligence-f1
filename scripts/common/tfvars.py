@@ -37,6 +37,7 @@ def generate_core_tfvars_content(
     api_key: str,
     api_secret: str,
     owner_email: str,
+    deployment_id: str = "",
     aws_bedrock_access_key: str = "",
     aws_bedrock_secret_key: str = "",
     aws_session_token: str = "",
@@ -62,6 +63,7 @@ def generate_core_tfvars_content(
         f'confluent_cloud_api_key    = "{api_key}"\n'
         f'confluent_cloud_api_secret = "{api_secret}"\n'
         f'owner_email                = "{owner_email}"\n'
+        f'deployment_id              = "{deployment_id}"\n'
         f'aws_bedrock_access_key     = "{aws_bedrock_access_key}"\n'
         f'aws_bedrock_secret_key     = "{aws_bedrock_secret_key}"\n'
     )
@@ -82,13 +84,14 @@ def write_tfvars_for_deployment(root: Path, creds: dict[str, str]) -> None:
     api_key = creds.get("TF_VAR_confluent_cloud_api_key", "")
     api_secret = creds.get("TF_VAR_confluent_cloud_api_secret", "")
     owner_email = creds.get("TF_VAR_owner_email", "")
+    deployment_id = creds.get("TF_VAR_deployment_id", "")
     aws_bedrock_access_key = creds.get("TF_VAR_aws_bedrock_access_key", "")
     aws_bedrock_secret_key = creds.get("TF_VAR_aws_bedrock_secret_key", "")
     aws_session_token = creds.get("TF_VAR_aws_session_token", "")
 
     core_path = root / "terraform" / "core" / "terraform.tfvars"
     content = generate_core_tfvars_content(
-        api_key, api_secret, owner_email,
+        api_key, api_secret, owner_email, deployment_id,
         aws_bedrock_access_key, aws_bedrock_secret_key, aws_session_token,
     )
     if write_tfvars_file(core_path, content):

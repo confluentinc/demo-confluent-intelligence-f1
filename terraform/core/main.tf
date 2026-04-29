@@ -7,7 +7,7 @@ data "confluent_organization" "main" {}
 
 locals {
   region      = "us-east-1"
-  name_prefix = "f1-demo"
+  name_prefix = "f1-demo-${var.deployment_id}"
 }
 
 # --- Modules ---

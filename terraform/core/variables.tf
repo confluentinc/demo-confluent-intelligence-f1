@@ -15,6 +15,11 @@ variable "owner_email" {
   type        = string
 }
 
+variable "deployment_id" {
+  description = "Short unique identifier for this deployment (e.g. initials). Namespaces CC environment and cluster names so multiple deployers can coexist in the same org."
+  type        = string
+}
+
 variable "aws_bedrock_access_key" {
   description = "AWS Bedrock Access Key for Flink AI connections"
   type        = string
