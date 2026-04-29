@@ -15,9 +15,10 @@
 --    brakes), and the predictable ones (tire_temp_fr/rl/rr, pressures, fuel)
 --    only generate false positives that distract from the demo narrative.
 --
--- 3. Confidence is set to 99.99% with `minContextSize=30` because synthetic
---    tire data has ±1°C noise on a 0.42°C/lap gradient — looser thresholds
---    produce constant false positives.
+-- 3. Confidence is set to 99.99% with `minTrainingSize=20` and `enableStl=false`
+--    because synthetic tire data has ±1°C noise on a 0.42°C/lap gradient —
+--    looser thresholds produce constant false positives, and the STL
+--    seasonal-trend decomposition adds variance the demo doesn't need.
 --
 -- 4. The CASE filter restricts anomalies to `actual_value > upper_bound`.
 --    Otherwise the post-pit drop at lap 33 (145°C → 95°C) flags a second
