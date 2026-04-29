@@ -74,13 +74,11 @@ anomaly AS (
   SELECT
     *,
     AI_DETECT_ANOMALIES(tire_temp_fl_c, window_time,
-      JSON_OBJECT('upperBoundConfidencePercentage' VALUE 99.99,
-                  'lowerBoundConfidencePercentage' VALUE 99.99,
-                  'minContextSize' VALUE 30,
-                  'maxContextSize' VALUE 200))
-      OVER (PARTITION BY car_number
-            ORDER BY window_time
-            RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+      JSON_OBJECT('minTrainingSize' VALUE 20,
+                  'maxTrainingSize' VALUE 50,
+                  'confidencePercentage' VALUE 99.99,
+                  'enableStl' VALUE FALSE))
+      OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
       AS anomaly_tire_temp_fl_result
   FROM windowed
 )

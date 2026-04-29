@@ -209,10 +209,10 @@ WITH enriched AS (
     SELECT
       *,
       AI_DETECT_ANOMALIES(tire_temp_fl_c, window_time,
-        JSON_OBJECT('upperBoundConfidencePercentage' VALUE 99.99,
-                    'lowerBoundConfidencePercentage' VALUE 99.99,
-                    'minContextSize' VALUE 30,
-                    'maxContextSize' VALUE 200))
+        JSON_OBJECT('minTrainingSize' VALUE 20,
+                'maxTrainingSize' VALUE 50,
+                'confidencePercentage' VALUE 99.99,
+                'enableStl' VALUE FALSE))
         OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
         AS anomaly_tire_temp_fl_result
     FROM windowed
@@ -331,42 +331,23 @@ WITH ('max_iterations' = '10');
 ```sql
 -- 2. Create pit-decisions table — one record per lap, driven by car-state.
 --
--- competitor_grid aggregates the top-10 race-standings rows per lap into a
--- single string passed to the agent in lieu of an RTCE tool call.
---
 -- REGEXP_EXTRACT uses \*{0,2} around each label to tolerate optional markdown
 -- bold markers (**Label:**) that some LLMs emit despite being instructed otherwise.
 --
 -- raw_response preserves the full agent output for debugging when parsed fields are null.
+--
+-- earliest-offset ensures all laps are processed even if the race started before this job.
 
-SET 'sql.state-ttl' = '1 d';
-
-CREATE TABLE `pit-decisions` (
-  PRIMARY KEY (car_number) NOT ENFORCED
-)
+CREATE TABLE `pit-decisions`
 WITH ('changelog.mode' = 'append')
 AS
-WITH competitor_grid AS (
-  SELECT
-    lap,
-    LISTAGG(
-      CONCAT(
-        'P', CAST(`position` AS STRING), ': Car #', CAST(car_number AS STRING),
-        ' (', driver, ') — ', tire_compound, ' age=', CAST(tire_age_laps AS STRING),
-        ' laps, ', CAST(pit_stops AS STRING), ' stop(s)',
-        CASE WHEN in_pit_lane THEN ' [IN PIT LANE]' ELSE '' END
-      ),
-      '\n'
-    ) AS standings_top10
-  FROM `race-standings`
-  WHERE `position` <= 10
-  GROUP BY lap
-)
 SELECT
   cs.car_number,
   cs.lap,
-  cs.position,
+  cs.`position`,
   cs.tire_compound AS tire_compound_current,
+  cs.tire_age_laps,
+  cs.anomaly_tire_temp_fl,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Suggestion:\*{0,2}\s*([A-Z ]+)', 1)) AS suggestion,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Condition Summary:\*{0,2}\s*([^\n]+)', 1)) AS condition_summary,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Race Context:\*{0,2}\s*([^\n]+)', 1)) AS race_context,
@@ -374,15 +355,13 @@ SELECT
   CAST(NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Stint Laps:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS INT) AS recommended_stint_laps,
   NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Reason:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS recommended_reason,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Reasoning:\*{0,2}\s*([\s\S]+?)$', 1)) AS reasoning,
-  CAST(CURRENT_TIMESTAMP AS STRING) AS `timestamp`,
   CAST(response AS STRING) AS raw_response
-FROM `car-state` cs
-JOIN competitor_grid cg ON cs.lap = cg.lap,
+FROM `car-state` /*+ OPTIONS('scan.startup.mode'='earliest-offset') */ cs,
 LATERAL TABLE(AI_RUN_AGENT(
   `pit_strategy_agent`,
   CONCAT(
     'CAR STATE — Lap ', CAST(cs.lap AS STRING), ' of 57 | Silverstone British Grand Prix\n',
-    'Driver: James River (#', CAST(cs.car_number AS STRING), ') | Current Position: P', CAST(cs.position AS STRING), '\n',
+    'Driver: James River (#', CAST(cs.car_number AS STRING), ') | Current Position: P', CAST(cs.`position` AS STRING), '\n',
     '\nTIRE DATA:\n',
     '  Compound: ', cs.tire_compound, ' | Age: ', CAST(cs.tire_age_laps AS STRING), ' laps\n',
     '  FL Temp: ', CAST(ROUND(cs.tire_temp_fl_c, 1) AS STRING), 'C',
@@ -404,8 +383,7 @@ LATERAL TABLE(AI_RUN_AGENT(
     '  Gap to Leader: ', CAST(ROUND(cs.gap_to_leader_sec, 2) AS STRING), 's',
     '  Gap to Car Ahead: ', CAST(ROUND(cs.gap_to_ahead_sec, 2) AS STRING), 's\n',
     '  Pit Stops Taken: ', CAST(cs.pit_stops AS STRING), '\n',
-    '  Laps Remaining: ', CAST(57 - cs.lap AS STRING), '\n',
-    '\nCOMPETITOR STANDINGS (Top 10):\n', cg.standings_top10
+    '  Laps Remaining: ', CAST(57 - cs.lap AS STRING)
   ),
   MAP['debug', 'true']
 ));
@@ -544,7 +522,7 @@ The temporal join requires watermarks to advance on both sides before producing 
 <summary>No anomaly at lap 32</summary>
 
 The anomaly fires only on `tire_temp_fl_c` (front-left tire temperature) when it spikes to ~145C. Check:
-- `AI_DETECT_ANOMALIES` needs at least 30 data points (`minContextSize=30`) before it can detect anomalies — it won't fire on early laps.
+- `AI_DETECT_ANOMALIES` needs at least 20 data points (`minTrainingSize=20`) before it can detect anomalies — it won't fire on early laps.
 - Verify the spike exists: `SELECT lap, tire_temp_fl_c FROM \`car-state\` WHERE lap BETWEEN 30 AND 34`
 
 </details>

@@ -82,6 +82,9 @@ uv run api-keys create
 # Set up Confluent MCP for Claude Code
 uv run setup-mcp
 
+# Reset lab for a fresh race re-run (stops Flink, drops + recreates topics + SR subjects)
+uv run reset
+
 # Start / stop race simulator (ECS Fargate)
 ./scripts/start-race.sh        # launches task, saves ARN to scripts/.race-task-arn
 ./scripts/stop-race.sh
@@ -474,7 +477,6 @@ Reference queries in `tableflow/EXAMPLE-QUERIES.md`.
 
 ```
 ├── CLAUDE.md                           # This file — architecture, schemas, constraints
-├── PLAN.md                             # Project plan — progress, to-dos, context for handoff
 ├── Walkthrough.md                      # Step-by-step demo guide for end users
 ├── README.md                           # Quick start (references Walkthrough.md)
 ├── pyproject.toml                      # uv project definition (deploy, destroy, api-keys, setup-mcp)
