@@ -45,9 +45,9 @@ The deploy creates two Terraform stacks:
 **Demo** (AWS + Flink tables + connectors):
 - `car-telemetry`, `race-standings`, and `race-standings-raw` topics (Flink CREATE TABLE with schemas, watermarks, primary keys)
 - MQ Source Connector (`f1-mq-source`) — subscribes to IBM MQ and writes to `race-standings-raw`
-- CDC Connector (`f1-postgres-cdc`) — streams `race_results` from Postgres to Kafka
+- CDC Connector (`f1-postgres-cdc`) — streams `driver_race_history` from Postgres to Kafka
 - EC2 with IBM MQ (pub/sub topic: `dev/race-standings`, durable subscription)
-- EC2 with Postgres (198 historical race_results rows pre-loaded — 22 drivers × 9 prior GPs)
+- EC2 with Postgres (198 historical driver_race_history rows pre-loaded — 22 drivers × 9 prior GPs)
 - ECS Fargate task definition (race simulator Docker image)
 - S3 bucket + IAM role for Tableflow
 - Auto-generated connector configs at `generated/mq_connector_config.json` and `generated/cdc_connector_config.json`
@@ -446,7 +446,7 @@ In the **Confluent Cloud UI**:
    - Format: **Delta Lake**
    - Storage: **BYOS** (Bring Your Own Storage)
    - Provider integration: select `f1-demo-aws-integration`
-3. Repeat for `race_results`
+3. Repeat for `driver_race_history`
 
 These topics are now continuously materialized as Delta Lake tables in S3.
 
@@ -463,16 +463,16 @@ CREATE TABLE f1_demo.pit_decisions
   USING DELTA
   LOCATION 's3://f1-demo-tableflow-<hex>/topics/pit-decisions/';
 
-CREATE TABLE f1_demo.race_results
+CREATE TABLE f1_demo.driver_race_history
   USING DELTA
-  LOCATION 's3://f1-demo-tableflow-<hex>/topics/race_results/';
+  LOCATION 's3://f1-demo-tableflow-<hex>/topics/driver_race_history/';
 ```
 
 ### Create a Genie Space
 
 1. In Databricks, go to **Genie** -> **Create Space**
 2. Name: `F1 Pit Strategy Analytics`
-3. Add tables: `f1_demo.pit_decisions`, `f1_demo.race_results`
+3. Add tables: `f1_demo.pit_decisions`, `f1_demo.driver_race_history`
 4. Description: *"Analyze F1 pit strategy decisions made by River Racing's AI agent during the Silverstone Grand Prix."*
 
 ### Ask Genie

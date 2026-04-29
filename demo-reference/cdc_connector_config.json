@@ -10,7 +10,7 @@
     "database.password": "f1passw0rd",
     "database.dbname": "f1demo",
     "topic.prefix": "f1demo",
-    "table.include.list": "public.race_results",
+    "table.include.list": "public.driver_race_history",
     "output.data.format": "JSON",
     "tasks.max": "1",
     "transforms": "Reroute,Unwrap",

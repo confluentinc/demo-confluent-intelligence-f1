@@ -84,12 +84,12 @@ def main():
     )
     while True:
         deployment_id = prompt_with_default(
-            "Deployment ID (lowercase alphanumeric, max 8 chars, e.g. your initials)",
+            "Deployment ID (alphanumeric, max 8 chars, e.g. PROD or your initials)",
             creds.get("TF_VAR_deployment_id", ""),
         )
-        if deployment_id and deployment_id.isalnum() and deployment_id == deployment_id.lower() and len(deployment_id) <= 8:
+        if deployment_id and deployment_id.isalnum() and len(deployment_id) <= 8:
             break
-        print("  Must be lowercase alphanumeric, max 8 characters.")
+        print("  Must be alphanumeric, max 8 characters.")
     aws_bedrock_key = prompt_with_default(
         "AWS Bedrock Access Key",
         creds.get("TF_VAR_aws_bedrock_access_key", ""),

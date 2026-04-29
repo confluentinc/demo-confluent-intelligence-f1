@@ -13,8 +13,10 @@ resource "random_id" "suffix" {
 }
 
 locals {
-  bucket_name = "${var.bucket_name}-${random_id.suffix.hex}"
-  role_name   = "f1-demo-tableflow-role-${random_id.suffix.hex}"
+  aws_prefix  = lower(var.name_prefix)
+  bucket_name = "${local.aws_prefix}-tableflow-${random_id.suffix.hex}"
+  role_name   = "${local.aws_prefix}-tableflow-role-${random_id.suffix.hex}"
+  policy_name = "${local.aws_prefix}-tableflow-policy-${random_id.suffix.hex}"
 }
 
 # S3 Bucket
@@ -23,7 +25,7 @@ resource "aws_s3_bucket" "tableflow" {
   force_destroy = true
 
   tags = {
-    Name        = "f1-demo-tableflow"
+    Name        = "${local.aws_prefix}-tableflow"
     owner_email = var.owner_email
   }
 }
@@ -75,7 +77,7 @@ resource "aws_iam_role" "tableflow" {
 
 # IAM Policy with S3 permissions
 resource "aws_iam_policy" "tableflow" {
-  name = "f1-demo-tableflow-policy-${random_id.suffix.hex}"
+  name = local.policy_name
 
   policy = jsonencode({
     Version = "2012-10-17"

@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Databricks workspace with Unity Catalog
-- Tableflow tables materialized (`pit_decisions`, `race_results`)
+- Tableflow tables materialized (`pit_decisions`, `driver_race_history`)
 - Genie enabled on workspace
 
 ## Create Genie Space
@@ -13,7 +13,7 @@
 3. Name: `F1 Pit Strategy Analytics`
 4. Add tables:
    - `f1_demo.pit_decisions`
-   - `f1_demo.race_results`
+   - `f1_demo.driver_race_history`
 5. Add description: *"Analyze F1 pit strategy decisions made by River Racing's AI agent during the Silverstone Grand Prix, and validate them against historical season-to-date race results."*
 
 ## Demo Questions
@@ -48,7 +48,7 @@ SELECT
          CASE WHEN stint_3_tire = 'n/a' THEN '' ELSE '-' || stint_3_tire END) AS tire_sequence,
   COUNT(*) AS races,
   ROUND(AVG(positions_gained), 2) AS avg_positions_gained
-FROM race_results
+FROM driver_race_history
 GROUP BY tire_sequence
 ORDER BY avg_positions_gained DESC
 ```
@@ -77,7 +77,7 @@ SELECT
          CASE WHEN stint_3_tire = 'n/a' THEN '' ELSE '-' || stint_3_tire END) AS tire_sequence,
   COUNT(*) AS races,
   ROUND(AVG(positions_gained), 2) AS avg_positions_gained
-FROM race_results
+FROM driver_race_history
 WHERE driver = 'James River'
 GROUP BY tire_sequence
 ORDER BY avg_positions_gained DESC

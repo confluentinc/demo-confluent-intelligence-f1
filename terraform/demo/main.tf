@@ -9,6 +9,7 @@ data "terraform_remote_state" "core" {
 locals {
   region      = data.terraform_remote_state.core.outputs.region
   owner_email = data.terraform_remote_state.core.outputs.owner_email
+  name_prefix = "RIVER-RACING-${var.deployment_id}"
 }
 
 provider "confluent" {
@@ -39,10 +40,10 @@ module "topics" {
 }
 
 module "mq" {
-  source        = "../modules/mq"
-  aws_region    = local.region
-  owner_email   = local.owner_email
-  deployment_id = var.deployment_id
+  source      = "../modules/mq"
+  aws_region  = local.region
+  owner_email = local.owner_email
+  name_prefix = local.name_prefix
 }
 
 module "ecs" {
@@ -57,21 +58,20 @@ module "ecs" {
   mq_host          = module.mq.mq_public_ip
   dockerfile_path  = "${path.module}/../../datagen"
   owner_email      = local.owner_email
-  deployment_id    = var.deployment_id
+  name_prefix      = local.name_prefix
 }
 
 module "postgres" {
-  source        = "../modules/postgres"
-  aws_region    = local.region
-  owner_email   = local.owner_email
-  deployment_id = var.deployment_id
+  source      = "../modules/postgres"
+  aws_region  = local.region
+  owner_email = local.owner_email
+  name_prefix = local.name_prefix
 }
 
 module "tableflow" {
   source         = "../modules/tableflow"
   environment_id = data.terraform_remote_state.core.outputs.environment_id
-  name_prefix    = "f1-demo-${var.deployment_id}"
-  bucket_name    = "f1-demo-${var.deployment_id}-tableflow"
+  name_prefix    = local.name_prefix
   owner_email    = local.owner_email
 }
 
@@ -174,7 +174,7 @@ resource "confluent_connector" "postgres_cdc" {
     "database.user"                     = "f1user"
     "database.dbname"                   = "f1demo"
     "topic.prefix"                      = "f1demo"
-    "table.include.list"                = "public.race_results"
+    "table.include.list"                = "public.driver_race_history"
     "output.data.format"                = "JSON"
     "tasks.max"                         = "1"
     "transforms"                        = "Reroute,Unwrap"
@@ -230,10 +230,10 @@ resource "local_file" "cdc_connector_config" {
       "database.password"        = "f1passw0rd"
       "database.dbname"          = "f1demo"
       "topic.prefix"             = "f1demo"
-      "table.include.list"       = "public.drivers,public.race_results"
+      "table.include.list"       = "public.driver_race_history"
       "output.data.format"       = "JSON"
       "tasks.max"                = "1"
-      # Strip "f1demo.public." prefix so topics are just `drivers` and `race_results`.
+      # Strip "f1demo.public." prefix so the topic is just `driver_race_history`.
       "transforms"                       = "Reroute,Unwrap"
       "transforms.Reroute.type"          = "io.confluent.connect.cloud.transforms.TopicRegexRouter"
       "transforms.Reroute.regex"         = "^.*\\.public\\.(.+)$"

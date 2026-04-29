@@ -4,7 +4,7 @@ variable "organization_id" {
 }
 
 variable "name_prefix" {
-  description = "Prefix for all named Confluent Cloud resources (e.g. f1-demo-bren)"
+  description = "Prefix for all named Confluent Cloud resources (e.g. RIVER-RACING-PROD)"
   type        = string
 }
 

@@ -2,6 +2,10 @@ output "cluster_id" {
   value = confluent_kafka_cluster.main.id
 }
 
+output "cluster_name" {
+  value = confluent_kafka_cluster.main.display_name
+}
+
 output "cluster_bootstrap" {
   value = confluent_kafka_cluster.main.bootstrap_endpoint
 }
