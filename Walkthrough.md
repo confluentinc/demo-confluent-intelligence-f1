@@ -160,9 +160,7 @@ This is the core intelligence layer. It:
 Run in the Flink SQL Workspace:
 
 ```sql
-CREATE TABLE `car-state` (
-  PRIMARY KEY (car_number) NOT ENFORCED
-)
+CREATE TABLE `car-state`
 WITH ('changelog.mode' = 'append')
 AS
 WITH enriched AS (
