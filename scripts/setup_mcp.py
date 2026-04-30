@@ -226,7 +226,7 @@ def main():
 
     # Remove any existing registration before adding, to handle re-runs cleanly.
     subprocess.run(
-        ["claude", "mcp", "remove", "confluent-f1-mcp", "-s", "local"],
+        ["claude", "mcp", "remove", "confluent-cloud-mcp-server", "-s", "local"],
         capture_output=True,
     )
 
@@ -237,7 +237,7 @@ def main():
             "add",
             "--scope",
             "local",
-            "confluent-f1-mcp",
+            "confluent-cloud-mcp-server",
             "--",
             node_bin,
             str(dist_js.resolve()),
@@ -251,7 +251,7 @@ def main():
         print(f"Error registering MCP server:\n{result.stderr}")
         sys.exit(1)
 
-    print("Confluent MCP server registered as 'confluent-f1-mcp' (local scope)")
+    print("Confluent MCP server registered as 'confluent-cloud-mcp-server' (local scope)")
     print("Restart Claude Code to activate.")
 
 
