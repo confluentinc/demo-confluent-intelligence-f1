@@ -35,7 +35,7 @@ JOIN pit_decisions f
 WHERE p.suggestion = 'PIT NOW'
 ```
 
-**Expected result:** +5 positions (P8 at pit, P3 at finish)
+**Expected result:** +6 positions (P8 at pit, P2 at finish)
 
 ### Question 2: Tire Strategy Correlation (Bar Chart)
 

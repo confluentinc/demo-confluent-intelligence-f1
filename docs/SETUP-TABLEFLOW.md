@@ -76,7 +76,7 @@ JOIN pit_decisions f
 WHERE p.suggestion = 'PIT NOW';
 ```
 
-Expected: +5 positions (P8 → P3)
+Expected: +6 positions (P8 → P2)
 
 ## Question 2: Tire Compound Distribution (Pie Chart)
 

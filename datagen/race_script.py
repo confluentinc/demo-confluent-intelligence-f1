@@ -7,12 +7,18 @@ Uses a CUMULATIVE RACE TIME model (like real F1):
 - Pit stops add ~23 seconds to one lap but give fresh tires (faster subsequent laps)
 """
 
+import random
+
 # Tire degradation: seconds added to lap time per lap of tire age
 TIRE_DEGRADATION = {
     "SOFT": 0.12,  # Fast initially but degrades quickly — 32 laps = +3.84s
     "MEDIUM": 0.08,  # Balanced — 25 laps = +2.00s
     "HARD": 0.02,  # Slow but durable — 40 laps = +0.80s
 }
+
+# Age (in laps) past which degradation accelerates — models the real F1 tire cliff
+TIRE_CLIFF_AGE = {"SOFT": 28, "MEDIUM": 28, "HARD": 38}
+TIRE_CLIFF_FACTOR = 3.0  # Past cliff, each extra lap costs CLIFF_FACTOR x base degradation
 
 # Base lap time by compound (lower = faster)
 TIRE_BASE_PACE = {
@@ -54,8 +60,15 @@ class CarState:
         (that's added separately in advance_lap).
         """
         base = TIRE_BASE_PACE[self.tire_compound]
-        degradation = TIRE_DEGRADATION[self.tire_compound] * self.tire_age_laps
-        return base + degradation + self.qualifying_delta
+        deg_per_lap = TIRE_DEGRADATION[self.tire_compound]
+        cliff = TIRE_CLIFF_AGE[self.tire_compound]
+        age = self.tire_age_laps
+        if age <= cliff:
+            degradation = deg_per_lap * age
+        else:
+            degradation = deg_per_lap * cliff + deg_per_lap * TIRE_CLIFF_FACTOR * (age - cliff)
+        noise = random.gauss(0, 0.08)
+        return base + degradation + self.qualifying_delta + noise
 
     def pit(self, new_compound):
         self.tire_compound = new_compound

@@ -26,21 +26,21 @@ The `car-state` stream feeds a Streaming Agent that evaluates every lap. It asse
 
 | Laps | Position | Tire | Anomaly | Suggestion | What's Happening |
 |------|----------|------|---------|------------|------------------|
-| 1–15 | P3 | SOFT (fresh) | None | STAY OUT | Competitive, stable, good pace |
-| 16–25 | P3 → P5 | SOFT (aging) | None | STAY OUT | Tires wearing, pace dropping, two cars pass |
-| 26–31 | P5 → P8 | SOFT (critical) | None | PIT SOON | Tires falling off, three more cars pass |
+| 1–17 | P3 | SOFT (fresh) | None | STAY OUT | Competitive, stable, good pace |
+| 18–25 | P3 → P1 | SOFT (aging) | None | STAY OUT | Leaders pit — James briefly leads the race |
+| 26–31 | P1 → P8 | SOFT (critical) | None | PIT SOON | Tire cliff bites — falling 5 places in 6 laps |
 | **32** | **P8** | **SOFT (dead)** | **tire_temp_fl = true** | **PIT NOW** | **Anomaly fires. Agent recommends pit.** |
-| 33 | P12 | In pit lane | None | STAY OUT | Drops spots during pit stop. Fresh mediums. |
-| 34–42 | P12 → P5 | MEDIUM (fresh) | None | STAY OUT | Fastest car on track, overtaking |
-| 43–57 | P5 → P3 | MEDIUM (aging) | None | STAY OUT | Competitors pit on older tires, River jumps them |
+| 33 | P12 | In pit lane | None | STAY OUT | Pit stop. Fresh MEDIUMs. |
+| 34–54 | P12 → P5 | MEDIUM (fresh) | None | STAY OUT | Fastest car on track, steady climb |
+| 55–57 | P5 → P2 | MEDIUM | None | STAY OUT | Leaders' MEDIUMs past cliff — James jumps ahead |
 
-**Net result: P8 → P3 = +5 positions gained from the moment the agent made the call.**
+**Net result: P8 → P2 = +6 positions gained from the moment the agent made the call.**
 
 Race configuration: 57 laps, 10 seconds/lap simulated, ~9.5 min total, 22 cars, pit stop ~20s time loss.
 
 ## Databricks Genie Expected Answers
 
-- **"How many positions did we gain?"** → +5 (P8 at lap 32 → P3 at finish)
+- **"How many positions did we gain?"** → +6 (P8 at lap 32 → P2 at finish)
 - **"What's James River's average position gain per tire sequence?"** → `SOFT-MEDIUM` averages **+2.75** over 4 prior races; all other strategies average **−2.4** over 5 races
 
 The SOFT-MEDIUM correlation validates the agent's lap-33 MEDIUM recommendation as following River's most successful historical pattern.

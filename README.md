@@ -77,14 +77,14 @@ SQL files: `demo-reference/enrichment_anomaly.sql` (Job 1), `demo-reference/stre
 
 | Laps | Position | Tire | What Happens |
 |------|----------|------|--------------|
-| 1–15 | P3 | SOFT (fresh) | Competitive, stable pace |
-| 16–25 | P3 → P5 | SOFT (aging) | Tires wearing, two cars pass |
-| 26–31 | P5 → P8 | SOFT (critical) | Tires falling off, three more pass — agent says PIT SOON |
-| **32** | **P8** | **SOFT (dead)** | **tire_temp_fl anomaly fires — agent says PIT NOW** |
+| 1–17 | P3 | SOFT (fresh) | Competitive, stable pace |
+| 18–25 | P3 → P1 | SOFT (aging) | Leaders pit — James briefly leads the race |
+| 26–31 | P1 → P8 | SOFT (critical) | Tire cliff bites — agent says PIT SOON |
+| **32** | **P8** | **SOFT (dead)** | **Anomaly fires — agent says PIT NOW** |
 | 33 | P12 | MEDIUM (fresh) | Pit stop, drops spots |
-| 34–57 | P12 → P3 | MEDIUM | Fastest car on track, climbs back |
+| 34–57 | P12 → P2 | MEDIUM | Fastest car on track, climbs back |
 
-**Result: P8 at pit call → P3 at finish = +5 positions gained**
+**Result: P8 at pit call → P2 at finish = +6 positions gained**
 
 ---
 
