@@ -2,7 +2,7 @@
 
 Real-time F1 pit strategy system. Streams simulated race telemetry through Confluent Cloud, detects tire anomalies via Flink + AI_DETECT_ANOMALIES, and runs a Flink Streaming Agent (Bedrock/Claude) to recommend pit stops.
 
-**Team:** River Racing | **Driver:** James River (#44) | **Circuit:** Silverstone | **57 laps, ~10s each, ~9.5 min total**
+**Team:** River Racing | **Driver:** Sean Falconer (#44) | **Circuit:** Silverstone | **57 laps, ~10s each, ~9.5 min total**
 
 ---
 

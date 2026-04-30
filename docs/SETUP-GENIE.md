@@ -66,9 +66,9 @@ ORDER BY avg_positions_gained DESC
 
 **Narrative:** `SOFT-MEDIUM` (1-stop) is the winning strategy across the field. The agent's lap-33 MEDIUM pit recommendation today follows this proven pattern.
 
-### Question 3: James River's Per-Strategy Record
+### Question 3: Sean Falconer's Per-Strategy Record
 
-**Ask:** *"What's James River's average position gain by tire strategy?"*
+**Ask:** *"What's Sean Falconer's average position gain by tire strategy?"*
 
 **Expected SQL:**
 ```sql
@@ -78,7 +78,7 @@ SELECT
   COUNT(*) AS races,
   ROUND(AVG(positions_gained), 2) AS avg_positions_gained
 FROM driver_race_history
-WHERE driver = 'James River'
+WHERE driver = 'Sean Falconer'
 GROUP BY tire_sequence
 ORDER BY avg_positions_gained DESC
 ```

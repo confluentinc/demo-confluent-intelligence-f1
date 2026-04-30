@@ -30,7 +30,7 @@ GRID = [
     },
     {
         "car_number": 44,
-        "driver": "James River",
+        "driver": "Sean Falconer",
         "team": "River Racing",
         "start_position": 3,
         "pit_lap": 33,

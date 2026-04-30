@@ -10,7 +10,7 @@ These are hard constraints for this demo. Do not violate them.
 - AI agent decides pit strategy — no threshold formulas in Flink SQL
 - +6 positions gained after agent recommendation (P8 → P2)
 - 10 seconds per simulated lap (~9.5 min total race)
-- All fictional drivers and teams: team = River Racing, driver = James River, car #44
+- All fictional drivers and teams: team = River Racing, driver = Sean Falconer, car #44
 - Circuit: Silverstone; 22 drivers, 11 teams
 - Tableflow on `pit-decisions` + `driver_race_history` only
 - Databricks Genie for analytics

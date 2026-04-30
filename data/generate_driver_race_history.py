@@ -1,7 +1,7 @@
 """Generates driver_race_history_seed.sql with 198 rows (22 drivers x 9 races).
 
 Designed correlation: drivers running SOFT-MEDIUM (1-stop) gain the most positions
-on average. James River's record on SOFT-MEDIUM is +2.75; on other strategies, -2.4.
+on average. Sean Falconer's record on SOFT-MEDIUM is +2.75; on other strategies, -2.4.
 This matches the simulator's lap-33 anomaly-forced 1-stop pit onto MEDIUM today.
 
 Strategy distribution per race (22 drivers):
@@ -37,7 +37,7 @@ RACES = [
 DRIVERS = [
     (1, "Max Eriksson", "Titan Dynamics", 1),
     (4, "Luca Novak", "Apex Motorsport", 1),
-    (44, "James River", "River Racing", 1),  # special-cased below
+    (44, "Sean Falconer", "River Racing", 1),  # special-cased below
     (16, "Carlos Vega", "Scuderia Rossa", 2),
     (63, "Oliver Walsh", "Sterling GP", 2),
     (14, "Fernando Reyes", "Aston Verde", 2),
@@ -59,8 +59,8 @@ DRIVERS = [
     (21, "Isack Mbeki", "Racing Bulls", 4),
 ]
 
-# James's hand-crafted arc — must match the demo narrative
-JAMES_ARC = [
+# Sean's hand-crafted arc — must match the demo narrative
+SEAN_ARC = [
     # (gp_index, sequence,                start, finish)
     (0, ["SOFT", "MEDIUM"], 3, 1),  # Bahrain        +2
     (1, ["MEDIUM", "HARD"], 3, 2),  # Saudi Arabia   +1
@@ -112,12 +112,12 @@ def quoted(s: str) -> str:
 def build_grid(race_idx: int) -> dict:
     """Return {car_number: starting_grid_position} for one race.
 
-    James gets his hand-crafted starting position. Others are biased by tier.
+    Sean gets his hand-crafted starting position. Others are biased by tier.
     """
     rng = random.Random(1000 + race_idx)
-    james_start = JAMES_ARC[race_idx][2]
-    grid = {44: james_start}
-    used_positions = {james_start}
+    sean_start = SEAN_ARC[race_idx][2]
+    grid = {44: sean_start}
+    used_positions = {sean_start}
 
     # Sort drivers by tier; within tier, randomize per race
     others = [d for d in DRIVERS if d[0] != 44]
@@ -141,20 +141,20 @@ def build_grid(race_idx: int) -> dict:
 def assign_strategies(race_idx: int) -> dict:
     """Return {car_number: strategy_name} for one race honoring the quota.
 
-    James's strategy is fixed by JAMES_ARC. Others are biased so:
+    Sean's strategy is fixed by SEAN_ARC. Others are biased so:
       - top tier prefers SOFT-MEDIUM (the winning pattern)
       - back tier prefers SOFT-MEDIUM-MEDIUM / SOFT-SOFT-MEDIUM (losing patterns)
     """
     rng = random.Random(2000 + race_idx)
 
-    james_seq = JAMES_ARC[race_idx][1]
-    james_strategy = "-".join(james_seq)
-    strategies = {44: james_strategy}
+    sean_seq = SEAN_ARC[race_idx][1]
+    sean_strategy = "-".join(sean_seq)
+    strategies = {44: sean_strategy}
 
-    # Remaining quota after James
+    # Remaining quota after Sean
     quota = dict(STRATEGY_QUOTA)
-    quota[james_strategy] -= 1
-    assert quota[james_strategy] >= 0
+    quota[sean_strategy] -= 1
+    assert quota[sean_strategy] >= 0
 
     # Strategy preferences by tier (weighted draws)
     tier_weights = {
@@ -223,11 +223,11 @@ def compute_finish(grid: dict, strategies: dict, race_idx: int) -> dict:
     """Return {car_number: finishing_pos}."""
     rng = random.Random(3000 + race_idx)
 
-    # James is fixed
-    james_finish = JAMES_ARC[race_idx][3]
-    finishes = {44: james_finish}
+    # Sean is fixed
+    sean_finish = SEAN_ARC[race_idx][3]
+    finishes = {44: sean_finish}
 
-    # Compute "race score" for non-James drivers
+    # Compute "race score" for non-Sean drivers
     # Lower score = better finish. Score = starting_grid + strategy_delta + tier_bias + noise
     scores = []
     for car_number, _driver, _team, tier in DRIVERS:
@@ -242,9 +242,9 @@ def compute_finish(grid: dict, strategies: dict, race_idx: int) -> dict:
         noise = rng.gauss(0, 0.5)
         scores.append((car_number, start + delta + tier_bias + noise))
 
-    # Sort by score, assign positions 1-22 skipping James's slot
+    # Sort by score, assign positions 1-22 skipping Sean's slot
     scores.sort(key=lambda x: x[1])
-    used = {james_finish}
+    used = {sean_finish}
     pos = 1
     for car_number, _ in scores:
         while pos in used:

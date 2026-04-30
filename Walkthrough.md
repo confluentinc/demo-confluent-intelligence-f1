@@ -2,7 +2,7 @@
 
 A real-time AI pit strategy system for River Racing at the Silverstone Grand Prix. An AI agent monitors live car telemetry, detects anomalies via `AI_DETECT_ANOMALIES`, and recommends pit stop strategy — all running as Flink SQL on Confluent Cloud.
 
-**Team:** River Racing | **Driver:** James River (#44) | **Circuit:** Silverstone | **Laps:** 57 (~10s each, ~9.5 min total)
+**Team:** River Racing | **Driver:** Sean Falconer (#44) | **Circuit:** Silverstone | **Laps:** 57 (~10s each, ~9.5 min total)
 
 ## Prerequisites
 
@@ -269,7 +269,7 @@ Race Context: Currently P3. No competitors in top 10 have pitted yet. Leader is 
 Recommended Compound: N/A
 Recommended Stint Laps: N/A
 Recommended Reason: N/A
-Reasoning: Tire temps and pressures are within normal operating windows for a SOFT at this age. Track position P3 is strong. Pitting now would surrender 4-6 seconds and drop James behind cars currently behind us.
+Reasoning: Tire temps and pressures are within normal operating windows for a SOFT at this age. Track position P3 is strong. Pitting now would surrender 4-6 seconds and drop Sean behind cars currently behind us.
 
 Correct PIT NOW example:
 Suggestion: PIT NOW
@@ -277,13 +277,13 @@ Condition Summary: Front-left tire temperature anomaly at 145C, 20C above expect
 Race Context: Currently P8. P4 and P5 already pitted 3 laps ago and are pushing on fresh mediums.
 Recommended Compound: MEDIUM
 Recommended Stint Laps: 25
-Recommended Reason: Mediums will last the remaining 25 laps and give James the pace to recover positions lost during the stop.
-Reasoning: The FL anomaly flag indicates the SOFT has gone past its operating limit with blowout risk. Pitting now onto mediums avoids tire failure. Based on historical data, James averages +2.75 positions on SOFT-MEDIUM — this is his strongest strategy.
+Recommended Reason: Mediums will last the remaining 25 laps and give Sean the pace to recover positions lost during the stop.
+Reasoning: The FL anomaly flag indicates the SOFT has gone past its operating limit with blowout risk. Pitting now onto mediums avoids tire failure. Based on historical data, Sean averages +2.75 positions on SOFT-MEDIUM — this is his strongest strategy.
 
 ---
 
 You are the AI pit wall strategist for River Racing at the 2026 British Grand Prix (Silverstone, 57 laps).
-Driver: James River, Car #44.
+Driver: Sean Falconer, Car #44.
 
 DECISION ALGORITHM — apply these rules in order. Do not deviate.
 
@@ -310,13 +310,13 @@ COMPETITOR CONTEXT:
 Current top-10 standings are provided at the end of each input. Use them to identify:
 - Which competitors have already pitted (and are now on fresher rubber)
 - Who is still on old tires and likely to pit soon
-- Whether James is at risk of being undercut, or has an overcut opportunity
+- Whether Sean is at risk of being undercut, or has an overcut opportunity
 
 TIRE STRATEGY at Silverstone (57-lap race):
 - SOFT: High-grip compound. Optimal window is laps 1-25. Still competitive laps 26-32 with some pace loss and position drops — but no failure risk unless the anomaly sensor fires. Performance cliff begins around lap 26-28.
 - MEDIUM: Balanced compound, best for a 25-30 lap second stint after a SOFT first stint. Enables clean 1-stop strategy.
 - HARD: Very durable but slow. Only consider if 40+ laps remain at the second stop.
-- James River historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. Winning execution: run SOFT until the anomaly signal fires or tire_age_laps >= 26, then switch to MEDIUM and overtake on fresher rubber.
+- Sean Falconer historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. Winning execution: run SOFT until the anomaly signal fires or tire_age_laps >= 26, then switch to MEDIUM and overtake on fresher rubber.
 
 REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
 WITH ('max_iterations' = '10');
@@ -355,7 +355,7 @@ LATERAL TABLE(AI_RUN_AGENT(
   `pit_strategy_agent`,
   CONCAT(
     'CAR STATE — Lap ', CAST(cs.lap AS STRING), ' of 57 | Silverstone British Grand Prix\n',
-    'Driver: James River (#', CAST(cs.car_number AS STRING), ') | Current Position: P', CAST(cs.`position` AS STRING), '\n',
+    'Driver: Sean Falconer (#', CAST(cs.car_number AS STRING), ') | Current Position: P', CAST(cs.`position` AS STRING), '\n',
     '\nTIRE DATA:\n',
     '  Compound: ', cs.tire_compound, ' | Age: ', CAST(cs.tire_age_laps AS STRING), ' laps\n',
     '  FL Temp: ', CAST(ROUND(cs.tire_temp_fl_c, 1) AS STRING), 'C',
@@ -390,12 +390,12 @@ The agent produces one `pit-decisions` record per lap. Watch for the key moment:
 | Lap | Position | Suggestion | What's happening |
 |-----|----------|-----------|------------------|
 | 1-17 | P3 | STAY OUT | Competitive, stable, good pace |
-| 18-25 | P3-P1 | STAY OUT | Leaders pit — James briefly leads the race |
+| 18-25 | P3-P1 | STAY OUT | Leaders pit — Sean briefly leads the race |
 | 26-31 | P1-P8 | PIT SOON | Tire cliff bites — falling 5 places in 6 laps |
 | **32** | **P8** | **PIT NOW** | **Front-left tire anomaly at 145C. This is the key moment.** |
 | 33 | P12 | STAY OUT | In pit lane, fresh mediums |
 | 34-54 | P12-P5 | STAY OUT | Fastest car on track, steady climb |
-| 55-57 | P5-P2 | STAY OUT | Leaders' MEDIUMs past cliff — James jumps ahead |
+| 55-57 | P5-P2 | STAY OUT | Leaders' MEDIUMs past cliff — Sean jumps ahead |
 
 **Net result: P8 at agent's call → P2 at finish = +6 positions gained.**
 

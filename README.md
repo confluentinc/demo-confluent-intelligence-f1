@@ -73,12 +73,12 @@ SQL files: `demo-reference/enrichment_anomaly.sql` (Job 1), `demo-reference/stre
 
 ## Demo Scenario
 
-**Team:** River Racing | **Driver:** James River (#44) | **Circuit:** Silverstone | **57 laps, ~10s each**
+**Team:** River Racing | **Driver:** Sean Falconer (#44) | **Circuit:** Silverstone | **57 laps, ~10s each**
 
 | Laps | Position | Tire | What Happens |
 |------|----------|------|--------------|
 | 1–17 | P3 | SOFT (fresh) | Competitive, stable pace |
-| 18–25 | P3 → P1 | SOFT (aging) | Leaders pit — James briefly leads the race |
+| 18–25 | P3 → P1 | SOFT (aging) | Leaders pit — Sean briefly leads the race |
 | 26–31 | P1 → P8 | SOFT (critical) | Tire cliff bites — agent says PIT SOON |
 | **32** | **P8** | **SOFT (dead)** | **Anomaly fires — agent says PIT NOW** |
 | 33 | P12 | MEDIUM (fresh) | Pit stop, drops spots |
