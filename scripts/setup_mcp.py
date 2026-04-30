@@ -23,7 +23,7 @@ _NVM_DIR = Path.home() / ".nvm" / "versions" / "node"
 _FNM_DIR = Path.home() / ".local" / "share" / "fnm" / "node-versions"
 _HOMEBREW_DIRS = [
     Path("/opt/homebrew/opt"),  # Apple Silicon
-    Path("/usr/local/opt"),     # Intel
+    Path("/usr/local/opt"),  # Intel
 ]
 
 
@@ -32,7 +32,10 @@ def _get_node_abi(node_bin: str) -> int | None:
     try:
         result = subprocess.run(
             [node_bin, "-e", "process.stdout.write(process.versions.modules)"],
-            capture_output=True, text=True, check=True, timeout=5,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
         )
         return int(result.stdout.strip())
     except Exception:
@@ -73,7 +76,7 @@ def _find_preferred_node() -> str:
     best_path = "node"
     best_score = -1
 
-    for path in ["node"] + candidates:
+    for path in ["node", *candidates]:
         abi = _get_node_abi(path)
         if abi is None:
             continue
@@ -93,12 +96,12 @@ def _find_preferred_node() -> str:
 def _check_node_version(node_bin: str) -> None:
     """Abort if Node is missing or too old; warn if no prebuilt binary exists."""
     try:
-        ver_result = subprocess.run(
-            [node_bin, "--version"], capture_output=True, text=True, check=True
-        )
+        ver_result = subprocess.run([node_bin, "--version"], capture_output=True, text=True, check=True)
         abi_result = subprocess.run(
             [node_bin, "-e", "process.stdout.write(process.versions.modules)"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
     except (FileNotFoundError, subprocess.CalledProcessError):
         print("Error: 'node' not found. Install Node.js v24 LTS.")
@@ -121,7 +124,9 @@ def _check_node_version(node_bin: str) -> None:
         print("    Linux: sudo apt install build-essential python3")
         print("  If the install fails, switch with:  nvm install 24 && nvm use 24")
     else:
-        label = " (Node 24 LTS — prebuilt binary available)" if abi == _PREFERRED_ABI else " (prebuilt binary available)"
+        label = (
+            " (Node 24 LTS — prebuilt binary available)" if abi == _PREFERRED_ABI else " (prebuilt binary available)"
+        )
         print(f"Using Node {version_str}{label}")
         if node_bin != "node":
             print(f"  ({node_bin})")
@@ -227,8 +232,11 @@ def main():
 
     result = subprocess.run(
         [
-            "claude", "mcp", "add",
-            "--scope", "local",
+            "claude",
+            "mcp",
+            "add",
+            "--scope",
+            "local",
             "confluent-f1-mcp",
             "--",
             node_bin,

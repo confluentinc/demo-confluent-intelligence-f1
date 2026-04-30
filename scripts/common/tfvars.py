@@ -91,8 +91,13 @@ def write_tfvars_for_deployment(root: Path, creds: dict[str, str]) -> None:
 
     core_path = root / "terraform" / "core" / "terraform.tfvars"
     content = generate_core_tfvars_content(
-        api_key, api_secret, owner_email, deployment_id,
-        aws_bedrock_access_key, aws_bedrock_secret_key, aws_session_token,
+        api_key,
+        api_secret,
+        owner_email,
+        deployment_id,
+        aws_bedrock_access_key,
+        aws_bedrock_secret_key,
+        aws_session_token,
     )
     if write_tfvars_file(core_path, content):
         print(f"  Wrote {core_path.relative_to(root)}")

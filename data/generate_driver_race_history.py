@@ -1,102 +1,103 @@
-"""Generates driver_race_history_seed.sql with 198 rows (22 drivers × 9 races).
+"""Generates driver_race_history_seed.sql with 198 rows (22 drivers x 9 races).
 
 Designed correlation: drivers running SOFT-MEDIUM (1-stop) gain the most positions
 on average. James River's record on SOFT-MEDIUM is +2.75; on other strategies, -2.4.
 This matches the simulator's lap-33 anomaly-forced 1-stop pit onto MEDIUM today.
 
 Strategy distribution per race (22 drivers):
-   6× SOFT-MEDIUM        (1-stop)  — winners, avg +2.5
-   5× MEDIUM-HARD        (1-stop)  — safe,    avg +0.5
-   5× SOFT-HARD          (1-stop)  — long,    avg -0.5
-   3× SOFT-MEDIUM-HARD   (2-stop)  — over,    avg -0.5
-   2× SOFT-MEDIUM-MEDIUM (2-stop)  — wasted,  avg -1.5
-   1× SOFT-SOFT-MEDIUM   (2-stop)  — burnt,   avg -1.8
+   6x SOFT-MEDIUM        (1-stop)  — winners, avg +2.5
+   5x MEDIUM-HARD        (1-stop)  — safe,    avg +0.5
+   5x SOFT-HARD          (1-stop)  — long,    avg -0.5
+   3x SOFT-MEDIUM-HARD   (2-stop)  — over,    avg -0.5
+   2x SOFT-MEDIUM-MEDIUM (2-stop)  — wasted,  avg -1.5
+   1x SOFT-SOFT-MEDIUM   (2-stop)  — burnt,   avg -1.8
 
 Run:   python data/generate_driver_race_history.py > data/driver_race_history_seed.sql
 """
+
 import random
 
 random.seed(42)
 
 # 9 races (real F1 calendar order), British GP is race 10 (today's demo)
 RACES = [
-    ("bahrain_2026",       "Bahrain",       "2026-03-08"),
-    ("saudi_arabia_2026",  "Saudi Arabia",  "2026-03-15"),
-    ("australia_2026",     "Australia",     "2026-03-29"),
-    ("japan_2026",         "Japan",         "2026-04-12"),
-    ("china_2026",         "China",         "2026-04-26"),
-    ("miami_2026",         "Miami",         "2026-05-10"),
-    ("italy_2026",         "Italy",         "2026-05-24"),
-    ("monaco_2026",        "Monaco",        "2026-05-31"),
-    ("spain_2026",         "Spain",         "2026-06-14"),
+    ("bahrain_2026", "Bahrain", "2026-03-08"),
+    ("saudi_arabia_2026", "Saudi Arabia", "2026-03-15"),
+    ("australia_2026", "Australia", "2026-03-29"),
+    ("japan_2026", "Japan", "2026-04-12"),
+    ("china_2026", "China", "2026-04-26"),
+    ("miami_2026", "Miami", "2026-05-10"),
+    ("italy_2026", "Italy", "2026-05-24"),
+    ("monaco_2026", "Monaco", "2026-05-31"),
+    ("spain_2026", "Spain", "2026-06-14"),
 ]
 
 # Drivers — same 22 as datagen/drivers.py and data/drivers_seed.sql.
 # tier: 1=top (P1-6), 2=upper midfield (P5-12), 3=lower midfield (P10-17), 4=back (P15-22)
 DRIVERS = [
-    (1,  "Max Eriksson",      "Titan Dynamics",    1),
-    (4,  "Luca Novak",        "Apex Motorsport",   1),
-    (44, "James River",       "River Racing",      1),  # special-cased below
-    (16, "Carlos Vega",       "Scuderia Rossa",    2),
-    (63, "Oliver Walsh",      "Sterling GP",       2),
-    (14, "Fernando Reyes",    "Aston Verde",       2),
-    (10, "Theo Martin",       "Alpine Force",      2),
-    (24, "Valtteri Koskinen", "Sauber Spirit",     2),
-    (3,  "Daniel Costa",      "Apex Motorsport",   2),
-    (6,  "Alex Nakamura",     "Williams Heritage", 3),
-    (55, "Marco Rossi",       "Scuderia Rossa",    3),
-    (2,  "Yuki Tanaka",       "Titan Dynamics",    3),
-    (77, "Sophie Laurent",    "River Racing",      3),
-    (18, "Kimi Lahtinen",     "Aston Verde",       3),
-    (12, "Pierre Blanc",      "Sterling GP",       3),
-    (31, "Oscar Patel",       "Alpine Force",      3),
-    (23, "Li Wei",            "Sauber Spirit",     4),
-    (20, "Kevin Andersen",    "Haas Velocity",     4),
-    (27, "Nico Hoffman",      "Haas Velocity",     4),
-    (8,  "Logan Mitchell",    "Williams Heritage", 4),
-    (22, "Liam O'Brien",      "Racing Bulls",      4),
-    (21, "Isack Mbeki",       "Racing Bulls",      4),
+    (1, "Max Eriksson", "Titan Dynamics", 1),
+    (4, "Luca Novak", "Apex Motorsport", 1),
+    (44, "James River", "River Racing", 1),  # special-cased below
+    (16, "Carlos Vega", "Scuderia Rossa", 2),
+    (63, "Oliver Walsh", "Sterling GP", 2),
+    (14, "Fernando Reyes", "Aston Verde", 2),
+    (10, "Theo Martin", "Alpine Force", 2),
+    (24, "Valtteri Koskinen", "Sauber Spirit", 2),
+    (3, "Daniel Costa", "Apex Motorsport", 2),
+    (6, "Alex Nakamura", "Williams Heritage", 3),
+    (55, "Marco Rossi", "Scuderia Rossa", 3),
+    (2, "Yuki Tanaka", "Titan Dynamics", 3),
+    (77, "Sophie Laurent", "River Racing", 3),
+    (18, "Kimi Lahtinen", "Aston Verde", 3),
+    (12, "Pierre Blanc", "Sterling GP", 3),
+    (31, "Oscar Patel", "Alpine Force", 3),
+    (23, "Li Wei", "Sauber Spirit", 4),
+    (20, "Kevin Andersen", "Haas Velocity", 4),
+    (27, "Nico Hoffman", "Haas Velocity", 4),
+    (8, "Logan Mitchell", "Williams Heritage", 4),
+    (22, "Liam O'Brien", "Racing Bulls", 4),
+    (21, "Isack Mbeki", "Racing Bulls", 4),
 ]
 
 # James's hand-crafted arc — must match the demo narrative
 JAMES_ARC = [
     # (gp_index, sequence,                start, finish)
-    (0, ["SOFT", "MEDIUM"],               3, 1),  # Bahrain        +2
-    (1, ["MEDIUM", "HARD"],               3, 2),  # Saudi Arabia   +1
-    (2, ["SOFT", "SOFT", "MEDIUM"],       5, 9),  # Australia      -4
-    (3, ["SOFT", "HARD"],                 4, 6),  # Japan          -2
-    (4, ["SOFT", "MEDIUM"],               6, 3),  # China          +3
-    (5, ["SOFT", "MEDIUM", "HARD"],       2, 5),  # Miami          -3
-    (6, ["SOFT", "MEDIUM"],               4, 2),  # Italy          +2
-    (7, ["SOFT", "MEDIUM", "HARD"],       3, 7),  # Monaco         -4
-    (8, ["SOFT", "MEDIUM"],               5, 1),  # Spain          +4
+    (0, ["SOFT", "MEDIUM"], 3, 1),  # Bahrain        +2
+    (1, ["MEDIUM", "HARD"], 3, 2),  # Saudi Arabia   +1
+    (2, ["SOFT", "SOFT", "MEDIUM"], 5, 9),  # Australia      -4
+    (3, ["SOFT", "HARD"], 4, 6),  # Japan          -2
+    (4, ["SOFT", "MEDIUM"], 6, 3),  # China          +3
+    (5, ["SOFT", "MEDIUM", "HARD"], 2, 5),  # Miami          -3
+    (6, ["SOFT", "MEDIUM"], 4, 2),  # Italy          +2
+    (7, ["SOFT", "MEDIUM", "HARD"], 3, 7),  # Monaco         -4
+    (8, ["SOFT", "MEDIUM"], 5, 1),  # Spain          +4
 ]
 
 # Strategy templates: (name, stints, position_delta_bias)
 # delta_bias is a (mean, stddev) for how the strategy shifts finishing position
 # relative to starting grid. Negative delta = gained positions.
 STRATEGIES = [
-    ("SOFT-MEDIUM",        ["SOFT", "MEDIUM"],            (-2.5, 1.5)),  # winner
-    ("MEDIUM-HARD",        ["MEDIUM", "HARD"],            (-0.5, 1.5)),
-    ("SOFT-HARD",          ["SOFT", "HARD"],              ( 0.5, 1.5)),
-    ("SOFT-MEDIUM-HARD",   ["SOFT", "MEDIUM", "HARD"],    ( 0.5, 1.8)),
-    ("SOFT-MEDIUM-MEDIUM", ["SOFT", "MEDIUM", "MEDIUM"],  ( 1.5, 1.8)),
-    ("SOFT-SOFT-MEDIUM",   ["SOFT", "SOFT", "MEDIUM"],    ( 1.8, 2.0)),
+    ("SOFT-MEDIUM", ["SOFT", "MEDIUM"], (-2.5, 1.5)),  # winner
+    ("MEDIUM-HARD", ["MEDIUM", "HARD"], (-0.5, 1.5)),
+    ("SOFT-HARD", ["SOFT", "HARD"], (0.5, 1.5)),
+    ("SOFT-MEDIUM-HARD", ["SOFT", "MEDIUM", "HARD"], (0.5, 1.8)),
+    ("SOFT-MEDIUM-MEDIUM", ["SOFT", "MEDIUM", "MEDIUM"], (1.5, 1.8)),
+    ("SOFT-SOFT-MEDIUM", ["SOFT", "SOFT", "MEDIUM"], (1.8, 2.0)),
 ]
 
 # Per-race strategy quotas (must sum to 22)
 STRATEGY_QUOTA = {
-    "SOFT-MEDIUM":        6,
-    "MEDIUM-HARD":        5,
-    "SOFT-HARD":          5,
-    "SOFT-MEDIUM-HARD":   3,
+    "SOFT-MEDIUM": 6,
+    "MEDIUM-HARD": 5,
+    "SOFT-HARD": 5,
+    "SOFT-MEDIUM-HARD": 3,
     "SOFT-MEDIUM-MEDIUM": 2,
-    "SOFT-SOFT-MEDIUM":   1,
+    "SOFT-SOFT-MEDIUM": 1,
 }
 assert sum(STRATEGY_QUOTA.values()) == 22
 
 TIER_GRID_RANGE = {
-    1: (1, 6),    # top tier qualifies P1-6
+    1: (1, 6),  # top tier qualifies P1-6
     2: (4, 12),
     3: (10, 17),
     4: (15, 22),
@@ -157,10 +158,38 @@ def assign_strategies(race_idx: int) -> dict:
 
     # Strategy preferences by tier (weighted draws)
     tier_weights = {
-        1: {"SOFT-MEDIUM": 4, "MEDIUM-HARD": 3, "SOFT-HARD": 2, "SOFT-MEDIUM-HARD": 1, "SOFT-MEDIUM-MEDIUM": 0, "SOFT-SOFT-MEDIUM": 0},
-        2: {"SOFT-MEDIUM": 3, "MEDIUM-HARD": 3, "SOFT-HARD": 2, "SOFT-MEDIUM-HARD": 2, "SOFT-MEDIUM-MEDIUM": 1, "SOFT-SOFT-MEDIUM": 0},
-        3: {"SOFT-MEDIUM": 2, "MEDIUM-HARD": 2, "SOFT-HARD": 3, "SOFT-MEDIUM-HARD": 2, "SOFT-MEDIUM-MEDIUM": 2, "SOFT-SOFT-MEDIUM": 1},
-        4: {"SOFT-MEDIUM": 1, "MEDIUM-HARD": 1, "SOFT-HARD": 2, "SOFT-MEDIUM-HARD": 2, "SOFT-MEDIUM-MEDIUM": 3, "SOFT-SOFT-MEDIUM": 2},
+        1: {
+            "SOFT-MEDIUM": 4,
+            "MEDIUM-HARD": 3,
+            "SOFT-HARD": 2,
+            "SOFT-MEDIUM-HARD": 1,
+            "SOFT-MEDIUM-MEDIUM": 0,
+            "SOFT-SOFT-MEDIUM": 0,
+        },
+        2: {
+            "SOFT-MEDIUM": 3,
+            "MEDIUM-HARD": 3,
+            "SOFT-HARD": 2,
+            "SOFT-MEDIUM-HARD": 2,
+            "SOFT-MEDIUM-MEDIUM": 1,
+            "SOFT-SOFT-MEDIUM": 0,
+        },
+        3: {
+            "SOFT-MEDIUM": 2,
+            "MEDIUM-HARD": 2,
+            "SOFT-HARD": 3,
+            "SOFT-MEDIUM-HARD": 2,
+            "SOFT-MEDIUM-MEDIUM": 2,
+            "SOFT-SOFT-MEDIUM": 1,
+        },
+        4: {
+            "SOFT-MEDIUM": 1,
+            "MEDIUM-HARD": 1,
+            "SOFT-HARD": 2,
+            "SOFT-MEDIUM-HARD": 2,
+            "SOFT-MEDIUM-MEDIUM": 3,
+            "SOFT-SOFT-MEDIUM": 2,
+        },
     }
 
     others = [d for d in DRIVERS if d[0] != 44]
@@ -201,7 +230,7 @@ def compute_finish(grid: dict, strategies: dict, race_idx: int) -> dict:
     # Compute "race score" for non-James drivers
     # Lower score = better finish. Score = starting_grid + strategy_delta + tier_bias + noise
     scores = []
-    for car_number, driver, team, tier in DRIVERS:
+    for car_number, _driver, _team, tier in DRIVERS:
         if car_number == 44:
             continue
         start = grid[car_number]

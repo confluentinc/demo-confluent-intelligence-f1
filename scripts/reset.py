@@ -60,7 +60,8 @@ def delete_flink_statements(core: dict) -> None:
 
     statements = data.get("data", [])
     running = [
-        s["name"] for s in statements
+        s["name"]
+        for s in statements
         if s.get("status", {}).get("phase") not in ("COMPLETED", "FAILED", "STOPPED", "DELETING")
     ]
 
@@ -79,20 +80,35 @@ def delete_flink_statements(core: dict) -> None:
 
 
 def delete_topic_and_subjects(topic: str, env_id: str, cluster_id: str) -> None:
-    rc, _, stderr = run_cli([
-        "confluent", "kafka", "topic", "delete", topic,
-        "--environment", env_id,
-        "--cluster", cluster_id,
-    ], confirm=True)
+    rc, _, stderr = run_cli(
+        [
+            "confluent",
+            "kafka",
+            "topic",
+            "delete",
+            topic,
+            "--environment",
+            env_id,
+            "--cluster",
+            cluster_id,
+        ],
+        confirm=True,
+    )
     first_line = stderr.strip().splitlines()[0] if stderr.strip() else ""
     print(f"  Topic {topic}: {'deleted' if rc == 0 else f'skipped ({first_line})'}")
 
     for subject in [f"{topic}-key", f"{topic}-value"]:
         base_cmd = [
-            "confluent", "schema-registry", "schema", "delete",
-            "--subject", subject,
-            "--version", "all",
-            "--environment", env_id,
+            "confluent",
+            "schema-registry",
+            "schema",
+            "delete",
+            "--subject",
+            subject,
+            "--version",
+            "all",
+            "--environment",
+            env_id,
         ]
         run_cli(base_cmd, confirm=True)
         run_cli([*base_cmd, "--permanent"], confirm=True)
@@ -115,24 +131,26 @@ def drop_demo_flink_objects(core: dict) -> None:
     url = f"{rest}/sql/v1/organizations/{org_id}/environments/{env_id}/statements"
 
     drops = [
-        ("drop-car-state",     "DROP TABLE IF EXISTS `car-state`"),
+        ("drop-car-state", "DROP TABLE IF EXISTS `car-state`"),
         ("drop-pit-decisions", "DROP TABLE IF EXISTS `pit-decisions`"),
-        ("drop-pit-agent",     "DROP AGENT IF EXISTS `pit_strategy_agent`"),
+        ("drop-pit-agent", "DROP AGENT IF EXISTS `pit_strategy_agent`"),
     ]
 
     for label, sql in drops:
         name = f"reset-{label}-{int(time.time())}"
-        body = json.dumps({
-            "name": name,
-            "spec": {
-                "statement": sql,
-                "compute_pool": {"id": compute_pool_id},
-                "properties": {
-                    "sql.current-catalog": catalog,
-                    "sql.current-database": database,
+        body = json.dumps(
+            {
+                "name": name,
+                "spec": {
+                    "statement": sql,
+                    "compute_pool": {"id": compute_pool_id},
+                    "properties": {
+                        "sql.current-catalog": catalog,
+                        "sql.current-database": database,
+                    },
                 },
-            },
-        }).encode()
+            }
+        ).encode()
         try:
             req = urllib.request.Request(url, data=body, headers=headers, method="POST")
             urllib.request.urlopen(req)
@@ -151,20 +169,37 @@ def reset_mq_connector(env_id: str, cluster_id: str, root) -> None:
         print(f"  Skipping — {MQ_CONNECTOR_CONFIG} not found (run 'uv run deploy' first)")
         return
 
-    rc, _, stderr = run_cli([
-        "confluent", "connect", "cluster", "delete", MQ_CONNECTOR_NAME,
-        "--environment", env_id,
-        "--cluster", cluster_id,
-    ], confirm=True)
+    rc, _, stderr = run_cli(
+        [
+            "confluent",
+            "connect",
+            "cluster",
+            "delete",
+            MQ_CONNECTOR_NAME,
+            "--environment",
+            env_id,
+            "--cluster",
+            cluster_id,
+        ],
+        confirm=True,
+    )
     first_line = stderr.strip().splitlines()[0] if stderr.strip() else ""
     print(f"  Delete {MQ_CONNECTOR_NAME}: {'ok' if rc == 0 else f'skipped ({first_line})'}")
 
-    rc, _, stderr = run_cli([
-        "confluent", "connect", "cluster", "create",
-        "--config-file", str(config_path),
-        "--environment", env_id,
-        "--cluster", cluster_id,
-    ])
+    rc, _, stderr = run_cli(
+        [
+            "confluent",
+            "connect",
+            "cluster",
+            "create",
+            "--config-file",
+            str(config_path),
+            "--environment",
+            env_id,
+            "--cluster",
+            cluster_id,
+        ]
+    )
     if rc == 0:
         print(f"  Recreated {MQ_CONNECTOR_NAME}")
     else:

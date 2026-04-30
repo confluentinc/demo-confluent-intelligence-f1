@@ -21,9 +21,6 @@ def setup_logging(verbose: bool = False, default_level: str = "INFO") -> logging
     else:
         level = getattr(logging, default_level.upper(), logging.INFO)
 
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+    logging.basicConfig(level=level, format="%(asctime)s - %(levelname)s - %(message)s")
 
     return logging.getLogger(__name__)

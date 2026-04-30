@@ -22,6 +22,7 @@ from pathlib import Path
 try:
     import boto3
     from botocore.exceptions import ClientError
+
     BOTO3_AVAILABLE = True
 except ImportError:
     BOTO3_AVAILABLE = False
@@ -81,7 +82,9 @@ def _get_bedrock_policy() -> dict:
     }
 
 
-def _create_or_get_iam_user(iam_client, username: str, owner_email: str, project_root: Path, logger: logging.Logger) -> None:
+def _create_or_get_iam_user(
+    iam_client, username: str, owner_email: str, project_root: Path, logger: logging.Logger
+) -> None:
     """Create IAM user if it doesn't exist."""
     try:
         iam_client.get_user(UserName=username)
@@ -114,9 +117,7 @@ def _create_access_key(iam_client, username: str, logger: logging.Logger) -> tup
     response = iam_client.list_access_keys(UserName=username)
     existing = response.get("AccessKeyMetadata", [])
     if len(existing) >= 2:
-        raise MaxKeysReached(
-            f"User '{username}' already has 2 access keys (AWS limit of 2 per user)."
-        )
+        raise MaxKeysReached(f"User '{username}' already has 2 access keys (AWS limit of 2 per user).")
     response = iam_client.create_access_key(UserName=username)
     key = response["AccessKey"]
     logger.info(f"Created access key {key['AccessKeyId']}")
@@ -166,7 +167,7 @@ aws iam delete-user --user-name {username}
 
 **IAM User:** `{username}`
 **Policy:** `{AWS_POLICY_NAME}` (inline — bedrock:InvokeModel only)
-**Created:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
+**Created:** {datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")} UTC
 """
     creds_file = project_root / AWS_CREDENTIALS_FILE
     creds_file.write_text(content)
