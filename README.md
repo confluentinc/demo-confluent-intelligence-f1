@@ -5,278 +5,104 @@ Real-time AI pit strategy system for a Formula 1 team. An AI agent monitors live
 ## Architecture
 
 ```
-Car Sensors ──→ Direct to Kafka ──→ car-telemetry ──┐
-                                                     ├──→ Flink Job 1: Enrichment + Anomaly Detection ──→ car-state
-FIA Timing  ──→ IBM MQ ──→ MQ Connector ──→ race-standings-raw ──→ Flink Job 0: Parse + Key ──→ race-standings ──┘
-                                                                                                        │
-Postgres    ──→ CDC Debezium ──→ driver_race_history ──→ Tableflow                          Flink Job 2: Streaming Agent
-                                                                                                        │
-                                                                                                        ▼
-                                                                                     pit-decisions ──→ Tableflow ──→ Databricks Genie
+Race Simulator (ECS Fargate)
+  ├── Kafka produce (AVRO)   → car-telemetry
+  └── MQ publish (JMS text)  → IBM MQ EC2 → MQ Source Connector → race-standings-raw
+                                                                         │
+                                                          Job 0 (Terraform-managed Flink SQL)
+                                                          Parse JMS envelope, key by car_number
+                                                                         │
+                                                                  race-standings
+                                                                         │
+Postgres (EC2) → CDC Debezium Connector → driver_race_history ──────────┤
+                                                                         │
+                                                          Job 1 (Flink SQL Workspace)
+                                                          10s tumbling window + temporal join
+                                                          AI_DETECT_ANOMALIES(tire_temp_fl_c)
+                                                                         │
+                                                                     car-state
+                                                                         │
+                                                          Job 2 (Flink SQL Workspace)
+                                                          AI_RUN_AGENT → pit-decisions
+                                                                         │
+                                                              Tableflow → S3 → Databricks Genie
 ```
 
 ## Quick Start
 
 ### Prerequisites
 
-- Confluent Cloud account with API key/secret
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
+- Confluent Cloud account + API key/secret (Organization Admin)
+- Confluent CLI installed and logged in (`confluent login`)
 - AWS credentials configured (`~/.aws/credentials` or env vars)
 - Terraform >= 1.3
-- Docker (for building the race simulator image)
-- Confluent CLI
+- Docker Desktop running (builds the race simulator image for ECS)
 
-### 1. Deploy Infrastructure
-
-```bash
-# Configure credentials
-cp terraform/terraform.tfvars.example terraform/terraform.tfvars
-# Edit terraform.tfvars with your values
-
-# Deploy
-cd terraform
-terraform init
-terraform apply
-```
-
-This creates:
-- Confluent Cloud environment, Kafka cluster, Flink compute pool
-- `car-telemetry` and `race-standings` topics (Flink CREATE TABLE with schemas)
-- EC2 with IBM MQ (queue: DEV.QUEUE.1)
-- EC2 with Postgres (22 fictional drivers pre-loaded)
-- ECS Fargate task definition (race simulator Docker image)
-- S3 bucket + IAM role for Tableflow
-- Auto-generated connector config at `generated/mq_connector_config.json`
-
-### 2. Deploy MQ Source Connector
+### 1. Deploy infrastructure (~15-20 min)
 
 ```bash
-confluent connect cluster create \
-  --config-file generated/mq_connector_config.json \
-  --environment $(terraform output -raw environment_id) \
-  --cluster $(terraform output -raw cluster_id)
+uv run deploy
 ```
 
-This creates the `race-standings-raw` topic. The connector reads from the MQ queue and writes JMS-wrapped messages to Kafka.
+Prompts for credentials, then deploys two Terraform stacks (Confluent Cloud + AWS). Creates:
+- Confluent Cloud environment, Kafka cluster, Schema Registry, Flink compute pool
+- `car-telemetry` and `race-standings` topics (Flink CREATE TABLE with schemas + watermarks)
+- IBM MQ EC2, Postgres EC2 (198 historical `driver_race_history` rows pre-loaded)
+- ECS Fargate task definition (race simulator)
+- MQ Source Connector + CDC Debezium Connector (both auto-deployed and running)
+- S3 + IAM role for Tableflow
+- Job 0 Flink statement (parse + key race standings) — running and waiting for data
 
-Wait for the connector to show `RUNNING`:
-
-```bash
-confluent connect cluster describe <CONNECTOR_ID> \
-  --environment $(terraform output -raw environment_id) \
-  --cluster $(terraform output -raw cluster_id)
-```
-
-### 3. Start the Race
+### 2. Start the race
 
 ```bash
 ./scripts/start-race.sh
-```
-
-This launches the race simulator on ECS Fargate. It runs a 57-lap race in ~9.5 minutes:
-- Produces car telemetry (car #44) directly to Kafka (`car-telemetry`)
-- Produces race standings (all 22 cars) to IBM MQ as JMS TextMessages
-
-Monitor the race:
-
-```bash
 aws logs tail /ecs/f1-simulator --follow
 ```
 
-### 4. Deploy Flink Jobs
+Runs a 57-lap race in ~9.5 minutes. Job 0 immediately starts writing parsed standings to `race-standings`.
 
-**Job 0** (parse `race-standings-raw` JMS envelope into clean `race-standings`) is **deployed automatically by Terraform** — see `demo-reference/parse_standings.sql` for the SQL. The MQ EC2 publishes a single retained warmup message during boot so the topic exists before Job 0 deploys, and Job 0's `WHERE car_number > 0` filter discards that warmup record.
+### 3. Deploy Jobs 1 & 2 in the Flink SQL Workspace
 
-**Job 1** and **Job 2** are run manually in the **Confluent Cloud Flink SQL workspace** during the demo. Set the catalog and database first:
+See **[Walkthrough.md](Walkthrough.md)** for the full step-by-step including SQL to paste, how to enable Tableflow, and how to query with Databricks Genie.
 
-```sql
-USE CATALOG `<environment-name>`;
-USE `<cluster-name>`;
-```
+SQL files: `demo-reference/enrichment_anomaly.sql` (Job 1), `demo-reference/streaming_agent.sql` (Job 2).
 
-#### Job 1: Enrichment + Anomaly Detection
-
-Joins car telemetry with race standings (temporal join on `event_time`), tumbles into 10-second windows, runs `AI_DETECT_ANOMALIES` on `tire_temp_fl_c`, and emits the windowed snapshot enriched with race context. The CASE filter keeps only spikes above the upper bound — post-pit drops are not flagged as anomalies.
-
-> **Why only `tire_temp_fl_c`?** The simulator's other metrics carry too much noise (brake ±25°C, battery cycle, etc.) and produce false anomalies that distract from the demo narrative. The hero anomaly at lap 32 is the front-left tire overheating to ~145°C — that's the entire story.
->
-> **Why is the temporal join in the first CTE, not at the end?** After multiple OVER aggregations, `window_time` loses its rowtime attribute and `FOR SYSTEM_TIME AS OF` silently emits zero rows. Joining on raw `event_time` keeps the rowtime clean.
-
-```sql
-CREATE TABLE `car-state` (
-  PRIMARY KEY (car_number) NOT ENFORCED
-)
-WITH ('changelog.mode' = 'append')
-AS
-WITH enriched AS (
-  SELECT
-    t.car_number, t.event_time, t.lap,
-    t.tire_temp_fl_c, t.tire_temp_fr_c, t.tire_temp_rl_c, t.tire_temp_rr_c,
-    t.tire_pressure_fl_psi, t.tire_pressure_fr_psi,
-    t.tire_pressure_rl_psi, t.tire_pressure_rr_psi,
-    t.engine_temp_c, t.brake_temp_fl_c, t.brake_temp_fr_c,
-    t.battery_charge_pct, t.fuel_remaining_kg,
-    r.`position`, r.gap_to_ahead_sec, r.gap_to_leader_sec,
-    r.pit_stops, r.tire_compound, r.tire_age_laps
-  FROM `car-telemetry` t
-  JOIN `race-standings` FOR SYSTEM_TIME AS OF t.event_time AS r
-    ON t.car_number = r.car_number
-),
-windowed AS (
-  SELECT
-    window_start, window_end, window_time, car_number,
-    MAX(lap) AS lap,
-    AVG(tire_temp_fl_c) AS tire_temp_fl_c,
-    AVG(tire_temp_fr_c) AS tire_temp_fr_c,
-    AVG(tire_temp_rl_c) AS tire_temp_rl_c,
-    AVG(tire_temp_rr_c) AS tire_temp_rr_c,
-    AVG(tire_pressure_fl_psi) AS tire_pressure_fl_psi,
-    AVG(tire_pressure_fr_psi) AS tire_pressure_fr_psi,
-    AVG(tire_pressure_rl_psi) AS tire_pressure_rl_psi,
-    AVG(tire_pressure_rr_psi) AS tire_pressure_rr_psi,
-    AVG(engine_temp_c) AS engine_temp_c,
-    AVG(brake_temp_fl_c) AS brake_temp_fl_c,
-    AVG(brake_temp_fr_c) AS brake_temp_fr_c,
-    AVG(battery_charge_pct) AS battery_charge_pct,
-    AVG(fuel_remaining_kg) AS fuel_remaining_kg,
-    MAX(`position`) AS `position`,
-    MAX(gap_to_ahead_sec) AS gap_to_ahead_sec,
-    MAX(gap_to_leader_sec) AS gap_to_leader_sec,
-    MAX(pit_stops) AS pit_stops,
-    MAX(tire_compound) AS tire_compound,
-    MAX(tire_age_laps) AS tire_age_laps
-  FROM TABLE(
-    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
-  )
-  GROUP BY window_start, window_end, window_time, car_number
-),
-anomaly AS (
-  SELECT
-    *,
-    AI_DETECT_ANOMALIES(tire_temp_fl_c, window_time,
-      JSON_OBJECT('minTrainingSize' VALUE 20,
-                  'maxTrainingSize' VALUE 50,
-                  'confidencePercentage' VALUE 99.99,
-                  'enableStl' VALUE FALSE))
-      OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
-      AS anomaly_tire_temp_fl_result
-  FROM windowed
-)
-SELECT
-  car_number, lap,
-  tire_temp_fl_c, tire_temp_fr_c, tire_temp_rl_c, tire_temp_rr_c,
-  tire_pressure_fl_psi, tire_pressure_fr_psi,
-  tire_pressure_rl_psi, tire_pressure_rr_psi,
-  engine_temp_c, brake_temp_fl_c, brake_temp_fr_c,
-  battery_charge_pct, fuel_remaining_kg,
-  CASE
-    WHEN anomaly_tire_temp_fl_result.is_anomaly
-         AND anomaly_tire_temp_fl_result.actual_value
-             > anomaly_tire_temp_fl_result.upper_bound
-    THEN true
-    ELSE false
-  END AS anomaly_tire_temp_fl,
-  `position`, gap_to_ahead_sec, gap_to_leader_sec,
-  pit_stops, tire_compound, tire_age_laps
-FROM anomaly;
-```
-
-#### Job 2: Streaming Agent
-
-```sql
--- 1. AI Connection
-CREATE CONNECTION ai_connection
-  WITH ('type' = 'openai', 'endpoint' = '...', 'api-key' = '...');
-
--- 2. Model
-CREATE MODEL pit_strategy_model
-  USING CONNECTION ai_connection;
-
--- 3. RTCE Connection (for competitor standings)
-CREATE CONNECTION rtce_connection
-  WITH ('type' = 'mcp_server', 'endpoint' = '...', 'transport-type' = 'STREAMABLE_HTTP');
-
--- 4. RTCE Tool
-CREATE TOOL race_standings_tool
-  USING CONNECTION rtce_connection
-  WITH (
-    'type' = 'mcp',
-    'description' = 'Look up current race standings for any car by car_number. Returns position, gap, pit stops, tire compound, and tire age.'
-  );
-
--- 5. Agent
-CREATE AGENT pit_strategy_agent
-  USING MODEL pit_strategy_model
-  USING PROMPT 'You are an F1 pit wall strategist for River Racing. Analyze car state data and recommend pit strategy.
-
-For each lap, evaluate:
-1. Anomaly flags - any sensor showing anomalous behavior
-2. Tire condition - compound, age, temperatures
-3. Race position and gaps to competitors
-4. Use the race_standings_tool to check what competitors are doing
-
-Respond with:
-- suggestion: PIT NOW, PIT SOON, or STAY OUT
-- condition_summary: brief description of car condition
-- race_context: current race situation
-- recommended_tire_compound: SOFT, MEDIUM, or HARD (null if STAY OUT)
-- recommended_stint_laps: expected laps on new tires (null if STAY OUT)
-- recommended_reason: why this compound (null if STAY OUT)
-- reasoning: full explanation of your decision'
-  USING TOOLS race_standings_tool
-  WITH ('max_iterations' = '5');
-
--- 6. Agent invocation
-INSERT INTO `pit-decisions`
-SELECT
-  car_number, lap, position,
-  tire_compound AS tire_compound_current,
-  AI_RUN_AGENT(pit_strategy_agent, *)
-FROM `car-state`;
-```
-
-### 5. Enable Tableflow
-
-In the Confluent Cloud UI, enable Tableflow on:
-- `pit-decisions` — agent output (Delta Lake format, BYOS to S3)
-- `driver_race_history` — historical season data, 198 rows (Delta Lake format, BYOS to S3)
-
-### 6. Query with Databricks Genie
-
-Connect Databricks Unity Catalog to the Tableflow Delta Lake tables, then ask Genie:
-
-- *"How many positions did we gain after following the agent's recommendation?"*
-- *"What percentage of the race did our driver spend on each tire compound?"*
-
-### Stop the Race
-
-```bash
-./scripts/stop-race.sh
-```
-
-### Teardown
-
-```bash
-./scripts/teardown.sh
-```
+---
 
 ## Demo Scenario
 
-**Team:** River Racing | **Driver:** James River (#44) | **Circuit:** Silverstone | **Laps:** 57 (10s each)
+**Team:** River Racing | **Driver:** James River (#44) | **Circuit:** Silverstone | **57 laps, ~10s each**
 
-| Phase | Laps | Position | Tire | What Happens |
-|---|---|---|---|---|
-| Competitive | 1-15 | P3 | SOFT | Stable, good pace |
-| Leads | 18-27 | P2-P1 | SOFT | Others pit, James leads |
-| Tires die | 28-32 | P1-P8 | SOFT | Degradation, cars pass |
-| **Anomaly** | **32** | **P8** | **SOFT** | **tire_temp_fl spikes to 145C. Agent: PIT NOW** |
-| Pit stop | 33 | P12 | MEDIUM | Fresh tires, drops 4 spots |
-| Recovery | 34-57 | P12-P3 | MEDIUM | Fastest on track, climbs back |
+| Laps | Position | Tire | What Happens |
+|------|----------|------|--------------|
+| 1–15 | P3 | SOFT (fresh) | Competitive, stable pace |
+| 16–25 | P3 → P5 | SOFT (aging) | Tires wearing, two cars pass |
+| 26–31 | P5 → P8 | SOFT (critical) | Tires falling off, three more pass — agent says PIT SOON |
+| **32** | **P8** | **SOFT (dead)** | **tire_temp_fl anomaly fires — agent says PIT NOW** |
+| 33 | P12 | MEDIUM (fresh) | Pit stop, drops spots |
+| 34–57 | P12 → P3 | MEDIUM | Fastest car on track, climbs back |
 
-**Result: P8 at pit call -> P3 at finish = +5 positions gained**
+**Result: P8 at pit call → P3 at finish = +5 positions gained**
+
+---
+
+## Reset & Teardown
+
+```bash
+uv run reset     # Stop Flink jobs, drop and recreate topics — use between race re-runs
+uv run destroy   # Tear down all infrastructure
+```
+
+---
 
 ## Documentation
 
-- [Design Doc](CLAUDE.md) — Full architecture, schemas, constraints
-- [DBT Adapter Setup](docs/SETUP-DBT-ADAPTER.md)
-- [Tableflow Setup](docs/SETUP-TABLEFLOW.md)
-- [Databricks Genie Setup](docs/SETUP-GENIE.md)
+| | |
+|--|--|
+| [Walkthrough.md](Walkthrough.md) | Full step-by-step demo guide |
+| [docs/USE-CASE.md](docs/USE-CASE.md) | Use case narrative + race script + Genie expected answers |
+| [docs/SETUP-TABLEFLOW.md](docs/SETUP-TABLEFLOW.md) | Tableflow + Delta Lake setup |
+| [docs/SETUP-GENIE.md](docs/SETUP-GENIE.md) | Databricks Genie setup |
+| [docs/SETUP-DBT-ADAPTER.md](docs/SETUP-DBT-ADAPTER.md) | DBT adapter setup (optional) |

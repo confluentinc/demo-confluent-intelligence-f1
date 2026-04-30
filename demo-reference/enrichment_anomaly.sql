@@ -24,9 +24,7 @@
 --    Otherwise the post-pit drop at lap 33 (145°C → 95°C) flags a second
 --    anomaly that's semantically a recovery, not a problem.
 
-CREATE TABLE `car-state` (
-  PRIMARY KEY (car_number) NOT ENFORCED
-)
+CREATE TABLE `car-state`
 WITH ('changelog.mode' = 'append')
 AS
 WITH enriched AS (

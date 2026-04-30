@@ -32,8 +32,12 @@ You'll be prompted for:
 | Confluent Cloud API Key | `ABCDEF1234567890` | Organization-scoped key |
 | Confluent Cloud API Secret | `abc123...` | |
 | Owner email | `you@example.com` | Tagged on AWS resources |
+| Deployment ID | `PROD` | Alphanumeric, max 8 chars — drives resource names |
+| AWS Bedrock Access Key | `AKIAIOSFODNN7EXAMPLE` | For the Flink AI agent LLM connection |
+| AWS Bedrock Secret Key | `abc123...` | |
+| AWS Session Token | *(leave blank if not needed)* | Required only for temporary credentials (`ASIA*` keys) |
 
-Region is hardcoded to `us-east-1`. Resource names are auto-generated with a unique suffix (e.g., `f1-demo-a1b2c3d4`).
+Region is hardcoded to `us-east-1`. Resource names use the `RIVER-RACING-{deployment_id}` prefix (e.g., `RIVER-RACING-PROD-ENV`, `RIVER-RACING-PROD-CLUSTER`). AWS resources use the lowercase equivalent.
 
 The deploy creates two Terraform stacks:
 
@@ -57,7 +61,7 @@ Deployment takes 15-20 minutes (mostly ECR image build + Flink compute pool prov
 ### Verify deployment
 
 After deployment completes, open the **Confluent Cloud UI** and confirm:
-- Environment exists (named `f1-demo-env`)
+- Environment exists (e.g., `RIVER-RACING-PROD-ENV` for deployment_id `PROD`)
 - Kafka cluster exists with `car-telemetry`, `race-standings`, and `race-standings-raw` topics
 - Flink compute pool is provisioned
 - Two connectors (`f1-mq-source`, `f1-postgres-cdc`) are in `RUNNING` state
@@ -284,18 +288,18 @@ Driver: James River, Car #44.
 DECISION RULES:
 
 PIT NOW — pit this lap (urgent):
-- anomaly_tire_temp_fl = true (tire anomaly detected, failure risk imminent — act immediately)
-- tire_age_laps > 35 on SOFT compound (tires are past the cliff, no pace recoverable)
+- anomaly_tire_temp_fl = true (sensor-detected thermal anomaly — failure risk imminent, act immediately)
+CRITICAL: Tire age alone is NEVER a valid reason for PIT NOW. If anomaly_tire_temp_fl = false, your maximum recommendation is PIT SOON, not PIT NOW.
 
 PIT SOON — pit within the next 1-3 laps (strategic):
-- tire_age_laps > 28 on SOFT with temperatures rising and positions falling
-- Car directly ahead just pitted onto fresher rubber (undercut window closing)
-- Tire temperatures consistently 10C above expected range for compound and age
+- tire_age_laps >= 26 on SOFT compound (performance cliff approaching, positions will begin falling)
+- Car directly ahead just pitted onto fresher rubber AND tire_age_laps >= 20 (undercut window closing)
 
-STAY OUT — continue on current tires:
-- Tire temps and pressures are nominal for compound type and age
-- Tire age is within the expected stint window
-- Current track position is strong and pitting would surrender too many places
+STAY OUT — default recommendation when none of the above apply:
+- anomaly_tire_temp_fl = false (no sensor-detected failure risk)
+- Tire age is within the expected stint window (SOFT compound: tire_age_laps < 26)
+- Tire temps and pressures nominal for compound type and age
+- Track position is strong and pitting would surrender meaningful places
 
 COMPETITOR CONTEXT:
 Current top-10 standings are provided at the end of each input. Use them to identify:
@@ -303,11 +307,12 @@ Current top-10 standings are provided at the end of each input. Use them to iden
 - Who is still on old tires and likely to pit soon
 - Whether James is at risk of being undercut, or has an overcut opportunity
 
-TIRE STRATEGY at Silverstone:
-- SOFT: fast but degrades, ideal as a first stint (~20-30 laps)
-- MEDIUM: balanced choice, best after a SOFT first stint (~25-35 laps), allows 1-stop strategy
-- HARD: very durable but slow, only consider if more than 40 laps remain at the second stop
-- James River historical best: SOFT then MEDIUM (1-stop) averages +2.75 positions gained over 4 prior races
+TIRE STRATEGY at Silverstone (57-lap race):
+- SOFT: High-grip compound. Optimal window is laps 1-25. Still competitive laps 26-32 with some pace loss and position drops — but no failure risk unless the anomaly sensor fires. Performance cliff begins around lap 26-28.
+- MEDIUM: Balanced compound, best for a 25-30 lap second stint after a SOFT first stint. Enables clean 1-stop strategy.
+- HARD: Very durable but slow. Only consider if 40+ laps remain at the second stop.
+- James River historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. Winning execution: run SOFT until the anomaly signal fires or tire_age_laps >= 26, then switch to MEDIUM and overtake on fresher rubber.
+- IMPORTANT: Do NOT recommend pitting before tire_age_laps = 26 on SOFT unless anomaly_tire_temp_fl = true. The anomaly detection system is the authoritative signal for tire failure.
 
 REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
 WITH ('max_iterations' = '10');
@@ -408,7 +413,7 @@ In the **Confluent Cloud UI**:
 2. Select `pit-decisions` -> **Tableflow** tab -> **Enable**
    - Format: **Delta Lake**
    - Storage: **BYOS** (Bring Your Own Storage)
-   - Provider integration: select `f1-demo-aws-integration`
+   - Provider integration: select `RIVER-RACING-{deployment_id}-aws-integration`
 3. Repeat for `driver_race_history`
 
 These topics are now continuously materialized as Delta Lake tables in S3.
@@ -424,11 +429,11 @@ In Databricks Unity Catalog, create external tables pointing to the Tableflow S3
 ```sql
 CREATE TABLE f1_demo.pit_decisions
   USING DELTA
-  LOCATION 's3://f1-demo-tableflow-<hex>/topics/pit-decisions/';
+  LOCATION 's3://river-racing-{deployment_id}-tableflow-<hex>/topics/pit-decisions/';
 
 CREATE TABLE f1_demo.driver_race_history
   USING DELTA
-  LOCATION 's3://f1-demo-tableflow-<hex>/topics/driver_race_history/';
+  LOCATION 's3://river-racing-{deployment_id}-tableflow-<hex>/topics/driver_race_history/';
 ```
 
 ### Create a Genie Space
@@ -540,4 +545,4 @@ The following items are planned but not yet implemented:
 - **Infrastructure details**: [CLAUDE.md](CLAUDE.md)
 - **Tableflow setup**: [docs/SETUP-TABLEFLOW.md](docs/SETUP-TABLEFLOW.md)
 - **Genie setup**: [docs/SETUP-GENIE.md](docs/SETUP-GENIE.md)
-- **Implementation plan**: [PLAN.md](PLAN.md)
+
