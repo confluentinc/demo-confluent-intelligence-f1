@@ -2,23 +2,23 @@
 
 import os
 
-# Kafka settings (car-telemetry producer)
+# Kafka settings (car_telemetry producer)
 KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "localhost:9092")
 KAFKA_API_KEY = os.environ.get("KAFKA_API_KEY", "")
 KAFKA_API_SECRET = os.environ.get("KAFKA_API_SECRET", "")
-KAFKA_TOPIC = "car-telemetry"
+KAFKA_TOPIC = "car_telemetry"
 
 # Schema Registry settings
 SR_URL = os.environ.get("SR_URL", "")
 SR_API_KEY = os.environ.get("SR_API_KEY", "")
 SR_API_SECRET = os.environ.get("SR_API_SECRET", "")
 
-# MQ settings (race-standings producer)
+# MQ settings (race_standings producer)
 MQ_HOST = os.environ.get("MQ_HOST", "localhost")
 MQ_PORT = int(os.environ.get("MQ_PORT", "1414"))
 MQ_QUEUE_MANAGER = os.environ.get("MQ_QUEUE_MANAGER", "QM1")
 MQ_CHANNEL = os.environ.get("MQ_CHANNEL", "DEV.ADMIN.SVRCONN")
-MQ_TOPIC = os.environ.get("MQ_TOPIC", "dev/race-standings")
+MQ_TOPIC = os.environ.get("MQ_TOPIC", "dev/race_standings")
 MQ_USER = os.environ.get("MQ_USER", "admin")
 MQ_PASSWORD = os.environ.get("MQ_PASSWORD", "passw0rd")
 

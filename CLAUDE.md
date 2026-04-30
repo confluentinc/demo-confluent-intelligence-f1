@@ -43,14 +43,14 @@ cd datagen && python -m pytest tests/ -v
 
 ```
 Race Simulator (ECS Fargate)
-  ├── Kafka produce (AVRO)   → car-telemetry
-  └── MQ publish (JMS text)  → IBM MQ EC2 → MQ Source Connector → race-standings-raw
+  ├── Kafka produce (AVRO)   → car_telemetry
+  └── MQ publish (JMS text)  → IBM MQ EC2 → MQ Source Connector → race_standings_raw
                                                                          │
                                                           Job 0 (Terraform-managed Flink SQL)
                                                           Parse JMS envelope, key by car_number
                                                           WHERE car_number > 0 (drops warmup)
                                                                          │
-                                                                  race-standings
+                                                                  race_standings
                                                                          │
 Postgres (EC2) → CDC Debezium Connector → driver_race_history ──────────┤
                                                                          │
@@ -58,10 +58,10 @@ Postgres (EC2) → CDC Debezium Connector → driver_race_history ────�
                                                           10s tumbling window + temporal join
                                                           AI_DETECT_ANOMALIES(tire_temp_fl_c)
                                                                          │
-                                                                     car-state
+                                                                     car_state
                                                                          │
                                                           Job 2 (manual Flink SQL)
-                                                          AI_RUN_AGENT → pit-decisions
+                                                          AI_RUN_AGENT → pit_decisions
                                                                          │
                                                               Tableflow → S3 → Databricks Genie
 ```
@@ -75,7 +75,7 @@ Two stacks — deploy core first. Demo reads core via `terraform_remote_state` (
 | Stack | Path | What it creates |
 |-------|------|-----------------|
 | core | `terraform/core/` | CC environment, Kafka cluster, Schema Registry, Flink compute pool, Bedrock LLM connections + models, API keys |
-| demo | `terraform/demo/` | `car-telemetry` + `race-standings` topics (Flink CREATE TABLE), IBM MQ EC2, ECS Fargate, Postgres EC2, S3 Tableflow, MQ + CDC connectors, Job 0 Flink statement |
+| demo | `terraform/demo/` | `car_telemetry` + `race_standings` topics (Flink CREATE TABLE), IBM MQ EC2, ECS Fargate, Postgres EC2, S3 Tableflow, MQ + CDC connectors, Job 0 Flink statement |
 
 **Naming:** `RIVER-RACING-${deployment_id}` prefix. CC resources uppercase (`RIVER-RACING-PROD-ENV`); AWS modules apply `lower()` internally. `deployment_id` accepts any alphanumeric ≤8 chars (e.g., `PROD`).
 
@@ -87,15 +87,15 @@ Two stacks — deploy core first. Demo reads core via `terraform_remote_state` (
 
 | Topic | Created by | Tableflow | Notes |
 |-------|-----------|-----------|-------|
-| `car-telemetry` | Terraform (Flink CREATE TABLE) | No | AVRO, 1 partition, no PRIMARY KEY |
-| `race-standings-raw` | MQ Connector (auto on warmup message) | No | JMS envelope schema |
-| `race-standings` | Terraform (Flink CREATE TABLE) | No | PRIMARY KEY(car_number) for versioned temporal join |
+| `car_telemetry` | Terraform (Flink CREATE TABLE) | No | AVRO, 1 partition, no PRIMARY KEY |
+| `race_standings_raw` | MQ Connector (auto on warmup message) | No | JMS envelope schema |
+| `race_standings` | Terraform (Flink CREATE TABLE) | No | PRIMARY KEY(car_number) for versioned temporal join |
 | `driver_race_history` | CDC Connector | Yes | 198 rows historical |
-| `car-state` | Job 1 Flink statement | No | One record per 10s window |
-| `pit-decisions` | Job 2 Flink statement | Yes | Agent output |
+| `car_state` | Job 1 Flink statement | No | One record per 10s window |
+| `pit_decisions` | Job 2 Flink statement | Yes | Agent output |
 
 Topic schemas (CREATE TABLE SQL): `terraform/modules/topics/main.tf`
-Pit-decisions schema: `demo-reference/streaming_agent_pit_decisions.sql`
+`pit_decisions` schema: `demo-reference/streaming_agent_pit_decisions.sql`
 
 ---
 
@@ -105,14 +105,14 @@ Jobs 1 and 2 are copy-pasted into Flink SQL Workspace during the demo, or deploy
 
 | Job | SQL file | How deployed | Input → Output |
 |-----|----------|--------------|----------------|
-| 0 | `demo-reference/parse_standings.sql` | Terraform | `race-standings-raw` → `race-standings` |
-| 1 | `demo-reference/enrichment_anomaly.sql` | Manual (Workspace) — or via `--automated` | `car-telemetry` + `race-standings` → `car-state` |
+| 0 | `demo-reference/parse_standings.sql` | Terraform | `race_standings_raw` → `race_standings` |
+| 1 | `demo-reference/enrichment_anomaly.sql` | Manual (Workspace) — or via `--automated` | `car_telemetry` + `race_standings` → `car_state` |
 | 2a | `demo-reference/streaming_agent_create_agent.sql` | Manual (Workspace) — or via `--automated` | Creates `pit_strategy_agent` |
-| 2b | `demo-reference/streaming_agent_pit_decisions.sql` | Manual (Workspace) — or via `--automated` | `car-state` → `pit-decisions` |
+| 2b | `demo-reference/streaming_agent_pit_decisions.sql` | Manual (Workspace) — or via `--automated` | `car_state` → `pit_decisions` |
 
 **Job 1 CTE pattern:** `enriched` (temporal join on `event_time`) → `windowed` (10s TUMBLE, AVG sensors) → `anomaly` (AI_DETECT_ANOMALIES on `tire_temp_fl_c`, conf=99.99, minTraining=20, maxTraining=50, enableStl=false) → final SELECT with `actual_value > upper_bound` filter.
 
-**Job 2 pattern:** CREATE AGENT (Bedrock Claude) → AI_RUN_AGENT on each `car-state` row → REGEXP_EXTRACT 7 labeled fields from response text.
+**Job 2 pattern:** CREATE AGENT (Bedrock Claude) → AI_RUN_AGENT on each `car_state` row → REGEXP_EXTRACT 7 labeled fields from response text.
 
 **DBT:** Integration is planned but not implemented — no dbt project exists in the repo. Do not attempt to run `dbt run` or scaffold a dbt project without being explicitly asked.
 
@@ -122,7 +122,7 @@ Jobs 1 and 2 are copy-pasted into Flink SQL Workspace during the demo, or deploy
 
 **Temporal join ordering:** The temporal join (`FOR SYSTEM_TIME AS OF event_time`) must be in an early CTE on the raw stream. After OVER() aggregations, `window_time` loses its rowtime attribute — the join silently returns zero rows.
 
-**No PRIMARY KEY on `car-telemetry`:** Only `race-standings` needs PRIMARY KEY for versioned-table semantics. Adding it to `car-telemetry` registers an Avro INT key schema; the simulator writes string keys and Job 1 deserialization fails.
+**No PRIMARY KEY on `car_telemetry`:** Only `race_standings` needs PRIMARY KEY for versioned-table semantics. Adding it to `car_telemetry` registers an Avro INT key schema; the simulator writes string keys and Job 1 deserialization fails.
 
 **AI_DETECT_ANOMALIES warmup:** Emits rows with NULL `is_anomaly` for the first `minTrainingSize` rows. Normal — don't filter these out entirely.
 
@@ -170,10 +170,10 @@ All gitignored. Do not commit any of these files.
 | `datagen/config.py` | Simulator env var definitions |
 | `terraform/core/main.tf` | CC infra definition |
 | `terraform/demo/main.tf` | AWS + Flink tables + connectors + Jobs 0–2 (automated) |
-| `terraform/modules/topics/main.tf` | `car-telemetry` + `race-standings` CREATE TABLE SQL |
+| `terraform/modules/topics/main.tf` | `car_telemetry` + `race_standings` CREATE TABLE SQL |
 | `demo-reference/enrichment_anomaly.sql` | Job 1 (copy-paste to Workspace or via --automated) |
 | `demo-reference/streaming_agent_create_agent.sql` | Job 2a — CREATE AGENT (copy-paste or via --automated) |
-| `demo-reference/streaming_agent_pit_decisions.sql` | Job 2b — CREATE TABLE pit-decisions (copy-paste or via --automated) |
+| `demo-reference/streaming_agent_pit_decisions.sql` | Job 2b — CREATE TABLE pit_decisions (copy-paste or via --automated) |
 | `Walkthrough.md` | Step-by-step demo guide |
 
 ---

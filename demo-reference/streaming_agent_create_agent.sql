@@ -1,5 +1,5 @@
 -- Job 2a: Pit Strategy Agent — CREATE AGENT
--- Input: car-state
+-- Input: car_state
 -- Output: used by streaming_agent_pit_decisions.sql
 --
 -- llm_textgen_model is pre-deployed via Terraform — no CREATE CONNECTION or
@@ -7,8 +7,8 @@
 -- streaming_agent_pit_decisions.sql.
 
 -- 1. RTCE Connection — for later when RTCE is fully enabled.
---    Competitor context is currently provided via a direct JOIN with race-standings
---    (see CREATE TABLE pit-decisions below). Uncomment once your RTCE endpoint is active.
+--    Competitor context is currently provided via a direct JOIN with race_standings
+--    (see CREATE TABLE pit_decisions below). Uncomment once your RTCE endpoint is active.
 --
 -- CREATE CONNECTION `rtce-connection`
 -- WITH (
@@ -33,7 +33,7 @@
 
 -- 3. Pit Strategy Agent
 --    Competitor standings are provided as structured text in each input message
---    (from the JOIN with race-standings in the CREATE TABLE below).
+--    (from the JOIN with race_standings in the CREATE TABLE below).
 --    When RTCE is enabled: uncomment USING TOOLS and update the prompt accordingly.
 CREATE AGENT `pit_strategy_agent`
 USING MODEL `llm_textgen_model`

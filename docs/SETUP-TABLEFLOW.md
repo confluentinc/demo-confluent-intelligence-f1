@@ -8,7 +8,7 @@ Continuously materializes Kafka topics as Delta Lake tables in S3. No ETL needed
 
 | Topic | Why |
 |---|---|
-| `pit-decisions` | Agent's AI output — the data product for Genie analytics |
+| `pit_decisions` | Agent's AI output — the data product for Genie analytics |
 | `driver_race_history` | Historical season-to-date race data (198 rows) — fact table for tire-strategy correlation queries |
 
 ## Prerequisites (Done by Terraform)
@@ -20,7 +20,7 @@ Continuously materializes Kafka topics as Delta Lake tables in S3. No ETL needed
 ## Enable Tableflow (During Demo)
 
 1. Go to **Confluent Cloud UI** → Environment → Cluster → Topics
-2. Select `pit-decisions` topic
+2. Select `pit_decisions` topic
 3. Click **Tableflow** tab → **Enable**
 4. Choose **Delta Lake** format
 5. Select **BYOS** (Bring Your Own Storage)
@@ -46,7 +46,7 @@ CREATE EXTERNAL LOCATION f1_demo_tableflow
 ```sql
 CREATE TABLE f1_demo.pit_decisions
   USING DELTA
-  LOCATION 's3://f1-demo-tableflow-<hex>/topics/pit-decisions/';
+  LOCATION 's3://f1-demo-tableflow-<hex>/topics/pit_decisions/';
 
 CREATE TABLE f1_demo.driver_race_history
   USING DELTA

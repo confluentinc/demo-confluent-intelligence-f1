@@ -6,7 +6,7 @@ terraform {
   }
 }
 
-# Create car-telemetry topic via Flink CREATE TABLE
+# Create car_telemetry topic via Flink CREATE TABLE
 # This auto-creates the backing Kafka topic + schema subjects
 resource "confluent_flink_statement" "create_car_telemetry_table" {
   organization {
@@ -30,7 +30,7 @@ resource "confluent_flink_statement" "create_car_telemetry_table" {
   }
 
   statement = <<-EOT
-    CREATE TABLE `car-telemetry` (
+    CREATE TABLE `car_telemetry` (
       `car_number` INT COMMENT 'Car number identifier',
       `lap` INT COMMENT 'Current lap number (1-57)',
       `tire_temp_fl_c` DOUBLE COMMENT 'Front-left tire temperature in Celsius',
@@ -75,7 +75,7 @@ resource "confluent_flink_statement" "create_car_telemetry_table" {
   }
 }
 
-# Create race-standings topic via Flink CREATE TABLE
+# Create race_standings topic via Flink CREATE TABLE
 # This auto-creates the backing Kafka topic + schema subjects
 # Includes event_time watermark and primary key for temporal joins
 resource "confluent_flink_statement" "create_race_standings_table" {
@@ -100,7 +100,7 @@ resource "confluent_flink_statement" "create_race_standings_table" {
   }
 
   statement = <<-EOT
-    CREATE TABLE `race-standings` (
+    CREATE TABLE `race_standings` (
       `car_number` INT COMMENT 'Car number identifier',
       `driver` STRING COMMENT 'Driver full name',
       `team` STRING COMMENT 'Constructor team name',
@@ -127,7 +127,7 @@ resource "confluent_flink_statement" "create_race_standings_table" {
   depends_on = [confluent_flink_statement.create_car_telemetry_table]
 }
 
-# Create race-standings-raw topic via Flink CREATE TABLE
+# Create race_standings_raw topic via Flink CREATE TABLE
 # This materialises the Kafka topic + JSON_SR schema so that the MQ Source
 # Connector can start producing to a pre-existing topic with the correct
 # schema, and Job 0 can validate its SQL against it immediately.
@@ -153,7 +153,7 @@ resource "confluent_flink_statement" "create_race_standings_raw_table" {
   }
 
   statement = <<-EOT
-    CREATE TABLE `race-standings-raw` (
+    CREATE TABLE `race_standings_raw` (
       `text` VARCHAR(2147483647)
     )
     DISTRIBUTED INTO 1 BUCKETS

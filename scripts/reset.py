@@ -1,8 +1,8 @@
 """
 Reset lab state for a fresh race re-run.
 
-Stops all running Flink statements, drops demo Flink objects (car-state and
-pit-decisions tables, pit_strategy_agent), drops all topics and their SR
+Stops all running Flink statements, drops demo Flink objects (car_state and
+pit_decisions tables, pit_strategy_agent), drops all topics and their SR
 subjects, then recreates schema-bearing topics via `terraform apply -replace
 -target` so Terraform is the single source of truth for topic schemas.
 Also resets the MQ connector for a clean subscription.
@@ -25,10 +25,10 @@ from scripts.common.login_checks import check_confluent_login
 from scripts.common.terraform import get_project_root, run_terraform_output
 
 # Topics created by Terraform — deleted and recreated via terraform apply -replace
-SCHEMA_TOPICS = ["car-telemetry", "race-standings", "race-standings-raw"]
+SCHEMA_TOPICS = ["car_telemetry", "race_standings", "race_standings_raw"]
 
 # Topics created during the demo — deleted only (user re-creates them by running the jobs)
-DEMO_TOPICS = ["car-state", "pit-decisions"]
+DEMO_TOPICS = ["car_state", "pit_decisions"]
 
 TF_RESOURCES = [
     "module.topics.confluent_flink_statement.create_car_telemetry_table",
@@ -37,7 +37,7 @@ TF_RESOURCES = [
 ]
 
 # Job 0 is always recreated in the same terraform apply as the topics,
-# since race-standings-raw now exists as a Terraform resource (no MQ warmup needed).
+# since race_standings_raw now exists as a Terraform resource (no MQ warmup needed).
 JOB0_TF_RESOURCE = "confluent_flink_statement.job0_parse_standings"
 
 AUTOMATED_TF_RESOURCES = [
@@ -143,8 +143,8 @@ def drop_demo_flink_objects(core: dict) -> None:
     url = f"{rest}/sql/v1/organizations/{org_id}/environments/{env_id}/statements"
 
     drops = [
-        ("drop-car-state", "DROP TABLE IF EXISTS `car-state`"),
-        ("drop-pit-decisions", "DROP TABLE IF EXISTS `pit-decisions`"),
+        ("drop-car_state", "DROP TABLE IF EXISTS `car_state`"),
+        ("drop-pit_decisions", "DROP TABLE IF EXISTS `pit_decisions`"),
         ("drop-pit-agent", "DROP AGENT IF EXISTS `pit_strategy_agent`"),
     ]
 

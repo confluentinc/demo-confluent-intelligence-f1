@@ -47,10 +47,10 @@ The deploy creates two Terraform stacks:
 - Service account with EnvironmentAdmin
 
 **Demo** (AWS + Flink tables + connectors):
-- `car-telemetry`, `race-standings`, and `race-standings-raw` topics (Flink CREATE TABLE with schemas, watermarks, primary keys)
-- MQ Source Connector (`f1-mq-source`) — subscribes to IBM MQ and writes to `race-standings-raw`
+- `car_telemetry`, `race_standings`, and `race_standings_raw` topics (Flink CREATE TABLE with schemas, watermarks, primary keys)
+- MQ Source Connector (`f1-mq-source`) — subscribes to IBM MQ and writes to `race_standings_raw`
 - CDC Connector (`f1-postgres-cdc`) — streams `driver_race_history` from Postgres to Kafka
-- EC2 with IBM MQ (pub/sub topic: `dev/race-standings`, durable subscription)
+- EC2 with IBM MQ (pub/sub topic: `dev/race_standings`, durable subscription)
 - EC2 with Postgres (198 historical driver_race_history rows pre-loaded — 22 drivers × 9 prior GPs)
 - ECS Fargate task definition (race simulator Docker image)
 - S3 bucket + IAM role for Tableflow
@@ -62,7 +62,7 @@ Deployment takes 15-20 minutes (mostly ECR image build + Flink compute pool prov
 
 After deployment completes, open the **Confluent Cloud UI** and confirm:
 - Environment exists (e.g., `RIVER-RACING-PROD-ENV` for deployment_id `PROD`)
-- Kafka cluster exists with `car-telemetry`, `race-standings`, and `race-standings-raw` topics
+- Kafka cluster exists with `car_telemetry`, `race_standings`, and `race_standings_raw` topics
 - Flink compute pool is provisioned
 - Two connectors (`f1-mq-source`, `f1-postgres-cdc`) are in `RUNNING` state
 
@@ -85,7 +85,7 @@ This reads Terraform core outputs and registers a Confluent MCP server with Clau
 ```
 
 This launches the race simulator on ECS Fargate. The simulator runs a 57-lap race:
-- Produces **car telemetry** (car #44 only) directly to Kafka via Avro (`car-telemetry` topic, ~5 readings per lap)
+- Produces **car telemetry** (car #44 only) directly to Kafka via Avro (`car_telemetry` topic, ~5 readings per lap)
 - Produces **race standings** (all 22 cars) to IBM MQ as JMS TextMessages (22 messages per lap)
 
 ### Monitor the race
@@ -106,14 +106,14 @@ Lap 1 complete (10.0s)
 ### Verify data is flowing
 
 In the **Confluent Cloud UI**, check:
-- `car-telemetry` topic — messages arriving (Avro format)
-- `race-standings-raw` topic — messages arriving (JMS envelope with JSON in `text` field)
+- `car_telemetry` topic — messages arriving (Avro format)
+- `race_standings_raw` topic — messages arriving (JMS envelope with JSON in `text` field)
 
 ---
 
 ## 4. Job 0 (Parse Race Standings) — auto-deployed
 
-Job 0 is deployed automatically by Terraform once `race-standings-raw` exists. The MQ EC2's `user_data` publishes a single retained warmup message to `dev/race-standings` during boot; the MQ Source Connector picks it up on subscribe, materialises `race-standings-raw` in Kafka, and Terraform then deploys the parse statement against it. Job 0's `WHERE car_number > 0` filter discards the warmup record so it never reaches `race-standings`.
+Job 0 is deployed automatically by Terraform once `race_standings_raw` exists. The MQ EC2's `user_data` publishes a single retained warmup message to `dev/race_standings` during boot; the MQ Source Connector picks it up on subscribe, materialises `race_standings_raw` in Kafka, and Terraform then deploys the parse statement against it. Job 0's `WHERE car_number > 0` filter discards the warmup record so it never reaches `race_standings`.
 
 The full SQL lives in `demo-reference/parse_standings.sql`.
 
@@ -128,10 +128,10 @@ confluent flink statement list \
   --status running
 ```
 
-Look for a `RUNNING` statement starting `INSERT INTO \`race-standings\``. Then in the **Flink SQL Workspace**:
+Look for a `RUNNING` statement starting `INSERT INTO \`race_standings\``. Then in the **Flink SQL Workspace**:
 
 ```sql
-SELECT * FROM `race-standings`;
+SELECT * FROM `race_standings`;
 ```
 
 You should see rows with structured fields (`car_number`, `driver`, `team`, `position`, `gap_to_leader_sec`, etc.) for all 22 cars once the simulator is publishing.
@@ -143,13 +143,13 @@ You should see rows with structured fields (`car_number`, `driver`, `team`, `pos
 This is the core intelligence layer. It:
 
 1. **Tumbles** car telemetry into 10-second windows (1 record per lap)
-2. **Temporal joins** with `race-standings` to add position, gaps, pit status, and tire context
+2. **Temporal joins** with `race_standings` to add position, gaps, pit status, and tire context
 3. **Detects anomalies** on front-left tire temperature using `AI_DETECT_ANOMALIES`
 
 Run in the Flink SQL Workspace:
 
 ```sql
-CREATE TABLE `car-state`
+CREATE TABLE `car_state`
 WITH ('changelog.mode' = 'append')
 AS
 WITH enriched AS (
@@ -162,8 +162,8 @@ WITH enriched AS (
       t.battery_charge_pct, t.fuel_remaining_kg,
       r.`position`, r.gap_to_ahead_sec, r.gap_to_leader_sec,
       r.pit_stops, r.tire_compound, r.tire_age_laps
-    FROM `car-telemetry` t
-    JOIN `race-standings` FOR SYSTEM_TIME AS OF t.event_time AS r
+    FROM `car_telemetry` t
+    JOIN `race_standings` FOR SYSTEM_TIME AS OF t.event_time AS r
       ON t.car_number = r.car_number
   ),
   windowed AS (
@@ -231,7 +231,7 @@ FROM anomaly;
 ```sql
 SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
        anomaly_tire_temp_fl, tire_temp_fl_c
-FROM `car-state`;
+FROM `car_state`;
 ```
 
 You should see one record per lap. Around **lap 32**, `anomaly_tire_temp_fl` will flip to `true` and `tire_temp_fl_c` will spike to ~145C.
@@ -244,7 +244,7 @@ You should see one record per lap. Around **lap 32**, `anomaly_tire_temp_fl` wil
 
 > [!NOTE]
 >
-> **RTCE** (Real-Time Context Engine) for live tool-based standings lookup is not yet active. Competitor standings are provided instead via a direct JOIN with `race-standings` in the CREATE TABLE statement. The RTCE connection and tool are included in `demo-reference/streaming_agent_create_agent.sql` as commented-out stubs for when RTCE is enabled.
+> **RTCE** (Real-Time Context Engine) for live tool-based standings lookup is not yet active. Competitor standings are provided instead via a direct JOIN with `race_standings` in the CREATE TABLE statement. The RTCE connection and tool are included in `demo-reference/streaming_agent_create_agent.sql` as commented-out stubs for when RTCE is enabled.
 
 ```sql
 -- 1. Pit Strategy Agent
@@ -323,7 +323,7 @@ WITH ('max_iterations' = '10');
 ```
 
 ```sql
--- 2. Create pit-decisions table — one record per lap, driven by car-state.
+-- 2. Create pit_decisions table — one record per lap, driven by car_state.
 --
 -- REGEXP_EXTRACT uses \*{0,2} around each label to tolerate optional markdown
 -- bold markers (**Label:**) that some LLMs emit despite being instructed otherwise.
@@ -332,7 +332,7 @@ WITH ('max_iterations' = '10');
 --
 -- earliest-offset ensures all laps are processed even if the race started before this job.
 
-CREATE TABLE `pit-decisions`
+CREATE TABLE `pit_decisions`
 WITH ('changelog.mode' = 'append')
 AS
 SELECT
@@ -350,7 +350,7 @@ SELECT
   NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Reason:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS recommended_reason,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Reasoning:\*{0,2}\s*([\s\S]+?)$', 1)) AS reasoning,
   CAST(response AS STRING) AS raw_response
-FROM `car-state` /*+ OPTIONS('scan.startup.mode'='earliest-offset') */ cs,
+FROM `car_state` /*+ OPTIONS('scan.startup.mode'='earliest-offset') */ cs,
 LATERAL TABLE(AI_RUN_AGENT(
   `pit_strategy_agent`,
   CONCAT(
@@ -385,7 +385,7 @@ LATERAL TABLE(AI_RUN_AGENT(
 
 ### What to expect
 
-The agent produces one `pit-decisions` record per lap. Watch for the key moment:
+The agent produces one `pit_decisions` record per lap. Watch for the key moment:
 
 | Lap | Position | Suggestion | What's happening |
 |-----|----------|-----------|------------------|
@@ -403,7 +403,7 @@ The agent produces one `pit-decisions` record per lap. Watch for the key moment:
 
 ```sql
 SELECT car_number, lap, position, suggestion, condition_summary, reasoning
-FROM `pit-decisions`
+FROM `pit_decisions`
 WHERE suggestion <> 'STAY OUT';
 ```
 
@@ -414,7 +414,7 @@ WHERE suggestion <> 'STAY OUT';
 In the **Confluent Cloud UI**:
 
 1. Go to your environment -> cluster -> Topics
-2. Select `pit-decisions` -> **Tableflow** tab -> **Enable**
+2. Select `pit_decisions` -> **Tableflow** tab -> **Enable**
    - Format: **Delta Lake**
    - Storage: **BYOS** (Bring Your Own Storage)
    - Provider integration: select `RIVER-RACING-{deployment_id}-aws-integration`
@@ -433,7 +433,7 @@ In Databricks Unity Catalog, create external tables pointing to the Tableflow S3
 ```sql
 CREATE TABLE f1_demo.pit_decisions
   USING DELTA
-  LOCATION 's3://river-racing-{deployment_id}-tableflow-<hex>/topics/pit-decisions/';
+  LOCATION 's3://river-racing-{deployment_id}-tableflow-<hex>/topics/pit_decisions/';
 
 CREATE TABLE f1_demo.driver_race_history
   USING DELTA
@@ -494,18 +494,18 @@ To recreate a failed connector, run `terraform -chdir=terraform/demo apply` agai
 </details>
 
 <details>
-<summary>race-standings-raw has messages but race-standings is empty</summary>
+<summary>race_standings_raw has messages but race_standings is empty</summary>
 
-Make sure Job 0 (parse standings) is running. Check the Flink statement status in the SQL Workspace — it should show `RUNNING`. If it failed, the most common cause is running the query before `race-standings-raw` exists (deploy the MQ connector first).
+Make sure Job 0 (parse standings) is running. Check the Flink statement status in the SQL Workspace — it should show `RUNNING`. If it failed, the most common cause is running the query before `race_standings_raw` exists (deploy the MQ connector first).
 
 </details>
 
 <details>
-<summary>car-state has no records</summary>
+<summary>car_state has no records</summary>
 
-Job 1 needs both `car-telemetry` AND `race-standings` to have data with advancing watermarks. Check:
+Job 1 needs both `car_telemetry` AND `race_standings` to have data with advancing watermarks. Check:
 - Is the race simulator running? (`aws ecs list-tasks --cluster <cluster-name>`)
-- Is Job 0 running? (produces to `race-standings`)
+- Is Job 0 running? (produces to `race_standings`)
 - Are both topics receiving data? (check in the Confluent Cloud UI)
 
 The temporal join requires watermarks to advance on both sides before producing output.
@@ -517,7 +517,7 @@ The temporal join requires watermarks to advance on both sides before producing 
 
 The anomaly fires only on `tire_temp_fl_c` (front-left tire temperature) when it spikes to ~145C. Check:
 - `AI_DETECT_ANOMALIES` needs at least 20 data points (`minTrainingSize=20`) before it can detect anomalies — it won't fire on early laps.
-- Verify the spike exists: `SELECT lap, tire_temp_fl_c FROM \`car-state\` WHERE lap BETWEEN 30 AND 34`
+- Verify the spike exists: `SELECT lap, tire_temp_fl_c FROM \`car_state\` WHERE lap BETWEEN 30 AND 34`
 
 </details>
 

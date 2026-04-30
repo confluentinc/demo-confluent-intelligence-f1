@@ -18,8 +18,8 @@ Hard-won findings from building this demo. Check here before debugging anything 
 
 ## Flink Job 1 — Enrichment + Anomaly
 
-12. **Temporal join must be BEFORE OVER aggregations** — `JOIN race-standings FOR SYSTEM_TIME AS OF a.window_time` in the final SELECT after OVER aggregations silently returns zero rows. `window_time` loses its rowtime attribute through the OVER chain. Put the temporal join in the `enriched` CTE on the raw stream (using `event_time`), then aggregate the joined result.
-13. **Pre-creating `race-standings-raw` fixes stale temporal join data** — The versioned build-side of the temporal join only retains the latest version per key. If Job 1 deploys after the race ends, it sees only final-lap standings frozen in state. Deploy Job 0 and Job 1 before the race starts so the join sees live data.
+12. **Temporal join must be BEFORE OVER aggregations** — `JOIN race_standings FOR SYSTEM_TIME AS OF a.window_time` in the final SELECT after OVER aggregations silently returns zero rows. `window_time` loses its rowtime attribute through the OVER chain. Put the temporal join in the `enriched` CTE on the raw stream (using `event_time`), then aggregate the joined result.
+13. **Pre-creating `race_standings_raw` fixes stale temporal join data** — The versioned build-side of the temporal join only retains the latest version per key. If Job 1 deploys after the race ends, it sees only final-lap standings frozen in state. Deploy Job 0 and Job 1 before the race starts so the join sees live data.
 14. **AI_DETECT_ANOMALIES default thresholds too loose for noisy synthetic data** — Default `confidencePercentage=99.0` flags ~1% of normal points. Use `99.99` + `minTrainingSize=20` + `maxTrainingSize=50`. Only run it on `tire_temp_fl_c`; other metrics (brake ±25°C, battery) generate too many false positives.
 15. **AI_DETECT_ANOMALIES output struct fields** — `is_anomaly` (BOOLEAN, NULL during warmup), `actual_value`, `forecast_value`, `lower_bound`, `upper_bound`, `timestamp`. Filter to `actual_value > upper_bound` to suppress post-pit cold-drop false positives.
 16. **AI_DETECT_ANOMALIES warmup** — During warmup (rows < `minContextSize`), rows are emitted with NULL `is_anomaly`. This is normal.
@@ -32,8 +32,8 @@ Hard-won findings from building this demo. Check here before debugging anything 
 20. **`jms.destination.name` not `mq.queue`** — The managed MQ connector config key for the destination is `jms.destination.name`.
 21. **ValueToKey SMT fails on JMS envelope** — Can't extract `car_number` from nested `text` field via SMT. Use Flink Job 0 to parse + key instead.
 22. **Schema compatibility conflicts** — Pre-created Flink flat schema conflicts with the connector's JMS envelope schema on the same topic. Solution: connector writes to `-raw` topic with JMS envelope; Job 0 transforms to clean topic.
-23. **MQ pub/sub requires `admin` channel** — The `app` user lacks topic permissions (`SYSTEM.BASE.TOPIC` auth). Use `DEV.ADMIN.SVRCONN` channel with `admin` credentials. Connector uses durable subscription (`jms.subscription.durable: true`, name: `f1-mq-source-sub`), topic: `dev/race-standings`. Do not revert to queues.
-24. **MQ retained publication + durable subscription = 2 Kafka records** — One `MQPMO_RETAIN` publish lands in `race-standings-raw` as two identical records. Cosmetic. Job 0's `WHERE car_number > 0` filter handles it.
+23. **MQ pub/sub requires `admin` channel** — The `app` user lacks topic permissions (`SYSTEM.BASE.TOPIC` auth). Use `DEV.ADMIN.SVRCONN` channel with `admin` credentials. Connector uses durable subscription (`jms.subscription.durable: true`, name: `f1-mq-source-sub`), topic: `dev/race_standings`. Do not revert to queues.
+24. **MQ retained publication + durable subscription = 2 Kafka records** — One `MQPMO_RETAIN` publish lands in `race_standings_raw` as two identical records. Cosmetic. Job 0's `WHERE car_number > 0` filter handles it.
 
 ## Terraform & Infrastructure
 
@@ -49,14 +49,14 @@ Hard-won findings from building this demo. Check here before debugging anything 
 34. **Tableflow `bucket_name` derived in module** — `${lower(var.name_prefix)}-tableflow-${random_id.suffix.hex}`. Not passed as a variable.
 35. **`pymqi` requires `$HOME`** — IBM MQ client probes `$HOME` for trace logs. EC2 user_data runs as root with no HOME, causing `AMQ6235E: Directory '$HOME' missing`. Fix: `export HOME=/root` in user_data.
 36. **`AWS_RETRY_MODE=adaptive` + `AWS_MAX_ATTEMPTS=10`** — Required in `deploy.py` before calling `run_terraform()`. The AWS provider's default retry doesn't cover network-layer DNS failures.
-37. **MQ EC2 user_data materialises `race-standings-raw`** — The user_data publishes one retained warmup message on boot. The connector picks it up and creates the topic + schema. Without this, Job 0 validation fails (`Table 'race-standings-raw' does not exist`).
+37. **MQ EC2 user_data materialises `race_standings_raw`** — The user_data publishes one retained warmup message on boot. The connector picks it up and creates the topic + schema. Without this, Job 0 validation fails (`Table 'race_standings_raw' does not exist`).
 
 ## Data & Serialization
 
 38. **Avro serialization** — `AvroSerializer(schema_str=None, conf={'auto.register.schemas': False, 'use.latest.version': True})`. Uses schema registered by Flink CREATE TABLE.
 39. **Schema Registry API key** — Separate from Kafka API key. `EnvironmentAdmin` role covers SR access.
 40. **Temporal join needs both watermarks** — Both sides need advancing watermarks. Versioned table needs PRIMARY KEY + watermark.
-41. **No PRIMARY KEY on `car-telemetry`** — Adding PRIMARY KEY registers an Avro INT key schema. The simulator writes string keys, causing Job 1 deserialization failures. `car-telemetry` is append-only and windowed — no PRIMARY KEY needed. Keep PRIMARY KEY only on `race-standings` (needs versioned-table semantics).
+41. **No PRIMARY KEY on `car_telemetry`** — Adding PRIMARY KEY registers an Avro INT key schema. The simulator writes string keys, causing Job 1 deserialization failures. `car_telemetry` is append-only and windowed — no PRIMARY KEY needed. Keep PRIMARY KEY only on `race_standings` (needs versioned-table semantics).
 42. **Schema Registry hard-delete required after DROP TABLE** — Flink DROP TABLE deletes the Kafka topic but leaves `<topic>-key` and `<topic>-value` subjects in SR. Recreating with a different schema fails. Fix: `confluent schema-registry schema delete --subject <topic>-value --version all` then `--permanent`, for both key and value subjects.
 43. **Postgres table is `driver_race_history`, not `race_results`** — The CDC Reroute SMT propagates the table name to the Kafka topic and Tableflow Delta Lake table. Genie queries reference `f1_demo.driver_race_history`.
 

@@ -2,7 +2,7 @@
 
 Simulates a 57-lap race at Silverstone in ~9.5 minutes of real time.
 Two outputs:
-  - Car telemetry (car #44 only) → Kafka topic 'car-telemetry' via confluent-kafka
+  - Car telemetry (car #44 only) → Kafka topic 'car_telemetry' via confluent-kafka
   - Race standings (all 22 cars) → IBM MQ queue via pymqi
 """
 
@@ -102,7 +102,7 @@ def run_race():
     rfh2["CodedCharSetId"] = 1208
     rfh2["NameValueCCSID"] = 1208
     rfh2.add_folder(b"<mcd><Msd>jms_text</Msd></mcd>")
-    rfh2.add_folder(b"<jms><Dst>topic://dev/race-standings</Dst><Dlv>2</Dlv></jms>")
+    rfh2.add_folder(b"<jms><Dst>topic://dev/race_standings</Dst><Dlv>2</Dlv></jms>")
 
     # Initialize race state
     race = RaceState(GRID)

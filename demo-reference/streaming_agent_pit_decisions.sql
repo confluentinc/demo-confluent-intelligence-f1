@@ -1,15 +1,15 @@
 -- Job 2b: Pit Decisions Table — CREATE TABLE … AI_RUN_AGENT
--- Input: car-state
--- Output: pit-decisions
+-- Input: car_state
+-- Output: pit_decisions
 --
 -- Run streaming_agent_create_agent.sql first to create pit_strategy_agent,
 -- then run this statement to start the streaming pit-decision pipeline.
 --
--- NOTE: The original competitor_grid CTE (GROUP BY lap on race-standings) was removed.
+-- NOTE: The original competitor_grid CTE (GROUP BY lap on race_standings) was removed.
 -- It caused a retract changelog (CURRENT_TIMESTAMP non-determinism error) because
--- race-standings is an upsert table, and the 22 cars' event_times spread across
+-- race_standings is an upsert table, and the 22 cars' event_times spread across
 -- multiple 10-second TUMBLE windows making snapshot aggregation unreliable.
--- The agent still receives full car state + position/gap context from car-state itself.
+-- The agent still receives full car state + position/gap context from car_state itself.
 -- When RTCE is enabled, add USING TOOLS to the CREATE AGENT above for live standings.
 --
 -- REGEXP_EXTRACT patterns use \*{0,2} to tolerate optional markdown bold markers
@@ -21,7 +21,7 @@
 -- then start the race simulator, then run this CREATE TABLE.
 -- Uses earliest-offset so it processes all race laps.
 
-CREATE TABLE `pit-decisions`
+CREATE TABLE `pit_decisions`
 WITH ('changelog.mode' = 'append')
 AS
 SELECT
@@ -39,7 +39,7 @@ SELECT
   NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Reason:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS recommended_reason,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Reasoning:\*{0,2}\s*([\s\S]+?)$', 1)) AS reasoning,
   CAST(response AS STRING) AS raw_response
-FROM `car-state` /*+ OPTIONS('scan.startup.mode'='earliest-offset') */ cs,
+FROM `car_state` /*+ OPTIONS('scan.startup.mode'='earliest-offset') */ cs,
 LATERAL TABLE(AI_RUN_AGENT(
   `pit_strategy_agent`,
   CONCAT(

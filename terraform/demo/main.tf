@@ -136,12 +136,12 @@ resource "confluent_connector" "mq_source" {
     "name"                     = "f1-mq-source"
     "kafka.auth.mode"          = "SERVICE_ACCOUNT"
     "kafka.service.account.id" = data.terraform_remote_state.core.outputs.service_account_id
-    "kafka.topic"              = "race-standings-raw"
+    "kafka.topic"              = "race_standings_raw"
     "mq.hostname"              = module.mq.mq_public_ip
     "mq.port"                  = "1414"
     "mq.queue.manager"         = "QM1"
     "mq.channel"               = "DEV.ADMIN.SVRCONN"
-    "jms.destination.name"     = "dev/race-standings"
+    "jms.destination.name"     = "dev/race_standings"
     "jms.destination.type"     = "topic"
     "jms.subscription.durable" = "true"
     "jms.subscription.name"    = "f1-mq-source-sub"
@@ -187,16 +187,16 @@ resource "confluent_connector" "postgres_cdc" {
   depends_on = [null_resource.wait_for_postgres]
 }
 
-# --- Job 0: Parse race-standings-raw → race-standings ---
+# --- Job 0: Parse race_standings_raw → race_standings ---
 # Reads the SQL from demo-reference/parse_standings.sql so the file remains
 # the single source of truth (also referenced from README and Walkthrough).
 #
-# Dependency chain that guarantees race-standings-raw exists before this
+# Dependency chain that guarantees race_standings_raw exists before this
 # statement deploys:
 #   module.mq                 → EC2 boots, user_data publishes a retained
-#                               warmup message to dev/race-standings
+#                               warmup message to dev/race_standings
 #   confluent_connector.mq_source → subscribes (gets the retained warmup)
-#                                   and writes to race-standings-raw,
+#                                   and writes to race_standings_raw,
 #                                   materialising the topic + schema
 #   this statement            → deploys against the now-existing topic
 
@@ -320,12 +320,12 @@ resource "local_file" "mq_connector_config" {
       "connector.class"          = "IbmMQSource"
       "kafka.auth.mode"          = "SERVICE_ACCOUNT"
       "kafka.service.account.id" = data.terraform_remote_state.core.outputs.service_account_id
-      "kafka.topic"              = "race-standings-raw"
+      "kafka.topic"              = "race_standings_raw"
       "mq.hostname"              = module.mq.mq_public_ip
       "mq.port"                  = "1414"
       "mq.queue.manager"         = "QM1"
       "mq.channel"               = "DEV.ADMIN.SVRCONN"
-      "jms.destination.name"     = "dev/race-standings"
+      "jms.destination.name"     = "dev/race_standings"
       "jms.destination.type"     = "topic"
       "jms.subscription.durable" = "true"
       "jms.subscription.name"    = "f1-mq-source-sub"

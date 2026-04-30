@@ -6,13 +6,13 @@ Real-time AI pit strategy system for a Formula 1 team. An AI agent monitors live
 
 ```
 Race Simulator (ECS Fargate)
-  ├── Kafka produce (AVRO)   → car-telemetry
-  └── MQ publish (JMS text)  → IBM MQ EC2 → MQ Source Connector → race-standings-raw
+  ├── Kafka produce (AVRO)   → car_telemetry
+  └── MQ publish (JMS text)  → IBM MQ EC2 → MQ Source Connector → race_standings_raw
                                                                          │
                                                           Job 0 (Terraform-managed Flink SQL)
                                                           Parse JMS envelope, key by car_number
                                                                          │
-                                                                  race-standings
+                                                                  race_standings
                                                                          │
 Postgres (EC2) → CDC Debezium Connector → driver_race_history ──────────┤
                                                                          │
@@ -20,10 +20,10 @@ Postgres (EC2) → CDC Debezium Connector → driver_race_history ────�
                                                           10s tumbling window + temporal join
                                                           AI_DETECT_ANOMALIES(tire_temp_fl_c)
                                                                          │
-                                                                     car-state
+                                                                     car_state
                                                                          │
                                                           Job 2 (Flink SQL Workspace)
-                                                          AI_RUN_AGENT → pit-decisions
+                                                          AI_RUN_AGENT → pit_decisions
                                                                          │
                                                               Tableflow → S3 → Databricks Genie
 ```
@@ -47,7 +47,7 @@ uv run deploy
 
 Prompts for credentials, then deploys two Terraform stacks (Confluent Cloud + AWS). Creates:
 - Confluent Cloud environment, Kafka cluster, Schema Registry, Flink compute pool
-- `car-telemetry` and `race-standings` topics (Flink CREATE TABLE with schemas + watermarks)
+- `car_telemetry` and `race_standings` topics (Flink CREATE TABLE with schemas + watermarks)
 - IBM MQ EC2, Postgres EC2 (198 historical `driver_race_history` rows pre-loaded)
 - ECS Fargate task definition (race simulator)
 - MQ Source Connector + CDC Debezium Connector (both auto-deployed and running)
@@ -61,7 +61,7 @@ Prompts for credentials, then deploys two Terraform stacks (Confluent Cloud + AW
 aws logs tail /ecs/f1-simulator --follow
 ```
 
-Runs a 57-lap race in ~9.5 minutes. Job 0 immediately starts writing parsed standings to `race-standings`.
+Runs a 57-lap race in ~9.5 minutes. Job 0 immediately starts writing parsed standings to `race_standings`.
 
 ### 3. Deploy Jobs 1 & 2 in the Flink SQL Workspace
 

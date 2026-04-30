@@ -1,7 +1,7 @@
 -- Job 1: Enrichment + Anomaly Detection
 -- Deployed via DBT as a streaming_table materialization
--- Input: car-telemetry (stream), race-standings (versioned table)
--- Output: car-state (one record per 10-second window)
+-- Input: car_telemetry (stream), race_standings (versioned table)
+-- Output: car_state (one record per 10-second window)
 --
 -- Design notes (learned from live debugging — keep!):
 --
@@ -24,7 +24,7 @@
 --    Otherwise the post-pit drop at lap 33 (145°C → 95°C) flags a second
 --    anomaly that's semantically a recovery, not a problem.
 
-CREATE TABLE `car-state`
+CREATE TABLE `car_state`
 WITH ('changelog.mode' = 'append')
 AS
 WITH enriched AS (
@@ -37,8 +37,8 @@ WITH enriched AS (
     t.battery_charge_pct, t.fuel_remaining_kg,
     r.`position`, r.gap_to_ahead_sec, r.gap_to_leader_sec,
     r.pit_stops, r.tire_compound, r.tire_age_laps
-  FROM `car-telemetry` t
-  JOIN `race-standings` FOR SYSTEM_TIME AS OF t.event_time AS r
+  FROM `car_telemetry` t
+  JOIN `race_standings` FOR SYSTEM_TIME AS OF t.event_time AS r
     ON t.car_number = r.car_number
 ),
 windowed AS (

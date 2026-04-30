@@ -46,17 +46,17 @@ for i in $(seq 1 60); do
   sleep 5
 done
 
-# --- Publish a single retained warmup message to dev/race-standings ---
+# --- Publish a single retained warmup message to dev/race_standings ---
 # Why: the MQ Source Connector creates a durable subscription only when
 # Terraform deploys it. Without a retained publication, the connector would
-# not see anything on subscribe and `race-standings-raw` would not exist
+# not see anything on subscribe and `race_standings_raw` would not exist
 # until the simulator publishes its first lap. Retained publications are
 # delivered to new subscribers on subscribe, so the connector will pick up
 # this warmup message immediately, materialise the topic + schema in Kafka,
 # and Job 0 (also Terraform-managed) can read from offset 0.
 #
 # Job 0's WHERE clause filters out records with car_number = 0, so this
-# warmup record never reaches the clean `race-standings` topic.
+# warmup record never reaches the clean `race_standings` topic.
 cat > /opt/mq_warmup.py <<'PYEOF'
 import json
 import pymqi
@@ -87,7 +87,7 @@ qmgr = pymqi.connect(
 )
 topic = pymqi.Topic(
     qmgr,
-    topic_string="dev/race-standings",
+    topic_string="dev/race_standings",
     open_opts=pymqi.CMQC.MQOO_OUTPUT | pymqi.CMQC.MQOO_FAIL_IF_QUIESCING,
 )
 
@@ -97,7 +97,7 @@ rfh2["Format"] = pymqi.CMQC.MQFMT_STRING
 rfh2["CodedCharSetId"] = 1208
 rfh2["NameValueCCSID"] = 1208
 rfh2.add_folder(b"<mcd><Msd>jms_text</Msd></mcd>")
-rfh2.add_folder(b"<jms><Dst>topic://dev/race-standings</Dst><Dlv>2</Dlv></jms>")
+rfh2.add_folder(b"<jms><Dst>topic://dev/race_standings</Dst><Dlv>2</Dlv></jms>")
 
 md = pymqi.MD()
 md.Format = pymqi.CMQC.MQFMT_RF_HEADER_2
@@ -110,7 +110,7 @@ pmo.Options |= pymqi.CMQC.MQPMO_RETAIN  # delivered to subscribers on subscribe
 topic.pub_rfh2(json.dumps(WARMUP_MSG).encode("utf-8"), md, pmo, [rfh2])
 topic.close()
 qmgr.disconnect()
-print("Warmup retained message published to dev/race-standings.")
+print("Warmup retained message published to dev/race_standings.")
 PYEOF
 
 # Retry the publish a few times — MQ may still be initialising channels even

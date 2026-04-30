@@ -12,7 +12,7 @@ These are hard constraints for this demo. Do not violate them.
 - 10 seconds per simulated lap (~9.5 min total race)
 - All fictional drivers and teams: team = River Racing, driver = Sean Falconer, car #44
 - Circuit: Silverstone; 22 drivers, 11 teams
-- Tableflow on `pit-decisions` + `driver_race_history` only
+- Tableflow on `pit_decisions` + `driver_race_history` only
 - Databricks Genie for analytics
 - Everything deployable via Terraform + Python scripts
 - Race simulator runs on ECS Fargate, started manually via `./scripts/start-race.sh`
@@ -26,6 +26,6 @@ These are hard constraints for this demo. Do not violate them.
 - Probability formulas or threshold logic in Flink SQL
 - Real driver or team names
 - A Copilot/chatbot layer on top of the agent output
-- Tableflow on `race-standings` or `car-telemetry`
+- Tableflow on `race_standings` or `car_telemetry`
 - Batch processing anywhere in the pipeline
-- MQ queues — use pub/sub topic `dev/race-standings` with durable subscription `f1-mq-source-sub`; do not revert to queues
+- MQ queues — use pub/sub topic `dev/race_standings` with durable subscription `f1-mq-source-sub`; do not revert to queues
