@@ -127,3 +127,52 @@ resource "confluent_flink_statement" "create_race_standings_table" {
   depends_on = [confluent_flink_statement.create_car_telemetry_table]
 }
 
+# Create race-standings-raw topic via Flink CREATE TABLE
+# This materialises the Kafka topic + JSON_SR schema so that the MQ Source
+# Connector can start producing to a pre-existing topic with the correct
+# schema, and Job 0 can validate its SQL against it immediately.
+resource "confluent_flink_statement" "create_race_standings_raw_table" {
+  organization {
+    id = var.organization_id
+  }
+  environment {
+    id = var.environment_id
+  }
+  compute_pool {
+    id = var.compute_pool_id
+  }
+  principal {
+    id = var.service_account_id
+  }
+
+  rest_endpoint = var.flink_rest_endpoint
+
+  credentials {
+    key    = var.flink_api_key
+    secret = var.flink_api_secret
+  }
+
+  statement = <<-EOT
+    CREATE TABLE `race-standings-raw` (
+      `text` VARCHAR(2147483647)
+    )
+    DISTRIBUTED INTO 1 BUCKETS
+    WITH (
+      'changelog.mode' = 'append',
+      'connector' = 'confluent',
+      'kafka.cleanup-policy' = 'delete',
+      'kafka.message-timestamp-type' = 'create-time',
+      'kafka.retention.time' = '7 d',
+      'scan.startup.mode' = 'earliest-offset',
+      'value.format' = 'json-registry'
+    );
+  EOT
+
+  properties = {
+    "sql.current-catalog"  = var.environment_name
+    "sql.current-database" = var.cluster_name
+  }
+
+  depends_on = [confluent_flink_statement.create_race_standings_table]
+}
+

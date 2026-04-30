@@ -7,9 +7,10 @@ subjects, then recreates schema-bearing topics via `terraform apply -replace
 -target` so Terraform is the single source of truth for topic schemas.
 Also resets the MQ connector for a clean subscription.
 
-Usage: uv run reset
+Usage: uv run reset [--automated]
 """
 
+import argparse
 import json
 import os
 import subprocess
@@ -32,6 +33,17 @@ DEMO_TOPICS = ["car-state", "pit-decisions"]
 TF_RESOURCES = [
     "module.topics.confluent_flink_statement.create_car_telemetry_table",
     "module.topics.confluent_flink_statement.create_race_standings_table",
+    "module.topics.confluent_flink_statement.create_race_standings_raw_table",
+]
+
+# Job 0 is always recreated in the same terraform apply as the topics,
+# since race-standings-raw now exists as a Terraform resource (no MQ warmup needed).
+JOB0_TF_RESOURCE = "confluent_flink_statement.job0_parse_standings"
+
+AUTOMATED_TF_RESOURCES = [
+    "confluent_flink_statement.job1_enrichment_anomaly[0]",
+    "confluent_flink_statement.job2_create_agent[0]",
+    "confluent_flink_statement.job2_pit_decisions[0]",
 ]
 
 
@@ -207,6 +219,15 @@ def reset_mq_connector(env_id: str, cluster_id: str, root) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Reset F1 demo for a fresh race re-run")
+    parser.add_argument(
+        "--automated",
+        action="store_true",
+        default=False,
+        help="Also recreate Jobs 1 & 2 Flink statements via Terraform (use when originally deployed with --automated).",
+    )
+    args = parser.parse_args()
+
     print("=== F1 Demo Reset ===\n")
 
     if not check_confluent_login():
@@ -246,9 +267,17 @@ def main() -> None:
     for topic in SCHEMA_TOPICS + DEMO_TOPICS:
         delete_topic_and_subjects(topic, env_id, cluster_id)
 
-    print("\n4. Recreating schema topics via Terraform...")
+    if args.automated:
+        os.environ["TF_VAR_automated"] = "true"
+
+    print("\n4. Recreating schema topics + Job 0 (and Jobs 1 & 2 if --automated) via Terraform...")
     target_flags = [f"-target={r}" for r in TF_RESOURCES]
     replace_flags = [f"-replace={r}" for r in TF_RESOURCES]
+    target_flags += [f"-target={JOB0_TF_RESOURCE}"]
+    replace_flags += [f"-replace={JOB0_TF_RESOURCE}"]
+    if args.automated:
+        target_flags += [f"-target={r}" for r in AUTOMATED_TF_RESOURCES]
+        replace_flags += [f"-replace={r}" for r in AUTOMATED_TF_RESOURCES]
     cmd = ["terraform", f"-chdir={root}/terraform/demo", "apply", *target_flags, *replace_flags, "-auto-approve"]
     result = subprocess.run(cmd)
     if result.returncode != 0:
@@ -260,8 +289,11 @@ def main() -> None:
 
     print("\n=== Reset complete ===")
     print("Next steps:")
-    print("  1. Re-deploy Flink Jobs 0, 1, 2 in the SQL Workspace")
-    print("  2. Start the race:  ./scripts/start-race.sh")
+    if args.automated:
+        print("  1. Start the race:  ./scripts/start-race.sh")
+    else:
+        print("  1. Re-deploy Flink Jobs 1 & 2 in the SQL Workspace (Job 0 already deployed)")
+        print("  2. Start the race:  ./scripts/start-race.sh")
 
 
 if __name__ == "__main__":

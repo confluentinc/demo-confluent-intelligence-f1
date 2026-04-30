@@ -146,7 +146,7 @@ resource "confluent_connector" "mq_source" {
     "jms.subscription.durable" = "true"
     "jms.subscription.name"    = "f1-mq-source-sub"
     "mq.username"              = "admin"
-    "output.data.format"       = "AVRO"
+    "output.data.format"       = "JSON_SR"
     "tasks.max"                = "1"
   }
   depends_on = [module.topics, null_resource.wait_for_mq]
@@ -226,6 +226,90 @@ resource "confluent_flink_statement" "job0_parse_standings" {
   depends_on = [confluent_connector.mq_source, module.topics]
 }
 
+resource "confluent_flink_statement" "job1_enrichment_anomaly" {
+  count = var.automated ? 1 : 0
+  organization {
+    id = data.confluent_organization.main.id
+  }
+  environment {
+    id = data.terraform_remote_state.core.outputs.environment_id
+  }
+  compute_pool {
+    id = data.terraform_remote_state.core.outputs.compute_pool_id
+  }
+  principal {
+    id = data.terraform_remote_state.core.outputs.service_account_id
+  }
+  rest_endpoint = data.terraform_remote_state.core.outputs.flink_rest_endpoint
+  credentials {
+    key    = data.terraform_remote_state.core.outputs.flink_api_key
+    secret = data.terraform_remote_state.core.outputs.flink_api_secret
+  }
+  statement = file("${path.module}/../../demo-reference/enrichment_anomaly.sql")
+  properties = {
+    "sql.current-catalog"  = data.terraform_remote_state.core.outputs.environment_name
+    "sql.current-database" = data.terraform_remote_state.core.outputs.cluster_name
+  }
+  depends_on = [module.topics]
+}
+
+resource "confluent_flink_statement" "job2_create_agent" {
+  count = var.automated ? 1 : 0
+  organization {
+    id = data.confluent_organization.main.id
+  }
+  environment {
+    id = data.terraform_remote_state.core.outputs.environment_id
+  }
+  compute_pool {
+    id = data.terraform_remote_state.core.outputs.compute_pool_id
+  }
+  principal {
+    id = data.terraform_remote_state.core.outputs.service_account_id
+  }
+  rest_endpoint = data.terraform_remote_state.core.outputs.flink_rest_endpoint
+  credentials {
+    key    = data.terraform_remote_state.core.outputs.flink_api_key
+    secret = data.terraform_remote_state.core.outputs.flink_api_secret
+  }
+  statement = file("${path.module}/../../demo-reference/streaming_agent_create_agent.sql")
+  properties = {
+    "sql.current-catalog"  = data.terraform_remote_state.core.outputs.environment_name
+    "sql.current-database" = data.terraform_remote_state.core.outputs.cluster_name
+  }
+  depends_on = [module.topics]
+}
+
+resource "confluent_flink_statement" "job2_pit_decisions" {
+  count = var.automated ? 1 : 0
+  organization {
+    id = data.confluent_organization.main.id
+  }
+  environment {
+    id = data.terraform_remote_state.core.outputs.environment_id
+  }
+  compute_pool {
+    id = data.terraform_remote_state.core.outputs.compute_pool_id
+  }
+  principal {
+    id = data.terraform_remote_state.core.outputs.service_account_id
+  }
+  rest_endpoint = data.terraform_remote_state.core.outputs.flink_rest_endpoint
+  credentials {
+    key    = data.terraform_remote_state.core.outputs.flink_api_key
+    secret = data.terraform_remote_state.core.outputs.flink_api_secret
+  }
+  statement = file("${path.module}/../../demo-reference/streaming_agent_pit_decisions.sql")
+  properties = {
+    "sql.current-catalog"  = data.terraform_remote_state.core.outputs.environment_name
+    "sql.current-database" = data.terraform_remote_state.core.outputs.cluster_name
+  }
+  depends_on = [
+    confluent_flink_statement.job1_enrichment_anomaly[0],
+    confluent_flink_statement.job2_create_agent[0],
+  ]
+}
+
 # --- Generated connector configs (for manual CLI deployment fallback) ---
 
 resource "local_file" "mq_connector_config" {
@@ -249,7 +333,7 @@ resource "local_file" "mq_connector_config" {
       "mq.password"              = "passw0rd"
       "kafka.api.key"            = data.terraform_remote_state.core.outputs.app_api_key
       "kafka.api.secret"         = data.terraform_remote_state.core.outputs.app_api_secret
-      "output.data.format"       = "AVRO"
+      "output.data.format"       = "JSON_SR"
       "tasks.max"                = "1"
     }
   })

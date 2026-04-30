@@ -3,9 +3,10 @@
 Deployment script for the F1 Pit Wall AI Demo.
 
 Prompts for credentials, writes terraform.tfvars, and deploys core + demo infrastructure.
-Usage: uv run deploy
+Usage: uv run deploy [--automated]
 """
 
+import argparse
 import os
 import sys
 
@@ -28,6 +29,15 @@ from scripts.common.ui import prompt_with_default
 
 def main():
     """Main entry point for deploy."""
+    parser = argparse.ArgumentParser(description="Deploy the F1 Pit Wall AI Demo")
+    parser.add_argument(
+        "--automated",
+        action="store_true",
+        default=False,
+        help="Deploy the full Flink job graph (Jobs 1 & 2) via Terraform in addition to Job 0.",
+    )
+    args = parser.parse_args()
+
     print("=== F1 Pit Wall AI Demo - Deploy ===\n")
 
     root = get_project_root()
@@ -141,6 +151,10 @@ def main():
     print(f"  CC Key:     {api_key[:8]}...")
     print(f"  Bedrock:    {aws_bedrock_key[:8]}..." if aws_bedrock_key else "  Bedrock:    (not set)")
     print("  Deploys:    core -> demo")
+    if args.automated:
+        print("  Mode:       automated (full pipeline — Jobs 1 & 2 via Terraform)")
+    else:
+        print("  Mode:       minimal (Jobs 1 & 2 manual via Flink SQL Workspace)")
 
     confirm = input("\nReady to deploy? (y/n): ").strip().lower()
     if confirm != "y":
@@ -154,6 +168,9 @@ def main():
     # Load credentials into environment for Terraform
     for key, value in creds.items():
         os.environ[key] = value
+
+    if args.automated:
+        os.environ["TF_VAR_automated"] = "true"
 
     # Make AWS provider resilient to transient network failures (DNS hiccups,
     # VPN reconnects, brief socket timeouts). Without this, a single failed
@@ -183,7 +200,10 @@ def main():
     print("Next steps:")
     print("  1. Start the race simulator:  ./scripts/start-race.sh")
     print("  2. Set up MCP for Claude:     uv run setup-mcp")
-    print("  3. Follow the Walkthrough.md for the demo flow")
+    if args.automated:
+        print("  3. Jobs 1 & 2 already deployed — data flows as soon as the race starts")
+    else:
+        print("  3. Follow the Walkthrough.md for the demo flow")
     print()
     print("To tear down all resources:     uv run destroy")
 

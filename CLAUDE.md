@@ -9,11 +9,13 @@ Real-time F1 pit strategy system. Streams simulated race telemetry through Confl
 ## Commands
 
 ```bash
-uv run deploy          # Interactive deploy: prompts → credentials.env → terraform core → terraform demo
-uv run destroy         # Tear down demo then core (confirms before each)
-uv run reset           # Stop Flink jobs, drop topics/schemas, recreate; use between re-runs
-uv run api-keys create # Create AWS IAM user + keys for Bedrock access
-uv run setup-mcp       # Write confluent-mcp.env from TF outputs, register MCP server with Claude Code
+uv run deploy                  # Interactive deploy: prompts → credentials.env → terraform core → terraform demo
+uv run deploy --automated      # Same as above but also deploys Jobs 1 & 2 via Terraform (full pipeline, no Workspace needed)
+uv run destroy                 # Tear down demo then core (confirms before each)
+uv run reset                   # Stop Flink jobs, drop topics/schemas, recreate; use between re-runs
+uv run reset --automated       # Same as above but also recreates Jobs 1 & 2 via Terraform
+uv run api-keys create         # Create AWS IAM user + keys for Bedrock access
+uv run setup-mcp               # Write confluent-mcp.env from TF outputs, register MCP server with Claude Code
 
 ./scripts/start-race.sh   # Launch race simulator in ECS Fargate
 ./scripts/stop-race.sh    # Stop ECS task
@@ -93,19 +95,20 @@ Two stacks — deploy core first. Demo reads core via `terraform_remote_state` (
 | `pit-decisions` | Job 2 Flink statement | Yes | Agent output |
 
 Topic schemas (CREATE TABLE SQL): `terraform/modules/topics/main.tf`
-Pit-decisions schema: `demo-reference/streaming_agent.sql`
+Pit-decisions schema: `demo-reference/streaming_agent_pit_decisions.sql`
 
 ---
 
 ## Flink Jobs
 
-Jobs 1 and 2 are copy-pasted into Flink SQL Workspace during the demo. Job 0 is Terraform-managed.
+Jobs 1 and 2 are copy-pasted into Flink SQL Workspace during the demo, or deployed via Terraform with `--automated`. Job 0 is always Terraform-managed.
 
 | Job | SQL file | How deployed | Input → Output |
 |-----|----------|--------------|----------------|
 | 0 | `demo-reference/parse_standings.sql` | Terraform | `race-standings-raw` → `race-standings` |
-| 1 | `demo-reference/enrichment_anomaly.sql` | Manual (Workspace) | `car-telemetry` + `race-standings` → `car-state` |
-| 2 | `demo-reference/streaming_agent.sql` | Manual (Workspace) | `car-state` → `pit-decisions` |
+| 1 | `demo-reference/enrichment_anomaly.sql` | Manual (Workspace) — or via `--automated` | `car-telemetry` + `race-standings` → `car-state` |
+| 2a | `demo-reference/streaming_agent_create_agent.sql` | Manual (Workspace) — or via `--automated` | Creates `pit_strategy_agent` |
+| 2b | `demo-reference/streaming_agent_pit_decisions.sql` | Manual (Workspace) — or via `--automated` | `car-state` → `pit-decisions` |
 
 **Job 1 CTE pattern:** `enriched` (temporal join on `event_time`) → `windowed` (10s TUMBLE, AVG sensors) → `anomaly` (AI_DETECT_ANOMALIES on `tire_temp_fl_c`, conf=99.99, minTraining=20, maxTraining=50, enableStl=false) → final SELECT with `actual_value > upper_bound` filter.
 
@@ -166,10 +169,11 @@ All gitignored. Do not commit any of these files.
 | `datagen/race_script.py` | Lap-by-lap race state machine |
 | `datagen/config.py` | Simulator env var definitions |
 | `terraform/core/main.tf` | CC infra definition |
-| `terraform/demo/main.tf` | AWS + Flink tables + connectors + Job 0 |
+| `terraform/demo/main.tf` | AWS + Flink tables + connectors + Jobs 0–2 (automated) |
 | `terraform/modules/topics/main.tf` | `car-telemetry` + `race-standings` CREATE TABLE SQL |
-| `demo-reference/enrichment_anomaly.sql` | Job 1 (copy-paste to Workspace) |
-| `demo-reference/streaming_agent.sql` | Job 2 (copy-paste to Workspace) |
+| `demo-reference/enrichment_anomaly.sql` | Job 1 (copy-paste to Workspace or via --automated) |
+| `demo-reference/streaming_agent_create_agent.sql` | Job 2a — CREATE AGENT (copy-paste or via --automated) |
+| `demo-reference/streaming_agent_pit_decisions.sql` | Job 2b — CREATE TABLE pit-decisions (copy-paste or via --automated) |
 | `Walkthrough.md` | Step-by-step demo guide |
 
 ---

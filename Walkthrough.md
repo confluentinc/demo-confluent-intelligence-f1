@@ -244,7 +244,7 @@ You should see one record per lap. Around **lap 32**, `anomaly_tire_temp_fl` wil
 
 > [!NOTE]
 >
-> **RTCE** (Real-Time Context Engine) for live tool-based standings lookup is not yet active. Competitor standings are provided instead via a direct JOIN with `race-standings` in the CREATE TABLE statement. The RTCE connection and tool are included in `demo-reference/streaming_agent.sql` as commented-out stubs for when RTCE is enabled.
+> **RTCE** (Real-Time Context Engine) for live tool-based standings lookup is not yet active. Competitor standings are provided instead via a direct JOIN with `race-standings` in the CREATE TABLE statement. The RTCE connection and tool are included in `demo-reference/streaming_agent_create_agent.sql` as commented-out stubs for when RTCE is enabled.
 
 ```sql
 -- 1. Pit Strategy Agent
@@ -533,7 +533,7 @@ The ECS module builds a Docker image with `--platform linux/amd64` (required for
 
 The following items are planned but not yet implemented:
 
-- [ ] **Automate streaming agent deployment** — The agent SQL (`streaming_agent.sql`) has placeholder connection endpoints/API keys. Needs templating from Terraform outputs or a dedicated setup script.
+- [ ] **Automate streaming agent deployment** — Jobs 1 & 2 can now be deployed via Terraform with `uv run deploy --automated`. The split SQL files (`streaming_agent_create_agent.sql`, `streaming_agent_pit_decisions.sql`) are used both for Workspace copy-paste and Terraform-managed deployment.
 - [ ] **LLM connections in core Terraform** — `CREATE CONNECTION` and `CREATE MODEL` statements for the AI provider should be in `terraform/core/` so they're reusable and not manually entered each time.
 - [ ] **`uv run start-race` / `uv run stop-race`** — Replace the bash scripts with Python entry points for consistency.
 - [ ] **Automate Flink job deployment** — Add `uv run deploy-jobs` to submit all three Flink SQL jobs via the Confluent CLI.
