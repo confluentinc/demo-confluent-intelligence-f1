@@ -152,12 +152,12 @@ def drop_all_flink_objects(core: dict) -> None:
     drops = [
         # Schema-managed tables — must be cleared so Terraform can re-CREATE them
         ("drop-race_standings_raw", "DROP TABLE IF EXISTS `race_standings_raw`"),
-        ("drop-race_standings",     "DROP TABLE IF EXISTS `race_standings`"),
-        ("drop-car_telemetry",      "DROP TABLE IF EXISTS `car_telemetry`"),
+        ("drop-race_standings", "DROP TABLE IF EXISTS `race_standings`"),
+        ("drop-car_telemetry", "DROP TABLE IF EXISTS `car_telemetry`"),
         # Demo tables created by the Flink jobs themselves
-        ("drop-car_state",          "DROP TABLE IF EXISTS `car_state`"),
-        ("drop-pit_decisions",      "DROP TABLE IF EXISTS `pit_decisions`"),
-        ("drop-pit-agent",          "DROP AGENT IF EXISTS `pit_strategy_agent`"),
+        ("drop-car_state", "DROP TABLE IF EXISTS `car_state`"),
+        ("drop-pit_decisions", "DROP TABLE IF EXISTS `pit_decisions`"),
+        ("drop-pit-agent", "DROP AGENT IF EXISTS `pit_strategy_agent`"),
     ]
 
     for label, sql in drops:
@@ -190,8 +190,7 @@ MQ_CONNECTOR_CONFIG = "generated/mq_connector_config.json"
 def get_connector_id(env_id: str, cluster_id: str, name: str) -> str | None:
     """Return the connector ID for the given name, or None if not found."""
     rc, stdout, _ = run_cli(
-        ["confluent", "connect", "cluster", "list", "-o", "json",
-         "--environment", env_id, "--cluster", cluster_id]
+        ["confluent", "connect", "cluster", "list", "-o", "json", "--environment", env_id, "--cluster", cluster_id]
     )
     if rc != 0:
         return None
@@ -215,8 +214,18 @@ def reset_mq_connector(env_id: str, cluster_id: str, root) -> None:
         print(f"  {MQ_CONNECTOR_NAME} not found — skipping delete, proceeding to create")
     else:
         rc, _, stderr = run_cli(
-            ["confluent", "connect", "cluster", "delete", connector_id,
-             "--force", "--environment", env_id, "--cluster", cluster_id],
+            [
+                "confluent",
+                "connect",
+                "cluster",
+                "delete",
+                connector_id,
+                "--force",
+                "--environment",
+                env_id,
+                "--cluster",
+                cluster_id,
+            ],
         )
         first_line = stderr.strip().splitlines()[0] if stderr.strip() else ""
         if rc == 0:
@@ -230,8 +239,18 @@ def reset_mq_connector(env_id: str, cluster_id: str, root) -> None:
             print(f"  Confirmed {MQ_CONNECTOR_NAME} is gone — proceeding to recreate")
 
     rc, _, stderr = run_cli(
-        ["confluent", "connect", "cluster", "create", "--config-file", str(config_path),
-         "--environment", env_id, "--cluster", cluster_id]
+        [
+            "confluent",
+            "connect",
+            "cluster",
+            "create",
+            "--config-file",
+            str(config_path),
+            "--environment",
+            env_id,
+            "--cluster",
+            cluster_id,
+        ]
     )
     if rc == 0:
         print(f"  Recreated {MQ_CONNECTOR_NAME}")

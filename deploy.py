@@ -75,14 +75,18 @@ def main():
         aws_bedrock_secret = creds.get("TF_VAR_aws_bedrock_secret_key", "")
         aws_session_token = creds.get("TF_VAR_aws_session_token", "")
 
-        missing = [k for k, v in {
-            "TF_VAR_confluent_cloud_api_key": api_key,
-            "TF_VAR_confluent_cloud_api_secret": api_secret,
-            "TF_VAR_owner_email": owner_email,
-            "TF_VAR_deployment_id": deployment_id,
-            "TF_VAR_aws_bedrock_access_key": aws_bedrock_key,
-            "TF_VAR_aws_bedrock_secret_key": aws_bedrock_secret,
-        }.items() if not v]
+        missing = [
+            k
+            for k, v in {
+                "TF_VAR_confluent_cloud_api_key": api_key,
+                "TF_VAR_confluent_cloud_api_secret": api_secret,
+                "TF_VAR_owner_email": owner_email,
+                "TF_VAR_deployment_id": deployment_id,
+                "TF_VAR_aws_bedrock_access_key": aws_bedrock_key,
+                "TF_VAR_aws_bedrock_secret_key": aws_bedrock_secret,
+            }.items()
+            if not v
+        ]
         if missing:
             print(f"Error: credentials.env is missing required values: {', '.join(missing)}")
             sys.exit(1)

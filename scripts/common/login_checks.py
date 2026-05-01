@@ -50,7 +50,9 @@ def ensure_confluent_login(creds: dict) -> bool:
         if _try_confluent_login(username, password):
             print("  Logged in successfully")
             return True
-        print("Error: Auto-login failed. Check TF_VAR_confluent_username / TF_VAR_confluent_password in credentials.env")
+        print(
+            "Error: Auto-login failed. Check TF_VAR_confluent_username / TF_VAR_confluent_password in credentials.env"
+        )
         return False
 
     print("Error: Not logged into Confluent Cloud.")
