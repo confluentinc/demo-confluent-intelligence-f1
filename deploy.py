@@ -18,7 +18,7 @@ from scripts.common.credentials import (
 )
 from scripts.common.login_checks import (
     check_aws_configured,
-    check_confluent_login,
+    ensure_confluent_login,
     check_terraform_installed,
 )
 from scripts.common.terraform import get_project_root
@@ -49,9 +49,10 @@ def main():
         sys.exit(1)
     print("  Terraform installed")
 
-    if not check_confluent_login():
-        print("\nError: Not logged into Confluent Cloud.")
-        print("Run: confluent login")
+    # Load credentials early so auto-login can use them if needed
+    creds_file, creds = load_or_create_credentials_file(root)
+
+    if not ensure_confluent_login(creds):
         sys.exit(1)
     print("  Confluent CLI logged in")
 
@@ -61,72 +62,92 @@ def main():
         sys.exit(1)
     print("  AWS CLI configured")
 
-    # --- Load or create credentials file ---
+    if args.automated:
+        # --- Automated mode: use credentials.env as-is, no prompts ---
 
-    creds_file, creds = load_or_create_credentials_file(root)
+        print("\n--- Automated mode: using credentials.env values ---\n")
 
-    # --- Generate API keys (optional) ---
+        api_key = creds.get("TF_VAR_confluent_cloud_api_key", "")
+        api_secret = creds.get("TF_VAR_confluent_cloud_api_secret", "")
+        owner_email = creds.get("TF_VAR_owner_email", "")
+        deployment_id = creds.get("TF_VAR_deployment_id", "")
+        aws_bedrock_key = creds.get("TF_VAR_aws_bedrock_access_key", "")
+        aws_bedrock_secret = creds.get("TF_VAR_aws_bedrock_secret_key", "")
+        aws_session_token = creds.get("TF_VAR_aws_session_token", "")
 
-    generate = input("\nGenerate new Confluent Cloud API keys? (y/n) [n]: ").strip().lower()
-    if generate == "y":
-        api_key, api_secret = generate_confluent_api_keys()
-        if api_key and api_secret:
-            set_key(str(creds_file), "TF_VAR_confluent_cloud_api_key", api_key)
-            set_key(str(creds_file), "TF_VAR_confluent_cloud_api_secret", api_secret)
-            creds["TF_VAR_confluent_cloud_api_key"] = api_key
-            creds["TF_VAR_confluent_cloud_api_secret"] = api_secret
+        missing = [k for k, v in {
+            "TF_VAR_confluent_cloud_api_key": api_key,
+            "TF_VAR_confluent_cloud_api_secret": api_secret,
+            "TF_VAR_owner_email": owner_email,
+            "TF_VAR_deployment_id": deployment_id,
+            "TF_VAR_aws_bedrock_access_key": aws_bedrock_key,
+            "TF_VAR_aws_bedrock_secret_key": aws_bedrock_secret,
+        }.items() if not v]
+        if missing:
+            print(f"Error: credentials.env is missing required values: {', '.join(missing)}")
+            sys.exit(1)
 
-    # --- Prompt for credentials ---
+    else:
+        # --- Interactive mode ---
 
-    print("\n--- Configuration ---\n")
+        generate = input("\nGenerate new Confluent Cloud API keys? (y/n) [n]: ").strip().lower()
+        if generate == "y":
+            api_key, api_secret = generate_confluent_api_keys()
+            if api_key and api_secret:
+                set_key(str(creds_file), "TF_VAR_confluent_cloud_api_key", api_key)
+                set_key(str(creds_file), "TF_VAR_confluent_cloud_api_secret", api_secret)
+                creds["TF_VAR_confluent_cloud_api_key"] = api_key
+                creds["TF_VAR_confluent_cloud_api_secret"] = api_secret
 
-    api_key = prompt_with_default(
-        "Confluent Cloud API Key",
-        creds.get("TF_VAR_confluent_cloud_api_key", ""),
-    )
-    api_secret = prompt_with_default(
-        "Confluent Cloud API Secret",
-        creds.get("TF_VAR_confluent_cloud_api_secret", ""),
-    )
-    owner_email = prompt_with_default(
-        "Owner email (for AWS resource tagging)",
-        creds.get("TF_VAR_owner_email", ""),
-    )
-    while True:
-        deployment_id = prompt_with_default(
-            "Deployment ID (alphanumeric, max 8 chars, e.g. PROD or your initials)",
-            creds.get("TF_VAR_deployment_id", ""),
+        print("\n--- Configuration ---\n")
+
+        api_key = prompt_with_default(
+            "Confluent Cloud API Key",
+            creds.get("TF_VAR_confluent_cloud_api_key", ""),
         )
-        if deployment_id and deployment_id.isalnum() and len(deployment_id) <= 8:
-            break
-        print("  Must be alphanumeric, max 8 characters.")
-    aws_bedrock_key = prompt_with_default(
-        "AWS Bedrock Access Key",
-        creds.get("TF_VAR_aws_bedrock_access_key", ""),
-    )
-    aws_bedrock_secret = prompt_with_default(
-        "AWS Bedrock Secret Key",
-        creds.get("TF_VAR_aws_bedrock_secret_key", ""),
-    )
-    aws_session_token = ""
-    if aws_bedrock_key.startswith("ASIA"):
-        aws_session_token = prompt_with_default(
-            "AWS Session Token (required for temporary credentials)",
-            creds.get("TF_VAR_aws_session_token", ""),
+        api_secret = prompt_with_default(
+            "Confluent Cloud API Secret",
+            creds.get("TF_VAR_confluent_cloud_api_secret", ""),
         )
+        owner_email = prompt_with_default(
+            "Owner email (for AWS resource tagging)",
+            creds.get("TF_VAR_owner_email", ""),
+        )
+        while True:
+            deployment_id = prompt_with_default(
+                "Deployment ID (alphanumeric, max 8 chars, e.g. PROD or your initials)",
+                creds.get("TF_VAR_deployment_id", ""),
+            )
+            if deployment_id and deployment_id.isalnum() and len(deployment_id) <= 8:
+                break
+            print("  Must be alphanumeric, max 8 characters.")
+        aws_bedrock_key = prompt_with_default(
+            "AWS Bedrock Access Key",
+            creds.get("TF_VAR_aws_bedrock_access_key", ""),
+        )
+        aws_bedrock_secret = prompt_with_default(
+            "AWS Bedrock Secret Key",
+            creds.get("TF_VAR_aws_bedrock_secret_key", ""),
+        )
+        aws_session_token = ""
+        if aws_bedrock_key.startswith("ASIA"):
+            aws_session_token = prompt_with_default(
+                "AWS Session Token (required for temporary credentials)",
+                creds.get("TF_VAR_aws_session_token", ""),
+            )
 
-    # --- Save to credentials.env ---
+        # --- Save to credentials.env ---
 
-    set_key(str(creds_file), "TF_VAR_confluent_cloud_api_key", api_key)
-    set_key(str(creds_file), "TF_VAR_confluent_cloud_api_secret", api_secret)
-    set_key(str(creds_file), "TF_VAR_owner_email", owner_email)
-    set_key(str(creds_file), "TF_VAR_deployment_id", deployment_id)
-    set_key(str(creds_file), "TF_VAR_aws_bedrock_access_key", aws_bedrock_key)
-    set_key(str(creds_file), "TF_VAR_aws_bedrock_secret_key", aws_bedrock_secret)
-    if aws_session_token:
-        set_key(str(creds_file), "TF_VAR_aws_session_token", aws_session_token)
+        set_key(str(creds_file), "TF_VAR_confluent_cloud_api_key", api_key)
+        set_key(str(creds_file), "TF_VAR_confluent_cloud_api_secret", api_secret)
+        set_key(str(creds_file), "TF_VAR_owner_email", owner_email)
+        set_key(str(creds_file), "TF_VAR_deployment_id", deployment_id)
+        set_key(str(creds_file), "TF_VAR_aws_bedrock_access_key", aws_bedrock_key)
+        set_key(str(creds_file), "TF_VAR_aws_bedrock_secret_key", aws_bedrock_secret)
+        if aws_session_token:
+            set_key(str(creds_file), "TF_VAR_aws_session_token", aws_session_token)
 
-    # Reload creds dict with saved values
+    # Reload creds dict with resolved values
     creds = {
         "TF_VAR_confluent_cloud_api_key": api_key,
         "TF_VAR_confluent_cloud_api_secret": api_secret,
@@ -156,10 +177,11 @@ def main():
     else:
         print("  Mode:       minimal (Jobs 1 & 2 manual via Flink SQL Workspace)")
 
-    confirm = input("\nReady to deploy? (y/n): ").strip().lower()
-    if confirm != "y":
-        print("Cancelled.")
-        sys.exit(0)
+    if not args.automated:
+        confirm = input("\nReady to deploy? (y/n): ").strip().lower()
+        if confirm != "y":
+            print("Cancelled.")
+            sys.exit(0)
 
     # --- Deploy ---
 

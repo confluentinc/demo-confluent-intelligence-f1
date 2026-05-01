@@ -50,6 +50,10 @@ output "sr_api_secret" {
   sensitive = true
 }
 
+output "schema_registry_id" {
+  value = module.cluster.schema_registry_id
+}
+
 output "schema_registry_rest_endpoint" {
   value = module.cluster.schema_registry_rest_endpoint
 }

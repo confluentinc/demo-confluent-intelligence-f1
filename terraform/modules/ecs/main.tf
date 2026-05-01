@@ -7,10 +7,18 @@ data "aws_subnets" "default" {
   }
 }
 
+resource "random_id" "suffix" {
+  byte_length = 4
+}
+
+locals {
+  prefix = "${lower(var.name_prefix)}-${random_id.suffix.hex}"
+}
+
 # --- ECR Repository ---
 
 resource "aws_ecr_repository" "simulator" {
-  name         = "${lower(var.name_prefix)}-simulator"
+  name         = "${local.prefix}-simulator"
   force_delete = true
 }
 
@@ -38,7 +46,7 @@ resource "null_resource" "docker_build_push" {
 # --- IAM Roles ---
 
 resource "aws_iam_role" "ecs_execution" {
-  name = "${lower(var.name_prefix)}-ecs-execution"
+  name = "${local.prefix}-ecs-execution"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -59,7 +67,7 @@ resource "aws_iam_role_policy_attachment" "ecs_execution" {
 # --- CloudWatch Logs ---
 
 resource "aws_cloudwatch_log_group" "simulator" {
-  name              = "/ecs/${lower(var.name_prefix)}-simulator"
+  name              = "/ecs/${local.prefix}-simulator"
   retention_in_days = 7
 }
 
@@ -86,13 +94,13 @@ resource "aws_security_group" "ecs" {
 # --- ECS Cluster ---
 
 resource "aws_ecs_cluster" "simulator" {
-  name = "${lower(var.name_prefix)}-simulator"
+  name = "${local.prefix}-simulator"
 }
 
 # --- ECS Task Definition ---
 
 resource "aws_ecs_task_definition" "simulator" {
-  family                   = "${lower(var.name_prefix)}-simulator"
+  family                   = "${local.prefix}-simulator"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = "512"
@@ -100,7 +108,7 @@ resource "aws_ecs_task_definition" "simulator" {
   execution_role_arn       = aws_iam_role.ecs_execution.arn
 
   container_definitions = jsonencode([{
-    name      = "${lower(var.name_prefix)}-simulator"
+    name      = "${local.prefix}-simulator"
     image     = "${aws_ecr_repository.simulator.repository_url}:latest"
     essential = true
 

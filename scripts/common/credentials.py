@@ -28,7 +28,10 @@ def load_or_create_credentials_file(root: Path) -> tuple[Path, dict[str, str]]:
     if creds_file.exists():
         return creds_file, dotenv_values(creds_file)
 
-    creds_file.touch()
+    creds_file.write_text(
+        "TF_VAR_confluent_username=''\n"
+        "TF_VAR_confluent_password=''\n"
+    )
     return creds_file, {}
 
 

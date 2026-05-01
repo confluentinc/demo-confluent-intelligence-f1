@@ -23,8 +23,12 @@ data "confluent_environment" "main" {
   id = var.environment_id
 }
 
+resource "random_id" "suffix" {
+  byte_length = 4
+}
+
 resource "confluent_service_account" "app" {
-  display_name = "${var.name_prefix}-app"
+  display_name = "${var.name_prefix}-app-${random_id.suffix.hex}"
   description  = "Service account for F1 demo application"
 }
 

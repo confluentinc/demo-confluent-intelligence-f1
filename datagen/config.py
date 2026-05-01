@@ -27,5 +27,12 @@ TOTAL_LAPS = 57
 SECONDS_PER_LAP = 10
 TELEMETRY_INTERVAL_SEC = 2
 
+# Pre-race warm-up: number of dummy windows (lap=0) to produce before lap 1.
+# AI_DETECT_ANOMALIES withholds output until ~5 data points are available, so
+# 4 warm-up windows ensure the function emits starting at real lap 1.
+PRE_RACE_WARMUP_LAPS = int(os.environ.get("PRE_RACE_WARMUP_LAPS", "4"))
+# Sleep between warm-up windows (seconds) to allow pipeline propagation.
+PRE_RACE_LAP_DELAY_SEC = int(os.environ.get("PRE_RACE_LAP_DELAY_SEC", "15"))
+
 # Our car
 OUR_CAR_NUMBER = 44

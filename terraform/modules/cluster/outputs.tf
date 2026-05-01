@@ -42,6 +42,10 @@ output "sr_api_secret" {
   sensitive = true
 }
 
+output "schema_registry_id" {
+  value = data.confluent_schema_registry_cluster.main.id
+}
+
 output "schema_registry_rest_endpoint" {
   value = data.confluent_schema_registry_cluster.main.rest_endpoint
 }

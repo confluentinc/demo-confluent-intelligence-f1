@@ -39,6 +39,38 @@ module "topics" {
   owner_email         = local.owner_email
 }
 
+# --- Stream Catalog tags ---
+
+resource "confluent_tag" "raw_data" {
+  schema_registry_cluster {
+    id = data.terraform_remote_state.core.outputs.schema_registry_id
+  }
+  rest_endpoint = data.terraform_remote_state.core.outputs.schema_registry_rest_endpoint
+  credentials {
+    key    = data.terraform_remote_state.core.outputs.sr_api_key
+    secret = data.terraform_remote_state.core.outputs.sr_api_secret
+  }
+
+  name        = "RAW_DATA"
+  description = "Raw ingest topic — unprocessed sensor data"
+  depends_on  = [module.topics]
+}
+
+resource "confluent_tag_binding" "car_telemetry_raw_data" {
+  schema_registry_cluster {
+    id = data.terraform_remote_state.core.outputs.schema_registry_id
+  }
+  rest_endpoint = data.terraform_remote_state.core.outputs.schema_registry_rest_endpoint
+  credentials {
+    key    = data.terraform_remote_state.core.outputs.sr_api_key
+    secret = data.terraform_remote_state.core.outputs.sr_api_secret
+  }
+
+  tag_name    = confluent_tag.raw_data.name
+  entity_name = "${data.terraform_remote_state.core.outputs.cluster_id}:car_telemetry"
+  entity_type = "kafka_topic"
+}
+
 module "mq" {
   source      = "../modules/mq"
   aws_region  = local.region
@@ -85,15 +117,15 @@ resource "null_resource" "wait_for_mq" {
   provisioner "local-exec" {
     command = <<-EOT
       echo "Waiting for IBM MQ at ${module.mq.mq_public_ip}:1414..."
-      for i in $(seq 1 60); do
+      for i in $(seq 1 120); do
         if nc -z -w5 ${module.mq.mq_public_ip} 1414 2>/dev/null; then
           echo "IBM MQ port open after $((i * 15))s"
           exit 0
         fi
-        echo "  attempt $i/60 — retrying in 15s..."
+        echo "  attempt $i/120 — retrying in 15s..."
         sleep 15
       done
-      echo "Timeout: IBM MQ not ready after 15 minutes" && exit 1
+      echo "Timeout: IBM MQ not ready after 30 minutes" && exit 1
     EOT
   }
 }
@@ -104,15 +136,15 @@ resource "null_resource" "wait_for_postgres" {
   provisioner "local-exec" {
     command = <<-EOT
       echo "Waiting for Postgres at ${module.postgres.postgres_public_ip}:5432..."
-      for i in $(seq 1 60); do
+      for i in $(seq 1 80); do
         if nc -z -w5 ${module.postgres.postgres_public_ip} 5432 2>/dev/null; then
           echo "Postgres port open after $((i * 15))s"
           exit 0
         fi
-        echo "  attempt $i/60 — retrying in 15s..."
+        echo "  attempt $i/80 — retrying in 15s..."
         sleep 15
       done
-      echo "Timeout: Postgres not ready after 15 minutes" && exit 1
+      echo "Timeout: Postgres not ready after 20 minutes" && exit 1
     EOT
   }
 }

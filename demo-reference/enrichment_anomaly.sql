@@ -97,4 +97,5 @@ SELECT
   END AS anomaly_tire_temp_fl,
   `position`, gap_to_ahead_sec, gap_to_leader_sec,
   pit_stops, tire_compound, tire_age_laps
-FROM anomaly;
+FROM anomaly
+WHERE lap > 0;

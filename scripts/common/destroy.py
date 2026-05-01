@@ -81,10 +81,10 @@ def main():
             continue
 
         print(f"\n-> Destroying {env}...")
-        if run_terraform_destroy(env_path):
-            cleanup_terraform_artifacts(env_path)
-        else:
-            print(f"\nDestroy failed at {env}. Continuing with remaining...")
+        success = run_terraform_destroy(env_path)
+        cleanup_terraform_artifacts(env_path)
+        if not success:
+            print(f"\nDestroy failed at {env} (state cleaned up). Continuing with remaining...")
 
     print("\nDestroy process completed!")
     _cleanup_mcp(root)

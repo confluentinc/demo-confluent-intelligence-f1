@@ -85,6 +85,54 @@ def _connect_mq():
     return qmgr, topic
 
 
+def _run_warmup_laps(producer, avro_serializer, mq_topic, rfh2):
+    """Produce pre-race windows (lap=0) to prime AI_DETECT_ANOMALIES.
+
+    AI_DETECT_ANOMALIES withholds output until ~5 data points are available.
+    These warmup windows supply the first 4 so real lap 1 is the 5th point
+    and triggers the first car_state emission.
+    """
+    warm_race = RaceState(GRID)
+    warm_race.advance_lap()
+
+    for i in range(config.PRE_RACE_WARMUP_LAPS):
+        ts = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+        for standing in warm_race.get_standings():
+            standing["event_time"] = ts
+            md = pymqi.MD()
+            md.Format = pymqi.CMQC.MQFMT_RF_HEADER_2
+            md.Encoding = 273
+            md.CodedCharSetId = 1208
+            mq_topic.pub_rfh2(json.dumps(standing).encode("utf-8"), md, pymqi.PMO(), [rfh2])
+
+        readings_per_lap = config.SECONDS_PER_LAP // config.TELEMETRY_INTERVAL_SEC
+        for _ in range(readings_per_lap):
+            telemetry = generate_telemetry(lap=0, tire_age=0, tire_compound="SOFT", post_pit=False)
+            telemetry["car_number"] = config.OUR_CAR_NUMBER
+            telemetry["lap"] = 0
+            telemetry["event_time"] = int(datetime.now(timezone.utc).timestamp() * 1000)
+            producer.produce(
+                config.KAFKA_TOPIC,
+                key=str(config.OUR_CAR_NUMBER).encode("utf-8"),
+                value=avro_serializer(
+                    telemetry,
+                    SerializationContext(config.KAFKA_TOPIC, MessageField.VALUE),
+                ),
+            )
+            producer.poll(0)
+            time.sleep(config.TELEMETRY_INTERVAL_SEC)
+
+        producer.flush(timeout=5)
+        logger.info(
+            f"Warmup window {i + 1}/{config.PRE_RACE_WARMUP_LAPS} produced. "
+            f"Sleeping {config.PRE_RACE_LAP_DELAY_SEC}s..."
+        )
+        time.sleep(config.PRE_RACE_LAP_DELAY_SEC)
+
+    logger.info("Warm-up complete. Starting race at lap 1.")
+
+
 def run_race():
     """Run the full 57-lap race simulation."""
     logger.info("=== F1 RACE SIMULATOR — SILVERSTONE ===")
@@ -113,6 +161,8 @@ def run_race():
     car44_post_pit = False
 
     try:
+        _run_warmup_laps(producer, avro_serializer, mq_topic, rfh2)
+
         for lap in range(1, config.TOTAL_LAPS + 1):
             lap_start = time.time()
 

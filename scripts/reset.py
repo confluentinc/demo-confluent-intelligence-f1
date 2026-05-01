@@ -21,7 +21,7 @@ from base64 import b64encode
 
 from dotenv import dotenv_values
 
-from scripts.common.login_checks import check_confluent_login
+from scripts.common.login_checks import ensure_confluent_login
 from scripts.common.terraform import get_project_root, run_terraform_output
 
 # Topics created by Terraform — deleted and recreated via terraform apply -replace
@@ -175,6 +175,24 @@ MQ_CONNECTOR_NAME = "f1-mq-source"
 MQ_CONNECTOR_CONFIG = "generated/mq_connector_config.json"
 
 
+def connector_exists(env_id: str, cluster_id: str) -> bool:
+    rc, stdout, _ = run_cli(
+        [
+            "confluent",
+            "connect",
+            "cluster",
+            "list",
+            "--environment",
+            env_id,
+            "--cluster",
+            cluster_id,
+        ]
+    )
+    if rc != 0:
+        return True  # conservative: assume exists if list call itself fails
+    return MQ_CONNECTOR_NAME in stdout
+
+
 def reset_mq_connector(env_id: str, cluster_id: str, root) -> None:
     config_path = root / MQ_CONNECTOR_CONFIG
     if not config_path.exists():
@@ -196,7 +214,15 @@ def reset_mq_connector(env_id: str, cluster_id: str, root) -> None:
         confirm=True,
     )
     first_line = stderr.strip().splitlines()[0] if stderr.strip() else ""
-    print(f"  Delete {MQ_CONNECTOR_NAME}: {'ok' if rc == 0 else f'skipped ({first_line})'}")
+    if rc == 0:
+        print(f"  Deleted {MQ_CONNECTOR_NAME}")
+    else:
+        print(f"  Delete returned error: {first_line}")
+        if connector_exists(env_id, cluster_id):
+            print(f"  {MQ_CONNECTOR_NAME} still exists — delete failed. Aborting connector reset.")
+            print(f"  To fix: delete the connector manually then re-run reset.")
+            return
+        print(f"  Confirmed {MQ_CONNECTOR_NAME} is gone — proceeding to recreate")
 
     rc, _, stderr = run_cli(
         [
@@ -230,22 +256,21 @@ def main() -> None:
 
     print("=== F1 Demo Reset ===\n")
 
-    if not check_confluent_login():
-        print("Error: Not logged into Confluent Cloud. Run: confluent login")
-        sys.exit(1)
-
     root = get_project_root()
 
     creds_file = root / "credentials.env"
-    if creds_file.exists():
-        creds = dotenv_values(creds_file)
-        for k, v in creds.items():
-            if v:
-                os.environ[k] = v
-        if creds.get("TF_VAR_confluent_cloud_api_key"):
-            os.environ["CONFLUENT_CLOUD_API_KEY"] = creds["TF_VAR_confluent_cloud_api_key"]
-        if creds.get("TF_VAR_confluent_cloud_api_secret"):
-            os.environ["CONFLUENT_CLOUD_API_SECRET"] = creds["TF_VAR_confluent_cloud_api_secret"]
+    creds = dotenv_values(creds_file) if creds_file.exists() else {}
+
+    if not ensure_confluent_login(creds):
+        sys.exit(1)
+
+    for k, v in creds.items():
+        if v:
+            os.environ[k] = v
+    if creds.get("TF_VAR_confluent_cloud_api_key"):
+        os.environ["CONFLUENT_CLOUD_API_KEY"] = creds["TF_VAR_confluent_cloud_api_key"]
+    if creds.get("TF_VAR_confluent_cloud_api_secret"):
+        os.environ["CONFLUENT_CLOUD_API_SECRET"] = creds["TF_VAR_confluent_cloud_api_secret"]
 
     core_state = root / "terraform" / "core" / "terraform.tfstate"
     try:
