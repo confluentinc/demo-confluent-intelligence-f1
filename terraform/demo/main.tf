@@ -67,7 +67,22 @@ resource "confluent_tag_binding" "car_telemetry_raw_data" {
   }
 
   tag_name    = confluent_tag.raw_data.name
-  entity_name = "${data.terraform_remote_state.core.outputs.cluster_id}:car_telemetry"
+  entity_name = "${data.terraform_remote_state.core.outputs.schema_registry_id}:${data.terraform_remote_state.core.outputs.cluster_id}:car_telemetry"
+  entity_type = "kafka_topic"
+}
+
+resource "confluent_tag_binding" "race_standings_raw_raw_data" {
+  schema_registry_cluster {
+    id = data.terraform_remote_state.core.outputs.schema_registry_id
+  }
+  rest_endpoint = data.terraform_remote_state.core.outputs.schema_registry_rest_endpoint
+  credentials {
+    key    = data.terraform_remote_state.core.outputs.sr_api_key
+    secret = data.terraform_remote_state.core.outputs.sr_api_secret
+  }
+
+  tag_name    = confluent_tag.raw_data.name
+  entity_name = "${data.terraform_remote_state.core.outputs.schema_registry_id}:${data.terraform_remote_state.core.outputs.cluster_id}:race_standings_raw"
   entity_type = "kafka_topic"
 }
 
@@ -116,13 +131,29 @@ resource "null_resource" "wait_for_mq" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      echo "Waiting for IBM MQ at ${module.mq.mq_public_ip}:1414..."
+      INSTANCE_ID="${module.mq.mq_instance_id}"
+      REGION="${local.region}"
+      echo "Waiting for IBM MQ at ${module.mq.mq_public_ip}:1414 (instance $INSTANCE_ID)..."
       for i in $(seq 1 120); do
         if nc -z -w5 ${module.mq.mq_public_ip} 1414 2>/dev/null; then
           echo "IBM MQ port open after $((i * 15))s"
           exit 0
         fi
         echo "  attempt $i/120 — retrying in 15s..."
+        if [ $((i % 4)) -eq 0 ]; then
+          STATE=$(aws ec2 describe-instances --region "$REGION" --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].State.Name' --output text 2>/dev/null || echo "unknown")
+          if [ "$STATE" = "stopped" ] || [ "$STATE" = "terminated" ]; then
+            echo "FATAL: MQ instance $INSTANCE_ID entered state '$STATE' — aborting" && exit 1
+          fi
+          CONSOLE=$(aws ec2 get-console-output --region "$REGION" --instance-id "$INSTANCE_ID" \
+            --query 'Output' --output text 2>/dev/null || true)
+          if echo "$CONSOLE" | grep -qE "no space left on device|needs [0-9]+MB more space|Transaction test error|Failed to run module scripts-user"; then
+            echo "FATAL: MQ EC2 user_data failed. Relevant console lines:"
+            echo "$CONSOLE" | grep -E "no space left|more space needed|Transaction test|Failed to run" | head -5
+            exit 1
+          fi
+        fi
         sleep 15
       done
       echo "Timeout: IBM MQ not ready after 30 minutes" && exit 1
@@ -135,13 +166,29 @@ resource "null_resource" "wait_for_postgres" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      echo "Waiting for Postgres at ${module.postgres.postgres_public_ip}:5432..."
+      INSTANCE_ID="${module.postgres.postgres_instance_id}"
+      REGION="${local.region}"
+      echo "Waiting for Postgres at ${module.postgres.postgres_public_ip}:5432 (instance $INSTANCE_ID)..."
       for i in $(seq 1 80); do
         if nc -z -w5 ${module.postgres.postgres_public_ip} 5432 2>/dev/null; then
           echo "Postgres port open after $((i * 15))s"
           exit 0
         fi
         echo "  attempt $i/80 — retrying in 15s..."
+        if [ $((i % 4)) -eq 0 ]; then
+          STATE=$(aws ec2 describe-instances --region "$REGION" --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].State.Name' --output text 2>/dev/null || echo "unknown")
+          if [ "$STATE" = "stopped" ] || [ "$STATE" = "terminated" ]; then
+            echo "FATAL: Postgres instance $INSTANCE_ID entered state '$STATE' — aborting" && exit 1
+          fi
+          CONSOLE=$(aws ec2 get-console-output --region "$REGION" --instance-id "$INSTANCE_ID" \
+            --query 'Output' --output text 2>/dev/null || true)
+          if echo "$CONSOLE" | grep -qE "no space left on device|needs [0-9]+MB more space|Transaction test error|Failed to run module scripts-user"; then
+            echo "FATAL: Postgres EC2 user_data failed. Relevant console lines:"
+            echo "$CONSOLE" | grep -E "no space left|more space needed|Transaction test|Failed to run" | head -5
+            exit 1
+          fi
+        fi
         sleep 15
       done
       echo "Timeout: Postgres not ready after 20 minutes" && exit 1

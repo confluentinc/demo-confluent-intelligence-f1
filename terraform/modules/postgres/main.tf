@@ -58,6 +58,11 @@ resource "aws_instance" "postgres" {
     driver_race_history_seed_b64 = base64gzip(file("${path.module}/../../../data/driver_race_history_seed.sql"))
   })
 
+  root_block_device {
+    volume_size = 30
+    volume_type = "gp3"
+  }
+
   tags = {
     Name        = "${lower(var.name_prefix)}-postgres"
     owner_email = var.owner_email

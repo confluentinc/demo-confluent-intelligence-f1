@@ -12,8 +12,8 @@ Real-time F1 pit strategy system. Streams simulated race telemetry through Confl
 uv run deploy                  # Interactive deploy: prompts → credentials.env → terraform core → terraform demo
 uv run deploy --automated      # Same as above but also deploys Jobs 1 & 2 via Terraform (full pipeline, no Workspace needed)
 uv run destroy                 # Tear down demo then core (confirms before each)
-uv run reset                   # Stop Flink jobs, drop topics/schemas, recreate; use between re-runs
-uv run reset --automated       # Same as above but also recreates Jobs 1 & 2 via Terraform
+uv run reset                   # Stop Flink jobs, drop topics/schemas, recreate + Jobs 1 & 2 (default: automated)
+uv run reset --manual          # Same but skips Jobs 1 & 2; re-deploy them manually in SQL Workspace
 uv run api-keys create         # Create AWS IAM user + keys for Bedrock access
 uv run setup-mcp               # Write confluent-mcp.env from TF outputs, register MCP server with Claude Code
 

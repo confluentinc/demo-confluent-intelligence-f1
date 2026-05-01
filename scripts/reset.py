@@ -7,7 +7,7 @@ subjects, then recreates schema-bearing topics via `terraform apply -replace
 -target` so Terraform is the single source of truth for topic schemas.
 Also resets the MQ connector for a clean subscription.
 
-Usage: uv run reset [--automated]
+Usage: uv run reset [--manual]
 """
 
 import argparse
@@ -127,8 +127,15 @@ def delete_topic_and_subjects(topic: str, env_id: str, cluster_id: str) -> None:
         print(f"  SR {subject}: cleaned")
 
 
-def drop_demo_flink_objects(core: dict) -> None:
-    """Submit DROP TABLE / DROP AGENT for demo-created Flink objects via REST API."""
+def drop_all_flink_objects(core: dict) -> None:
+    """Submit DROP TABLE / DROP AGENT for all demo Flink objects via REST API.
+
+    Includes the three Terraform-managed schema tables (car_telemetry, race_standings,
+    race_standings_raw) so their Flink catalog entries are cleared before Terraform
+    recreates them.  Without these drops, Terraform's -replace only deletes the
+    statement record — not the catalog entry — so the subsequent CREATE TABLE fails
+    with "table already exists" and the Kafka topics are never recreated.
+    """
     org_id = core["organization_id"]
     env_id = core["environment_id"]
     rest = core["flink_rest_endpoint"].rstrip("/")
@@ -143,9 +150,14 @@ def drop_demo_flink_objects(core: dict) -> None:
     url = f"{rest}/sql/v1/organizations/{org_id}/environments/{env_id}/statements"
 
     drops = [
-        ("drop-car_state", "DROP TABLE IF EXISTS `car_state`"),
-        ("drop-pit_decisions", "DROP TABLE IF EXISTS `pit_decisions`"),
-        ("drop-pit-agent", "DROP AGENT IF EXISTS `pit_strategy_agent`"),
+        # Schema-managed tables — must be cleared so Terraform can re-CREATE them
+        ("drop-race_standings_raw", "DROP TABLE IF EXISTS `race_standings_raw`"),
+        ("drop-race_standings",     "DROP TABLE IF EXISTS `race_standings`"),
+        ("drop-car_telemetry",      "DROP TABLE IF EXISTS `car_telemetry`"),
+        # Demo tables created by the Flink jobs themselves
+        ("drop-car_state",          "DROP TABLE IF EXISTS `car_state`"),
+        ("drop-pit_decisions",      "DROP TABLE IF EXISTS `pit_decisions`"),
+        ("drop-pit-agent",          "DROP AGENT IF EXISTS `pit_strategy_agent`"),
     ]
 
     for label, sql in drops:
@@ -175,22 +187,21 @@ MQ_CONNECTOR_NAME = "f1-mq-source"
 MQ_CONNECTOR_CONFIG = "generated/mq_connector_config.json"
 
 
-def connector_exists(env_id: str, cluster_id: str) -> bool:
+def get_connector_id(env_id: str, cluster_id: str, name: str) -> str | None:
+    """Return the connector ID for the given name, or None if not found."""
     rc, stdout, _ = run_cli(
-        [
-            "confluent",
-            "connect",
-            "cluster",
-            "list",
-            "--environment",
-            env_id,
-            "--cluster",
-            cluster_id,
-        ]
+        ["confluent", "connect", "cluster", "list", "-o", "json",
+         "--environment", env_id, "--cluster", cluster_id]
     )
     if rc != 0:
-        return True  # conservative: assume exists if list call itself fails
-    return MQ_CONNECTOR_NAME in stdout
+        return None
+    try:
+        for c in json.loads(stdout):
+            if c.get("name") == name:
+                return c["id"]
+    except (json.JSONDecodeError, KeyError):
+        pass
+    return None
 
 
 def reset_mq_connector(env_id: str, cluster_id: str, root) -> None:
@@ -199,44 +210,28 @@ def reset_mq_connector(env_id: str, cluster_id: str, root) -> None:
         print(f"  Skipping — {MQ_CONNECTOR_CONFIG} not found (run 'uv run deploy' first)")
         return
 
-    rc, _, stderr = run_cli(
-        [
-            "confluent",
-            "connect",
-            "cluster",
-            "delete",
-            MQ_CONNECTOR_NAME,
-            "--environment",
-            env_id,
-            "--cluster",
-            cluster_id,
-        ],
-        confirm=True,
-    )
-    first_line = stderr.strip().splitlines()[0] if stderr.strip() else ""
-    if rc == 0:
-        print(f"  Deleted {MQ_CONNECTOR_NAME}")
+    connector_id = get_connector_id(env_id, cluster_id, MQ_CONNECTOR_NAME)
+    if connector_id is None:
+        print(f"  {MQ_CONNECTOR_NAME} not found — skipping delete, proceeding to create")
     else:
-        print(f"  Delete returned error: {first_line}")
-        if connector_exists(env_id, cluster_id):
-            print(f"  {MQ_CONNECTOR_NAME} still exists — delete failed. Aborting connector reset.")
-            print(f"  To fix: delete the connector manually then re-run reset.")
-            return
-        print(f"  Confirmed {MQ_CONNECTOR_NAME} is gone — proceeding to recreate")
+        rc, _, stderr = run_cli(
+            ["confluent", "connect", "cluster", "delete", connector_id,
+             "--force", "--environment", env_id, "--cluster", cluster_id],
+        )
+        first_line = stderr.strip().splitlines()[0] if stderr.strip() else ""
+        if rc == 0:
+            print(f"  Deleted {MQ_CONNECTOR_NAME} ({connector_id})")
+        else:
+            print(f"  Delete failed: {first_line}")
+            if get_connector_id(env_id, cluster_id, MQ_CONNECTOR_NAME) is not None:
+                print(f"  {MQ_CONNECTOR_NAME} still exists — delete failed. Aborting connector reset.")
+                print(f"  To fix: delete the connector manually then re-run reset.")
+                return
+            print(f"  Confirmed {MQ_CONNECTOR_NAME} is gone — proceeding to recreate")
 
     rc, _, stderr = run_cli(
-        [
-            "confluent",
-            "connect",
-            "cluster",
-            "create",
-            "--config-file",
-            str(config_path),
-            "--environment",
-            env_id,
-            "--cluster",
-            cluster_id,
-        ]
+        ["confluent", "connect", "cluster", "create", "--config-file", str(config_path),
+         "--environment", env_id, "--cluster", cluster_id]
     )
     if rc == 0:
         print(f"  Recreated {MQ_CONNECTOR_NAME}")
@@ -247,12 +242,13 @@ def reset_mq_connector(env_id: str, cluster_id: str, root) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Reset F1 demo for a fresh race re-run")
     parser.add_argument(
-        "--automated",
+        "--manual",
         action="store_true",
         default=False,
-        help="Also recreate Jobs 1 & 2 Flink statements via Terraform (use when originally deployed with --automated).",
+        help="Skip recreating Jobs 1 & 2 via Terraform; re-deploy them manually in SQL Workspace after reset.",
     )
     args = parser.parse_args()
+    automated = not args.manual
 
     print("=== F1 Demo Reset ===\n")
 
@@ -285,22 +281,22 @@ def main() -> None:
     print("1. Stopping Flink statements...")
     delete_flink_statements(core)
 
-    print("\n2. Dropping demo Flink objects (tables + agent)...")
-    drop_demo_flink_objects(core)
+    print("\n2. Dropping all Flink objects (tables + agent)...")
+    drop_all_flink_objects(core)
 
     print("\n3. Dropping topics and SR subjects...")
     for topic in SCHEMA_TOPICS + DEMO_TOPICS:
         delete_topic_and_subjects(topic, env_id, cluster_id)
 
-    if args.automated:
+    if automated:
         os.environ["TF_VAR_automated"] = "true"
 
-    print("\n4. Recreating schema topics + Job 0 (and Jobs 1 & 2 if --automated) via Terraform...")
+    print("\n4. Recreating schema topics + Job 0 (and Jobs 1 & 2 unless --manual) via Terraform...")
     target_flags = [f"-target={r}" for r in TF_RESOURCES]
     replace_flags = [f"-replace={r}" for r in TF_RESOURCES]
     target_flags += [f"-target={JOB0_TF_RESOURCE}"]
     replace_flags += [f"-replace={JOB0_TF_RESOURCE}"]
-    if args.automated:
+    if automated:
         target_flags += [f"-target={r}" for r in AUTOMATED_TF_RESOURCES]
         replace_flags += [f"-replace={r}" for r in AUTOMATED_TF_RESOURCES]
     cmd = ["terraform", f"-chdir={root}/terraform/demo", "apply", *target_flags, *replace_flags, "-auto-approve"]
@@ -314,7 +310,7 @@ def main() -> None:
 
     print("\n=== Reset complete ===")
     print("Next steps:")
-    if args.automated:
+    if automated:
         print("  1. Start the race:  ./scripts/start-race.sh")
     else:
         print("  1. Re-deploy Flink Jobs 1 & 2 in the SQL Workspace (Job 0 already deployed)")

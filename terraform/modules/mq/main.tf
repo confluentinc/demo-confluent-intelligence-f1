@@ -62,6 +62,11 @@ resource "aws_instance" "mq" {
 
   user_data = file("${path.module}/user_data.sh")
 
+  root_block_device {
+    volume_size = 30
+    volume_type = "gp3"
+  }
+
   tags = {
     Name        = "${lower(var.name_prefix)}-mq"
     owner_email = var.owner_email
