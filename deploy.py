@@ -25,6 +25,7 @@ from scripts.common.terraform import get_project_root
 from scripts.common.terraform_runner import run_terraform
 from scripts.common.tfvars import write_tfvars_for_deployment
 from scripts.common.ui import prompt_with_default
+from scripts.setup_mcp import main as setup_mcp
 
 
 def main():
@@ -219,16 +220,23 @@ def main():
         print("Core infrastructure is still running. Run 'uv run destroy' to clean up.")
         sys.exit(1)
 
+    # --- MCP setup (automated mode only) ---
+
+    if args.automated:
+        print("\n=== Setting Up MCP Server ===")
+        setup_mcp()
+
     # --- Success ---
 
     print("\n=== Deployment Complete ===")
     print()
     print("Next steps:")
-    print("  1. Start the race simulator:  ./scripts/start-race.sh")
-    print("  2. Set up MCP for Claude:     uv run setup-mcp")
+    print("  1. Start the race simulator:  uv run start-race")
     if args.automated:
-        print("  3. Jobs 1 & 2 already deployed — data flows as soon as the race starts")
+        print("  2. Jobs 1 & 2 already deployed — data flows as soon as the race starts")
+        print("  3. MCP server registered — restart Claude Code to activate")
     else:
+        print("  2. Set up MCP for Claude:     uv run setup-mcp")
         print("  3. Follow the Walkthrough.md for the demo flow")
     print()
     print("To tear down all resources:     uv run destroy")

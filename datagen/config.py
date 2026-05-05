@@ -24,7 +24,7 @@ MQ_PASSWORD = os.environ.get("MQ_PASSWORD", "passw0rd")
 
 # Race timing
 TOTAL_LAPS = 57
-SECONDS_PER_LAP = 10
+SECONDS_PER_LAP = int(os.environ.get("SECONDS_PER_LAP", "10"))
 TELEMETRY_INTERVAL_SEC = 2
 
 # Pre-race warm-up: number of dummy windows (lap=0) to produce before lap 1.

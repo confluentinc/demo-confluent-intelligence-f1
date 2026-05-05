@@ -46,6 +46,20 @@ AUTOMATED_TF_RESOURCES = [
     "confluent_flink_statement.job2_pit_decisions[0]",
 ]
 
+ALL_DROPS = [
+    ("drop-race_standings_raw", "DROP TABLE IF EXISTS `race_standings_raw`"),
+    ("drop-race_standings",     "DROP TABLE IF EXISTS `race_standings`"),
+    ("drop-car_telemetry",      "DROP TABLE IF EXISTS `car_telemetry`"),
+    ("drop-car_state",          "DROP TABLE IF EXISTS `car_state`"),
+    ("drop-pit_decisions",      "DROP TABLE IF EXISTS `pit_decisions`"),
+    ("drop-pit-agent",          "DROP AGENT IF EXISTS `pit_strategy_agent`"),
+]
+
+DBT_DROPS = [
+    ("drop-car_state",    "DROP TABLE IF EXISTS `car_state`"),
+    ("drop-pit_decisions","DROP TABLE IF EXISTS `pit_decisions`"),
+]
+
 
 def run_cli(cmd: list[str], confirm: bool = False) -> tuple[int, str, str]:
     result = subprocess.run(cmd, capture_output=True, text=True, input="y\n" if confirm else None)
@@ -127,14 +141,11 @@ def delete_topic_and_subjects(topic: str, env_id: str, cluster_id: str) -> None:
         print(f"  SR {subject}: cleaned")
 
 
-def drop_all_flink_objects(core: dict) -> None:
-    """Submit DROP TABLE / DROP AGENT for all demo Flink objects via REST API.
+def drop_flink_objects(core: dict, drops: list) -> None:
+    """Submit DROP TABLE / DROP AGENT statements via REST API.
 
-    Includes the three Terraform-managed schema tables (car_telemetry, race_standings,
-    race_standings_raw) so their Flink catalog entries are cleared before Terraform
-    recreates them.  Without these drops, Terraform's -replace only deletes the
-    statement record — not the catalog entry — so the subsequent CREATE TABLE fails
-    with "table already exists" and the Kafka topics are never recreated.
+    Pass ALL_DROPS for a full reset (clears Terraform-managed catalog entries so
+    Terraform can re-CREATE them) or DBT_DROPS to clear only dbt-managed objects.
     """
     org_id = core["organization_id"]
     env_id = core["environment_id"]
@@ -148,17 +159,6 @@ def drop_all_flink_objects(core: dict) -> None:
     token = b64encode(f"{api_key}:{api_secret}".encode()).decode()
     headers = {"Authorization": f"Basic {token}", "Content-Type": "application/json"}
     url = f"{rest}/sql/v1/organizations/{org_id}/environments/{env_id}/statements"
-
-    drops = [
-        # Schema-managed tables — must be cleared so Terraform can re-CREATE them
-        ("drop-race_standings_raw", "DROP TABLE IF EXISTS `race_standings_raw`"),
-        ("drop-race_standings", "DROP TABLE IF EXISTS `race_standings`"),
-        ("drop-car_telemetry", "DROP TABLE IF EXISTS `car_telemetry`"),
-        # Demo tables created by the Flink jobs themselves
-        ("drop-car_state", "DROP TABLE IF EXISTS `car_state`"),
-        ("drop-pit_decisions", "DROP TABLE IF EXISTS `pit_decisions`"),
-        ("drop-pit-agent", "DROP AGENT IF EXISTS `pit_strategy_agent`"),
-    ]
 
     for label, sql in drops:
         name = f"reset-{label}-{int(time.time())}"
@@ -266,7 +266,18 @@ def main() -> None:
         default=False,
         help="Skip recreating Jobs 1 & 2 via Terraform; re-deploy them manually in SQL Workspace after reset.",
     )
+    parser.add_argument(
+        "--dbt",
+        action="store_true",
+        default=False,
+        help="Tear down only dbt-managed tables (car_state, pit_decisions) for a dbt re-run.",
+    )
     args = parser.parse_args()
+
+    if args.manual and args.dbt:
+        print("Error: --manual and --dbt are mutually exclusive")
+        sys.exit(1)
+
     automated = not args.manual
 
     print("=== F1 Demo Reset ===\n")
@@ -297,11 +308,39 @@ def main() -> None:
     env_id = core["environment_id"]
     cluster_id = core["cluster_id"]
 
+    if args.dbt:
+        print("1. Stopping Flink statements...")
+        delete_flink_statements(core)
+
+        print("\n2. Dropping dbt-managed Flink tables (car_state, pit_decisions)...")
+        drop_flink_objects(core, DBT_DROPS)
+
+        print("\n3. Dropping dbt-managed topics and SR subjects...")
+        for topic in DEMO_TOPICS:
+            delete_topic_and_subjects(topic, env_id, cluster_id)
+
+        print("\n4. Restarting Job 0 (parse_standings) via Terraform...")
+        cmd = [
+            "terraform", f"-chdir={root}/terraform/demo", "apply",
+            f"-target={JOB0_TF_RESOURCE}", f"-replace={JOB0_TF_RESOURCE}",
+            "-auto-approve",
+        ]
+        result = subprocess.run(cmd)
+        if result.returncode != 0:
+            print("\nError: terraform apply failed — check output above.")
+            sys.exit(1)
+
+        print("\n=== Reset complete ===")
+        print("Next steps:")
+        print("  1. Deploy dbt models:  cd dbt/confluent_intelligence_f1 && dbt run")
+        print("  2. Start the race:     ./scripts/start-race.sh")
+        return
+
     print("1. Stopping Flink statements...")
     delete_flink_statements(core)
 
     print("\n2. Dropping all Flink objects (tables + agent)...")
-    drop_all_flink_objects(core)
+    drop_flink_objects(core, ALL_DROPS)
 
     print("\n3. Dropping topics and SR subjects...")
     for topic in SCHEMA_TOPICS + DEMO_TOPICS:
