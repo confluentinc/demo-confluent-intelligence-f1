@@ -1,108 +1,120 @@
-# F1 Pit Wall AI Demo — River Racing at Silverstone
+# F1 Pit Wall AI — River Racing at Silverstone
 
-Real-time AI pit strategy system for a Formula 1 team. An AI agent monitors live car telemetry, detects anomalies, and recommends pit stop strategy — all powered by Confluent Cloud.
+A real-time AI pit-strategy system built on Confluent Cloud. Live car telemetry and
+race standings stream into a Kafka cluster, where **Flink SQL** detects tire
+anomalies and an **AI Streaming Agent** (AWS Bedrock / Claude) recommends when to pit.
 
-## Architecture
+**Team:** River Racing | **Driver:** John Doe (#88) | **Circuit:** Silverstone | **60 laps**
 
-```
-Race Simulator (ECS Fargate)
-  ├── Kafka produce (AVRO)   → car_telemetry
-  └── MQ publish (JMS text)  → IBM MQ EC2 → MQ Source Connector → race_standings_raw
-                                                                         │
-                                                          Job 0 (Terraform-managed Flink SQL)
-                                                          Parse JMS envelope, key by car_number
-                                                                         │
-                                                                  race_standings
-                                                                         │
-Postgres (EC2) → CDC Debezium Connector → driver_race_history ──────────┤
-                                                                         │
-                                                          Job 1 (Flink SQL Workspace)
-                                                          10s tumbling window + temporal join
-                                                          AI_DETECT_ANOMALIES(tire_temp_fl_c)
-                                                                         │
-                                                                     car_state
-                                                                         │
-                                                          Job 2 (Flink SQL Workspace)
-                                                          AI_RUN_AGENT → pit_decisions
-                                                                         │
-                                                              Tableflow → S3 → Databricks Genie
-```
+## Three ways to run it
 
-## Quick Start
+This repo supports three formats from the same codebase. They differ in scale,
+audience, and how much infrastructure they stand up.
 
-### Prerequisites
+| | **Workshop** (multi-attendee) | **Standalone demo** (single environment) | **Self-service** (solo) |
+|--|--|--|--|
+| **Audience** | Instructor-led, run at Confluent events | One presenter or smoke test | One person experiencing the labs |
+| **Provisions** | Shared infra + N attendee environments | Shared infra + one environment | **Confluent Cloud only** — no AWS infra |
+| **Simulator** | ECS Fargate service | ECS Fargate service | Local process (`uv run f1-race`) |
+| **Historical data** | Postgres + CDC connector | Postgres + CDC connector | Seeded via a Flink `INSERT` |
+| **Needs Docker / AWS infra** | Yes | Yes | **No** (Bedrock API keys only) |
+| **Setup time** | ~25–30 min | ~25–30 min | **~5 min** |
+| **Orchestrator** | `wsa` (reads `wsa-spec-aws.yaml`) | `uv run deploy` | `uv run selfservice up` |
+| **Start here** | [Workshop setup](#workshop-multi-attendee) | [Standalone setup](#standalone-demo-single-environment) | [Self-service setup](#self-service-solo) |
 
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
-- Confluent Cloud account + API key/secret (Organization Admin)
-- Confluent CLI installed and logged in (`confluent login`)
-- AWS credentials configured (`~/.aws/credentials` or env vars)
-- Terraform >= 1.3
-- Docker Desktop running (builds the race simulator image for ECS)
+In all modes, the canonical Flink SQL lives in [`demo-reference/`](demo-reference/)
+and is reproduced step-by-step in the lab guides under
+[labs/](labs/README.md). Attendees in the workshop format start at
+**[labs/README.md](labs/README.md)**.
 
-### 1. Deploy infrastructure (~15-20 min)
+**Prerequisites (workshop & standalone):** `uv`, Terraform ≥ 1.3, Docker (builds the
+simulator image once), the Confluent CLI logged in, AWS credentials configured, and
+AWS Bedrock keys. **Self-service** needs only `uv`, Terraform ≥ 1.3, the Confluent
+CLI logged in, and AWS Bedrock keys — no Docker and no AWS infrastructure.
 
-```bash
-uv run deploy
-```
+## Workshop (multi-attendee)
 
-Prompts for credentials, then deploys two Terraform stacks (Confluent Cloud + AWS). Creates:
-- Confluent Cloud environment, Kafka cluster, Schema Registry, Flink compute pool
-- `car_telemetry` and `race_standings` topics (Flink CREATE TABLE with schemas + watermarks)
-- IBM MQ EC2, Postgres EC2 (198 historical `driver_race_history` rows pre-loaded)
-- ECS Fargate task definition (race simulator)
-- MQ Source Connector + CDC Debezium Connector (both auto-deployed and running)
-- S3 + IAM role for Tableflow
-- Job 0 Flink statement (parse + key race standings) — running and waiting for data
+Provisioning is owned by **[`wsa`](https://github.com/confluentinc/workshop-setup-accelerator)**
+(Confluent's shared workshop CLI), not a repo-local orchestrator. It applies the
+shared layer once, then the per-attendee layer N times, injecting the shared
+outputs into each. Attendees never run Terraform and **never log in to the
+Confluent Console** — they claim scoped API keys (via the wsa dispenser or an
+instructor-distributed card) and run Flink SQL through the bundled shell.
 
-### 2. Start the race
+Run `wsa` from a **sibling checkout** of `workshop-setup-accelerator` (see its
+`ONBOARDING.md` "Local layout"), pointed at this repo's `wsa-spec-aws.yaml`:
 
 ```bash
-./scripts/start-race.sh
-aws logs tail /ecs/f1-simulator --follow
+op run --env-file=.env.tpl -- ./bin/wsa validate -w <this-repo>/wsa-spec-aws.yaml
+op run --env-file=.env.tpl -- ./bin/wsa build -w <this-repo>/wsa-spec-aws.yaml --accounts 1-20
+./bin/wsa dispenser-upload --sheets-credentials sheets-credentials.json   # self-serve claim (optional)
+op run --env-file=.env.tpl -- ./bin/wsa clean -w <this-repo>/wsa-spec-aws.yaml
 ```
 
-Runs a 57-lap race in ~9.5 minutes. Job 0 immediately starts writing parsed standings to `race_standings`.
+Set `account_count` in `wsa-spec-aws.yaml` to your attendee count and export the
+shared Confluent/Bedrock secrets as `TF_VAR_*` (see the spec's `env_vars:`). Each
+attendee gets an isolated Confluent environment, a CDC connector with its own
+replication slot, the LLM models, and an always-on race feed.
 
-### 3. Deploy Jobs 1 & 2 in the Flink SQL Workspace
-
-See **[Walkthrough.md](Walkthrough.md)** for the full step-by-step including SQL to paste, how to enable Tableflow, and how to query with Databricks Genie.
-
-SQL files: `demo-reference/enrichment_anomaly.sql` (Job 1), `demo-reference/streaming_agent.sql` (Job 2).
-
----
-
-## Demo Scenario
-
-**Team:** River Racing | **Driver:** Sean Falconer (#44) | **Circuit:** Silverstone | **57 laps, ~10s each**
-
-| Laps | Position | Tire | What Happens |
-|------|----------|------|--------------|
-| 1–17 | P3 | SOFT (fresh) | Competitive, stable pace |
-| 18–25 | P3 → P1 | SOFT (aging) | Leaders pit — Sean briefly leads the race |
-| 26–31 | P1 → P8 | SOFT (critical) | Tire cliff bites — agent says PIT SOON |
-| **32** | **P8** | **SOFT (dead)** | **Anomaly fires — agent says PIT NOW** |
-| 33 | P12 | MEDIUM (fresh) | Pit stop, drops spots |
-| 34–57 | P12 → P2 | MEDIUM | Fastest car on track, climbs back |
-
-**Result: P8 at pit call → P2 at finish = +6 positions gained**
-
----
-
-## Reset & Teardown
+Turn wsa's `build-output.csv` into the credential cards our tools expect, then
+run fleet-wide health checks:
 
 ```bash
-uv run reset     # Stop Flink jobs, drop and recreate topics — use between race re-runs
-uv run destroy   # Tear down all infrastructure
+uv run workshop creds --csv <wsa-repo>/wsa-output/<run-id>/build-output.csv --name <name>
+uv run workshop validate --creds-glob 'runs/*/credentials/*.env'
 ```
 
----
+Attendees who claimed via the wsa dispenser instead self-serve their own card
+from the claim email:
 
-## Documentation
+```bash
+uv run f1-onboard   # prompts field-by-field, or --paste to parse a pasted email
+```
 
-| | |
-|--|--|
-| [Walkthrough.md](Walkthrough.md) | Full step-by-step demo guide |
-| [docs/USE-CASE.md](docs/USE-CASE.md) | Use case narrative + race script + Genie expected answers |
-| [docs/SETUP-TABLEFLOW.md](docs/SETUP-TABLEFLOW.md) | Tableflow + Delta Lake setup |
-| [docs/SETUP-GENIE.md](docs/SETUP-GENIE.md) | Databricks Genie setup |
-| [docs/SETUP-DBT-ADAPTER.md](docs/SETUP-DBT-ADAPTER.md) | DBT adapter setup (optional) |
+Either way, attendees run Flink SQL with their credential card:
+
+```bash
+uv run f1-sql --creds runs/<name>/credentials/f1wp001.env   # or ./credentials.env from f1-onboard
+```
+
+## Standalone demo (single environment)
+
+Provisions the shared layer and a single environment for one presenter or a quick
+smoke test.
+
+```bash
+uv run deploy              # prompts → credentials.env → terraform/aws-shared → terraform/aws
+uv run deploy --automated  # same, no prompts (reads credentials.env)
+uv run destroy             # tear down terraform/aws then terraform/aws-shared
+```
+
+## Self-service (solo)
+
+The fastest way for one person to experience the labs. Provisions **Confluent Cloud
+only** — environment, cluster, Flink pool, topics, and the Bedrock LLM models — with
+**no** EC2 Postgres, CDC connector, ECR image, or ECS simulator. You run the race
+simulator locally and the historical `driver_race_history` table is seeded with a
+Flink `INSERT`, so setup takes ~5 minutes and needs no Docker or AWS infrastructure
+(only AWS Bedrock API keys, e.g. from `uv run api-keys create`).
+
+```bash
+uv run selfservice up      # provision Confluent + write a credential card + seed data
+uv run f1-race --creds runs/selfservice/credentials/solo.env    # start the live feed
+uv run f1-sql  --creds runs/selfservice/credentials/solo.env    # run the labs
+uv run f1-pitwall --creds runs/selfservice/credentials/solo.env # live dashboard
+uv run selfservice down    # tear it all down
+```
+
+Then work through [labs/](labs/README.md) LAB 1 → LAB 4 and LAB 6. Full walkthrough:
+**[docs/SELF-SERVICE.md](docs/SELF-SERVICE.md)**.
+
+## Control the race feeds
+
+The simulator runs as an always-on ECS service (`RACE_LOOP=true`), so feeds start
+automatically. To pause or synchronously restart everyone:
+
+```bash
+uv run stop-all-races    # scale every simulator to 0
+uv run start-all-races   # scale every simulator back to 1
+uv run reset             # clear lab objects (car_state, pit_decisions, agent)
+```

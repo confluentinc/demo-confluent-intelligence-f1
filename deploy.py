@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 """
-Deployment script for the F1 Pit Wall AI Demo.
+Standalone deploy for a SINGLE F1 workshop environment (organizer smoke-test).
 
-Prompts for credentials, writes terraform.tfvars, and deploys core + demo infrastructure.
+Provisions the two-tier layout for one attendee prefix:
+  1. terraform/aws-shared  — shared VPC/subnets, Postgres, ECR + simulator image
+  2. terraform/aws         — one Confluent environment + ECS simulator, wired to
+                             the shared outputs
+
+For a real multi-attendee workshop, use `wsa` with wsa-spec-aws.yaml instead —
+this script is the manual single-environment equivalent.
+
 Usage: uv run deploy [--automated]
 """
 
 import argparse
+import json
 import os
 import sys
 
@@ -18,39 +26,35 @@ from scripts.common.credentials import (
 )
 from scripts.common.login_checks import (
     check_aws_configured,
-    ensure_confluent_login,
     check_terraform_installed,
+    ensure_confluent_login,
 )
-from scripts.common.terraform import get_project_root
+from scripts.common.terraform import get_project_root, run_terraform_output
 from scripts.common.terraform_runner import run_terraform
-from scripts.common.tfvars import write_tfvars_for_deployment
 from scripts.common.ui import prompt_with_default
-from scripts.setup_mcp import main as setup_mcp
+
+SHARED_PREFIX = "f1-workshop"
 
 
 def main():
-    """Main entry point for deploy."""
-    parser = argparse.ArgumentParser(description="Deploy the F1 Pit Wall AI Demo")
+    parser = argparse.ArgumentParser(description="Deploy a single F1 workshop environment")
     parser.add_argument(
         "--automated",
         action="store_true",
         default=False,
-        help="Deploy the full Flink job graph (Jobs 1 & 2) via Terraform in addition to Job 0.",
+        help="Use credentials.env values without prompting.",
     )
     args = parser.parse_args()
 
-    print("=== F1 Pit Wall AI Demo - Deploy ===\n")
+    print("=== F1 Workshop — Standalone Deploy (shared + one attendee) ===\n")
 
     root = get_project_root()
-
-    # --- Prerequisite checks ---
 
     if not check_terraform_installed():
         print("Error: Terraform not found. Install from https://developer.hashicorp.com/terraform/install")
         sys.exit(1)
     print("  Terraform installed")
 
-    # Load credentials early so auto-login can use them if needed
     creds_file, creds = load_or_create_credentials_file(root)
 
     if not ensure_confluent_login(creds):
@@ -58,20 +62,16 @@ def main():
     print("  Confluent CLI logged in")
 
     if not check_aws_configured():
-        print("\nError: AWS CLI not configured.")
-        print("Run: aws configure")
+        print("\nError: AWS CLI not configured. Run: aws configure")
         sys.exit(1)
     print("  AWS CLI configured")
 
     if args.automated:
-        # --- Automated mode: use credentials.env as-is, no prompts ---
-
         print("\n--- Automated mode: using credentials.env values ---\n")
-
         api_key = creds.get("TF_VAR_confluent_cloud_api_key", "")
         api_secret = creds.get("TF_VAR_confluent_cloud_api_secret", "")
         owner_email = creds.get("TF_VAR_owner_email", "")
-        deployment_id = creds.get("TF_VAR_deployment_id", "")
+        prefix = creds.get("TF_VAR_prefix", "")
         aws_bedrock_key = creds.get("TF_VAR_aws_bedrock_access_key", "")
         aws_bedrock_secret = creds.get("TF_VAR_aws_bedrock_secret_key", "")
         aws_session_token = creds.get("TF_VAR_aws_session_token", "")
@@ -82,7 +82,7 @@ def main():
                 "TF_VAR_confluent_cloud_api_key": api_key,
                 "TF_VAR_confluent_cloud_api_secret": api_secret,
                 "TF_VAR_owner_email": owner_email,
-                "TF_VAR_deployment_id": deployment_id,
+                "TF_VAR_prefix": prefix,
                 "TF_VAR_aws_bedrock_access_key": aws_bedrock_key,
                 "TF_VAR_aws_bedrock_secret_key": aws_bedrock_secret,
             }.items()
@@ -91,48 +91,31 @@ def main():
         if missing:
             print(f"Error: credentials.env is missing required values: {', '.join(missing)}")
             sys.exit(1)
-
     else:
-        # --- Interactive mode ---
-
         generate = input("\nGenerate new Confluent Cloud API keys? (y/n) [n]: ").strip().lower()
         if generate == "y":
             api_key, api_secret = generate_confluent_api_keys()
             if api_key and api_secret:
                 set_key(str(creds_file), "TF_VAR_confluent_cloud_api_key", api_key)
                 set_key(str(creds_file), "TF_VAR_confluent_cloud_api_secret", api_secret)
-                creds["TF_VAR_confluent_cloud_api_key"] = api_key
-                creds["TF_VAR_confluent_cloud_api_secret"] = api_secret
 
         print("\n--- Configuration ---\n")
-
-        api_key = prompt_with_default(
-            "Confluent Cloud API Key",
-            creds.get("TF_VAR_confluent_cloud_api_key", ""),
-        )
+        api_key = prompt_with_default("Confluent Cloud API Key", creds.get("TF_VAR_confluent_cloud_api_key", ""))
         api_secret = prompt_with_default(
-            "Confluent Cloud API Secret",
-            creds.get("TF_VAR_confluent_cloud_api_secret", ""),
+            "Confluent Cloud API Secret", creds.get("TF_VAR_confluent_cloud_api_secret", "")
         )
-        owner_email = prompt_with_default(
-            "Owner email (for AWS resource tagging)",
-            creds.get("TF_VAR_owner_email", ""),
-        )
+        owner_email = prompt_with_default("Owner email (for AWS resource tagging)", creds.get("TF_VAR_owner_email", ""))
         while True:
-            deployment_id = prompt_with_default(
-                "Deployment ID (alphanumeric, max 8 chars, e.g. PROD or your initials)",
-                creds.get("TF_VAR_deployment_id", ""),
+            prefix = prompt_with_default(
+                "Attendee prefix (alphanumeric, max 12 chars, e.g. demo or your initials)",
+                creds.get("TF_VAR_prefix", ""),
             )
-            if deployment_id and deployment_id.isalnum() and len(deployment_id) <= 8:
+            if prefix and prefix.isalnum() and len(prefix) <= 12:
                 break
-            print("  Must be alphanumeric, max 8 characters.")
-        aws_bedrock_key = prompt_with_default(
-            "AWS Bedrock Access Key",
-            creds.get("TF_VAR_aws_bedrock_access_key", ""),
-        )
+            print("  Must be alphanumeric, max 12 characters.")
+        aws_bedrock_key = prompt_with_default("AWS Bedrock Access Key", creds.get("TF_VAR_aws_bedrock_access_key", ""))
         aws_bedrock_secret = prompt_with_default(
-            "AWS Bedrock Secret Key",
-            creds.get("TF_VAR_aws_bedrock_secret_key", ""),
+            "AWS Bedrock Secret Key", creds.get("TF_VAR_aws_bedrock_secret_key", "")
         )
         aws_session_token = ""
         if aws_bedrock_key.startswith("ASIA"):
@@ -141,105 +124,83 @@ def main():
                 creds.get("TF_VAR_aws_session_token", ""),
             )
 
-        # --- Save to credentials.env ---
-
-        set_key(str(creds_file), "TF_VAR_confluent_cloud_api_key", api_key)
-        set_key(str(creds_file), "TF_VAR_confluent_cloud_api_secret", api_secret)
-        set_key(str(creds_file), "TF_VAR_owner_email", owner_email)
-        set_key(str(creds_file), "TF_VAR_deployment_id", deployment_id)
-        set_key(str(creds_file), "TF_VAR_aws_bedrock_access_key", aws_bedrock_key)
-        set_key(str(creds_file), "TF_VAR_aws_bedrock_secret_key", aws_bedrock_secret)
+        for k, v in {
+            "TF_VAR_confluent_cloud_api_key": api_key,
+            "TF_VAR_confluent_cloud_api_secret": api_secret,
+            "TF_VAR_owner_email": owner_email,
+            "TF_VAR_prefix": prefix,
+            "TF_VAR_aws_bedrock_access_key": aws_bedrock_key,
+            "TF_VAR_aws_bedrock_secret_key": aws_bedrock_secret,
+        }.items():
+            set_key(str(creds_file), k, v)
         if aws_session_token:
             set_key(str(creds_file), "TF_VAR_aws_session_token", aws_session_token)
 
-    # Reload creds dict with resolved values
-    creds = {
-        "TF_VAR_confluent_cloud_api_key": api_key,
-        "TF_VAR_confluent_cloud_api_secret": api_secret,
-        "TF_VAR_owner_email": owner_email,
-        "TF_VAR_deployment_id": deployment_id,
-        "TF_VAR_aws_bedrock_access_key": aws_bedrock_key,
-        "TF_VAR_aws_bedrock_secret_key": aws_bedrock_secret,
-        "TF_VAR_aws_session_token": aws_session_token,
-    }
-
-    # --- Write terraform.tfvars ---
-
-    print("\nWriting terraform.tfvars...")
-    write_tfvars_for_deployment(root, creds)
-
-    # --- Confirm ---
+    region = "us-east-1"
 
     print("\n--- Deployment Summary ---")
-    print("  Region:     us-east-1")
-    print(f"  Owner:      {owner_email}")
-    print(f"  Deploy ID:  {deployment_id}")
-    print(f"  CC Key:     {api_key[:8]}...")
-    print(f"  Bedrock:    {aws_bedrock_key[:8]}..." if aws_bedrock_key else "  Bedrock:    (not set)")
-    print("  Deploys:    core -> demo")
-    if args.automated:
-        print("  Mode:       automated (full pipeline — Jobs 1 & 2 via Terraform)")
-    else:
-        print("  Mode:       minimal (Jobs 1 & 2 manual via Flink SQL Workspace)")
+    print(f"  Region:   {region}")
+    print(f"  Owner:    {owner_email}")
+    print(f"  Prefix:   {prefix}")
+    print(f"  CC Key:   {api_key[:8]}...")
+    print(f"  Bedrock:  {aws_bedrock_key[:8]}..." if aws_bedrock_key else "  Bedrock:  (not set)")
+    print("  Deploys:  aws-shared -> aws")
 
     if not args.automated:
-        confirm = input("\nReady to deploy? (y/n): ").strip().lower()
-        if confirm != "y":
+        if input("\nReady to deploy? (y/n): ").strip().lower() != "y":
             print("Cancelled.")
             sys.exit(0)
 
-    # --- Deploy ---
-
-    print("\n=== Starting Deployment ===")
-
-    # Load credentials into environment for Terraform
-    for key, value in creds.items():
-        os.environ[key] = value
-
-    if args.automated:
-        os.environ["TF_VAR_automated"] = "true"
-
-    # Make AWS provider resilient to transient network failures (DNS hiccups,
-    # VPN reconnects, brief socket timeouts). Without this, a single failed
-    # DNS lookup against an AWS endpoint can fail the whole terraform apply.
-    # `adaptive` retry mode handles network-layer errors in addition to the
-    # default API-throttling retries.
+    # AWS provider resilience to transient network failures.
     os.environ.setdefault("AWS_RETRY_MODE", "adaptive")
     os.environ.setdefault("AWS_MAX_ATTEMPTS", "10")
 
-    # Deploy core first
-    core_path = root / "terraform" / "core"
-    if not run_terraform(core_path):
-        print("\nCore deployment failed. Stopping.")
+    # --- 1. Shared infrastructure ---
+    print("\n=== Deploying shared infrastructure (aws-shared) ===")
+    shared_path = root / "terraform" / "aws-shared"
+    shared_env = {
+        "TF_VAR_region": region,
+        "TF_VAR_owner_email": owner_email,
+        "TF_VAR_prefix": SHARED_PREFIX,
+        "TF_VAR_attendee_count": "1",
+    }
+    for k, v in shared_env.items():
+        os.environ[k] = v
+    if not run_terraform(shared_path):
+        print("\nShared deployment failed. Stopping.")
         sys.exit(1)
 
-    # Then deploy demo
-    demo_path = root / "terraform" / "demo"
-    if not run_terraform(demo_path):
-        print("\nDemo deployment failed.")
-        print("Core infrastructure is still running. Run 'uv run destroy' to clean up.")
+    shared = run_terraform_output(shared_path / "terraform.tfstate")
+
+    # --- 2. Attendee environment ---
+    print("\n=== Deploying attendee environment (aws) ===")
+    attendee_path = root / "terraform" / "aws"
+    attendee_env = {
+        "TF_VAR_prefix": prefix,
+        "TF_VAR_owner_email": owner_email,
+        "TF_VAR_region": region,
+        "TF_VAR_confluent_cloud_api_key": api_key,
+        "TF_VAR_confluent_cloud_api_secret": api_secret,
+        "TF_VAR_aws_bedrock_access_key": aws_bedrock_key,
+        "TF_VAR_aws_bedrock_secret_key": aws_bedrock_secret,
+        "TF_VAR_aws_session_token": aws_session_token,
+        "TF_VAR_shared_vpc_id": shared["vpc_id"],
+        "TF_VAR_shared_subnet_ids": json.dumps(shared["subnet_ids"]),
+        "TF_VAR_shared_postgres_host": shared["postgres_host"],
+        "TF_VAR_shared_postgres_password": shared["postgres_password"],
+        "TF_VAR_shared_ecr_image_uri": shared["ecr_image_uri"],
+    }
+    for k, v in attendee_env.items():
+        os.environ[k] = v
+    if not run_terraform(attendee_path):
+        print("\nAttendee deployment failed. Shared infra is still running — `uv run destroy` to clean up.")
         sys.exit(1)
 
-    # --- MCP setup (automated mode only) ---
-
-    if args.automated:
-        print("\n=== Setting Up MCP Server ===")
-        setup_mcp()
-
-    # --- Success ---
-
-    print("\n=== Deployment Complete ===")
-    print()
-    print("Next steps:")
-    print("  1. Start the race simulator:  uv run start-race")
-    if args.automated:
-        print("  2. Jobs 1 & 2 already deployed — data flows as soon as the race starts")
-        print("  3. MCP server registered — restart Claude Code to activate")
-    else:
-        print("  2. Set up MCP for Claude:     uv run setup-mcp")
-        print("  3. Follow the Walkthrough.md for the demo flow")
-    print()
-    print("To tear down all resources:     uv run destroy")
+    print("\n=== Deployment Complete ===\n")
+    print("The race simulator runs as an always-on ECS service (RACE_LOOP=true) — the feed is")
+    print("already live. View attendee credentials with:")
+    print("  cd terraform/aws && terraform output -json attendee_credentials")
+    print("\nTo tear down all resources:  uv run destroy")
 
 
 if __name__ == "__main__":

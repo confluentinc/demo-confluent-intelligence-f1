@@ -1,0 +1,132 @@
+# =============================================================================
+# Per-attendee variables. wsa injects these for each attendee workspace:
+#   - identity:      prefix, owner_email          (wsa-spec-aws.yaml terraform_vars)
+#   - Confluent:     confluent_cloud_api_key / _secret         (env_vars, TF_VAR_*)
+#   - Bedrock (shared across attendees): aws_bedrock_* / aws_session_token (env_vars)
+#   - shared infra: terraform/aws-shared's outputs are injected by wsa as
+#     TF_VAR_shared_<output name> — every variable below prefixed shared_
+#     must match an output name in terraform/aws-shared/outputs.tf exactly.
+# =============================================================================
+
+variable "prefix" {
+  description = "Short per-attendee identifier (e.g. f1wp001). Namespaces the Confluent environment/cluster and the attendee's CDC slot + AWS resources."
+  type        = string
+}
+
+variable "owner_email" {
+  description = "Attendee/owner email, tagged on AWS resources"
+  type        = string
+}
+
+variable "region" {
+  description = "AWS region (must match terraform/aws-shared)"
+  type        = string
+  default     = "us-east-1"
+}
+
+# --- Confluent Cloud ---
+
+variable "confluent_cloud_api_key" {
+  description = "Confluent Cloud API Key"
+  type        = string
+  sensitive   = true
+}
+
+variable "confluent_cloud_api_secret" {
+  description = "Confluent Cloud API Secret"
+  type        = string
+  sensitive   = true
+}
+
+variable "flink_max_cfu" {
+  description = "Max CFUs for this attendee's Flink compute pool"
+  type        = number
+  default     = 5
+}
+
+# --- AWS Bedrock (shared across all attendees) ---
+
+variable "aws_bedrock_access_key" {
+  description = "AWS Bedrock Access Key for Flink AI connections"
+  type        = string
+  sensitive   = true
+}
+
+variable "aws_bedrock_secret_key" {
+  description = "AWS Bedrock Secret Key for Flink AI connections"
+  type        = string
+  sensitive   = true
+}
+
+variable "aws_session_token" {
+  description = "AWS Session Token (only for temporary ASIA* credentials; leave blank for long-lived keys)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+# --- Shared infrastructure (outputs of terraform/aws-shared) ---
+
+variable "shared_vpc_id" {
+  description = "VPC ID from terraform/aws-shared"
+  type        = string
+}
+
+variable "shared_subnet_ids" {
+  description = "Public subnet IDs from terraform/aws-shared (used by the attendee's ECS simulator task)"
+  type        = list(string)
+}
+
+variable "shared_postgres_host" {
+  description = "Shared Postgres host (from terraform/aws-shared)"
+  type        = string
+}
+
+variable "shared_postgres_port" {
+  description = "Shared Postgres port"
+  type        = number
+  default     = 5432
+}
+
+variable "shared_postgres_dbname" {
+  description = "Shared Postgres database name"
+  type        = string
+  default     = "f1demo"
+}
+
+variable "shared_postgres_user" {
+  description = "Shared Postgres user"
+  type        = string
+  default     = "f1user"
+}
+
+variable "shared_postgres_password" {
+  description = "Shared Postgres password"
+  type        = string
+  sensitive   = true
+}
+
+variable "shared_ecr_image_uri" {
+  description = "Race-simulator image URI from terraform/aws-shared"
+  type        = string
+}
+
+variable "table_include_list" {
+  description = "Postgres tables the CDC connector captures"
+  type        = string
+  default     = "public.driver_race_history"
+}
+
+# --- Race simulator behaviour ---
+
+variable "seconds_per_lap" {
+  description = "Simulated seconds per lap. 60 → 60-minute races (one lap per minute)."
+  type        = number
+  default     = 60
+}
+
+variable "race_loop" {
+  description = "When true the simulator replays races back-to-back so the feed is always live."
+  type        = bool
+  default     = true
+}

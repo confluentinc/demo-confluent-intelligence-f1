@@ -1,27 +1,23 @@
-"""Tests for simulator Avro serialization."""
+"""Tests for simulator Avro serialization and direct Kafka production."""
 
-import sys
+import json
 from unittest.mock import MagicMock, patch
 
-# pymqi is not available in the test environment (requires IBM MQ C libs).
-# Mock it before importing the simulator module.
-sys.modules.setdefault("pymqi", MagicMock())
+from confluent_kafka.schema_registry.avro import AvroSerializer
 
-from confluent_kafka.schema_registry.avro import AvroSerializer  # noqa: E402
-
-# Import simulator once — pymqi is already mocked above.
-from datagen import simulator as sim  # noqa: E402
+from datagen import config
+from datagen import simulator as sim
 
 
-def test_create_kafka_producer_returns_avro_serializer():
-    """_create_kafka_producer must return a (Producer, AvroSerializer) tuple."""
+def test_create_kafka_producer_returns_sr_client_and_serializer():
+    """_create_kafka_producer must return (Producer, SchemaRegistryClient, AvroSerializer)."""
     mock_sr_client = MagicMock()
 
     with patch.object(sim, "SchemaRegistryClient", return_value=mock_sr_client):
         with patch.object(sim, "AvroSerializer") as mock_avro_cls:
             mock_avro_cls.return_value = MagicMock(spec=AvroSerializer)
             with patch.object(sim, "Producer"):
-                _producer, serializer = sim._create_kafka_producer()
+                _producer, sr_client, serializer = sim._create_kafka_producer()
 
                 mock_avro_cls.assert_called_once_with(
                     mock_sr_client,
@@ -31,6 +27,7 @@ def test_create_kafka_producer_returns_avro_serializer():
                         "use.latest.version": True,
                     },
                 )
+                assert sr_client is mock_sr_client
                 assert serializer is mock_avro_cls.return_value
 
 
@@ -64,10 +61,53 @@ def test_event_time_is_epoch_millis():
     telemetry = generate_telemetry(lap=1, tire_age=1, tire_compound="SOFT", post_pit=False)
     telemetry["car_number"] = 44
     telemetry["lap"] = 1
-
-    from datetime import datetime, timezone
-
-    telemetry["event_time"] = int(datetime.now(timezone.utc).timestamp() * 1000)
+    telemetry["event_time"] = sim._now_millis()
 
     assert isinstance(telemetry["event_time"], int)
     assert telemetry["event_time"] > 1_000_000_000_000
+
+
+def test_produce_standings_emits_one_record_per_car_to_standings_topic():
+    """All standings are produced to the race_standings topic with an event_time."""
+    producer = MagicMock()
+    avro_serializer = MagicMock(return_value=b"value-bytes")
+    key_fn = MagicMock(side_effect=lambda cn: f"key-{cn}".encode())
+    standings = [{"car_number": 44}, {"car_number": 1}]
+
+    sim._produce_standings(producer, avro_serializer, key_fn, standings)
+
+    assert producer.produce.call_count == 2
+    for call in producer.produce.call_args_list:
+        assert call.args[0] == config.STANDINGS_TOPIC
+    # Every standing gets an epoch-millis event_time stamped in.
+    assert all(isinstance(s["event_time"], int) for s in standings)
+    key_fn.assert_any_call(44)
+    key_fn.assert_any_call(1)
+
+
+def test_standings_key_fn_handles_primitive_schema():
+    """A primitive int key schema yields the raw car_number as payload."""
+    sr_client = MagicMock()
+    sr_client.get_latest_version.return_value.schema.schema_str = json.dumps("int")
+    avro_serializer = MagicMock()
+
+    key_fn = sim._build_standings_key_fn(sr_client, avro_serializer)
+    key_fn(44)
+
+    payload = avro_serializer.call_args.args[0]
+    assert payload == 44
+
+
+def test_standings_key_fn_handles_record_schema():
+    """A record key schema wraps the car_number in its first field."""
+    sr_client = MagicMock()
+    sr_client.get_latest_version.return_value.schema.schema_str = json.dumps(
+        {"type": "record", "name": "Key", "fields": [{"name": "car_number", "type": "int"}]}
+    )
+    avro_serializer = MagicMock()
+
+    key_fn = sim._build_standings_key_fn(sr_client, avro_serializer)
+    key_fn(44)
+
+    payload = avro_serializer.call_args.args[0]
+    assert payload == {"car_number": 44}

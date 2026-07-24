@@ -1,28 +1,28 @@
 #!/bin/bash
-# NOTE: Prefer 'uv run destroy' instead — it handles teardown order and cleanup automatically.
+# NOTE: Prefer 'uv run destroy' instead — it handles teardown order and injects
+# the shared variables the aws layer needs at destroy time.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-DEMO_DIR="$PROJECT_DIR/terraform/demo"
-CORE_DIR="$PROJECT_DIR/terraform/core"
+AWS_DIR="$PROJECT_DIR/terraform/aws"
+SHARED_DIR="$PROJECT_DIR/terraform/aws-shared"
 
-echo "=== F1 Pit Wall AI Demo — Teardown ==="
-echo ""
+echo "=== F1 Workshop — Teardown ==="
 
-# Destroy demo first (depends on core)
-if [ -f "$DEMO_DIR/terraform.tfstate" ]; then
-    echo "--- Destroying Demo Resources ---"
-    cd "$DEMO_DIR"
+# Destroy attendee resources first (they reference the shared layer).
+if [ -f "$AWS_DIR/terraform.tfstate" ]; then
+    echo "--- Destroying attendee environment ---"
+    cd "$AWS_DIR"
     terraform init
     terraform destroy -auto-approve
 fi
 
-# Then destroy core
-if [ -f "$CORE_DIR/terraform.tfstate" ]; then
+# Then destroy shared infrastructure.
+if [ -f "$SHARED_DIR/terraform.tfstate" ]; then
     echo ""
-    echo "--- Destroying Core Infrastructure ---"
-    cd "$CORE_DIR"
+    echo "--- Destroying shared infrastructure ---"
+    cd "$SHARED_DIR"
     terraform init
     terraform destroy -auto-approve
 fi

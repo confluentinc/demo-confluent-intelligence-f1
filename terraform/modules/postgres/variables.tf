@@ -4,9 +4,15 @@ variable "aws_region" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type"
+  description = "EC2 instance type. Sized up from the demo default because one shared Postgres serves every attendee's CDC connector."
   type        = string
-  default     = "t3.micro"
+  default     = "t3.large"
+}
+
+variable "max_replication_slots" {
+  description = "Postgres max_replication_slots / max_wal_senders. Must be >= the number of workshop attendees (one CDC replication slot per attendee), plus headroom."
+  type        = number
+  default     = 40
 }
 
 variable "key_pair_name" {

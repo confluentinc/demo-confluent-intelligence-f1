@@ -1,4 +1,4 @@
-"""Semi-scripted race state management for 22 cars across 57 laps.
+"""Semi-scripted race state management for 22 cars across 60 laps.
 
 Uses a CUMULATIVE RACE TIME model (like real F1):
 - Each car accumulates total_race_time across laps

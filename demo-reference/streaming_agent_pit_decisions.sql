@@ -43,8 +43,8 @@ FROM `car_state` /*+ OPTIONS('scan.startup.mode'='earliest-offset') */ cs,
 LATERAL TABLE(AI_RUN_AGENT(
   `pit_strategy_agent`,
   CONCAT(
-    'CAR STATE — Lap ', CAST(cs.lap AS STRING), ' of 57 | Silverstone British Grand Prix\n',
-    'Driver: Sean Falconer (#', CAST(cs.car_number AS STRING), ') | Current Position: P', CAST(cs.`position` AS STRING), '\n',
+    'CAR STATE — Lap ', CAST(cs.lap AS STRING), ' of 60 | Silverstone British Grand Prix\n',
+    'Driver: John Doe (#', CAST(cs.car_number AS STRING), ') | Current Position: P', CAST(cs.`position` AS STRING), '\n',
     '\nTIRE DATA:\n',
     '  Compound: ', cs.tire_compound, ' | Age: ', CAST(cs.tire_age_laps AS STRING), ' laps\n',
     '  FL Temp: ', CAST(ROUND(cs.tire_temp_fl_c, 1) AS STRING), 'C',
@@ -66,7 +66,7 @@ LATERAL TABLE(AI_RUN_AGENT(
     '  Gap to Leader: ', CAST(ROUND(cs.gap_to_leader_sec, 2) AS STRING), 's',
     '  Gap to Car Ahead: ', CAST(ROUND(cs.gap_to_ahead_sec, 2) AS STRING), 's\n',
     '  Pit Stops Taken: ', CAST(cs.pit_stops AS STRING), '\n',
-    '  Laps Remaining: ', CAST(57 - cs.lap AS STRING)
+    '  Laps Remaining: ', CAST(60 - cs.lap AS STRING)
   ),
   MAP['debug', 'true']
 ));

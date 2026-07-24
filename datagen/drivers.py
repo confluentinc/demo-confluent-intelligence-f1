@@ -1,5 +1,9 @@
 """Full 22-driver grid with starting positions, pit strategies, and pace deltas.
 
+Driver/number/team pairings follow the 2025 F1 grid, with two exceptions for the
+fictional hero team River Racing: John Doe (#88) and Sophie Laurent (#77). Team
+names are intentionally fictional but each pairs the real 2025 team-mates.
+
 pace_delta: inherent per-lap pace difference from the fastest car (P1).
 Top 8 cars are closely matched (0.00-0.18s). Midfield (P9-P14) is ~0.5-0.8s slower.
 Back markers (P15-P22) are 1.0-1.5s slower. This creates natural tiers so that
@@ -10,7 +14,7 @@ GRID = [
     # --- Front runners (P1-P8) — closely matched, all start SOFT ---
     {
         "car_number": 1,
-        "driver": "Max Eriksson",
+        "driver": "Max Verstappen",
         "team": "Titan Dynamics",
         "start_position": 1,
         "pit_lap": 18,
@@ -20,7 +24,7 @@ GRID = [
     },
     {
         "car_number": 4,
-        "driver": "Luca Novak",
+        "driver": "Lando Norris",
         "team": "Apex Motorsport",
         "start_position": 2,
         "pit_lap": 22,
@@ -29,8 +33,8 @@ GRID = [
         "pace_delta": 0.03,
     },
     {
-        "car_number": 44,
-        "driver": "Sean Falconer",
+        "car_number": 88,
+        "driver": "John Doe",
         "team": "River Racing",
         "start_position": 3,
         "pit_lap": 33,
@@ -40,7 +44,7 @@ GRID = [
     },
     {
         "car_number": 16,
-        "driver": "Carlos Vega",
+        "driver": "Charles Leclerc",
         "team": "Scuderia Rossa",
         "start_position": 4,
         "pit_lap": 15,
@@ -50,7 +54,7 @@ GRID = [
     },
     {
         "car_number": 63,
-        "driver": "Oliver Walsh",
+        "driver": "George Russell",
         "team": "Sterling GP",
         "start_position": 5,
         "pit_lap": 20,
@@ -60,7 +64,7 @@ GRID = [
     },
     {
         "car_number": 14,
-        "driver": "Fernando Reyes",
+        "driver": "Fernando Alonso",
         "team": "Aston Verde",
         "start_position": 6,
         "pit_lap": 22,
@@ -70,7 +74,7 @@ GRID = [
     },
     {
         "car_number": 10,
-        "driver": "Theo Martin",
+        "driver": "Pierre Gasly",
         "team": "Alpine Force",
         "start_position": 7,
         "pit_lap": 17,
@@ -79,9 +83,9 @@ GRID = [
         "pace_delta": 0.15,
     },
     {
-        "car_number": 24,
-        "driver": "Valtteri Koskinen",
-        "team": "Sauber Spirit",
+        "car_number": 44,
+        "driver": "Lewis Hamilton",
+        "team": "Scuderia Rossa",
         "start_position": 8,
         "pit_lap": 16,
         "pit_tire": "MEDIUM",
@@ -91,8 +95,8 @@ GRID = [
     # --- Midfield (P9-P14) — noticeable step in pace ---
     {
         "car_number": 55,
-        "driver": "Marco Rossi",
-        "team": "Scuderia Rossa",
+        "driver": "Carlos Sainz",
+        "team": "Williams Heritage",
         "start_position": 9,
         "pit_lap": 21,
         "pit_tire": "MEDIUM",
@@ -100,8 +104,8 @@ GRID = [
         "pace_delta": 0.50,
     },
     {
-        "car_number": 3,
-        "driver": "Daniel Costa",
+        "car_number": 81,
+        "driver": "Oscar Piastri",
         "team": "Apex Motorsport",
         "start_position": 10,
         "pit_lap": 19,
@@ -110,9 +114,9 @@ GRID = [
         "pace_delta": 0.55,
     },
     {
-        "car_number": 2,
-        "driver": "Yuki Tanaka",
-        "team": "Titan Dynamics",
+        "car_number": 30,
+        "driver": "Liam Lawson",
+        "team": "Racing Bulls",
         "start_position": 11,
         "pit_lap": 20,
         "pit_tire": "MEDIUM",
@@ -121,7 +125,7 @@ GRID = [
     },
     {
         "car_number": 18,
-        "driver": "Kimi Lahtinen",
+        "driver": "Lance Stroll",
         "team": "Aston Verde",
         "start_position": 12,
         "pit_lap": 23,
@@ -141,7 +145,7 @@ GRID = [
     },
     {
         "car_number": 12,
-        "driver": "Pierre Blanc",
+        "driver": "Kimi Antonelli",
         "team": "Sterling GP",
         "start_position": 14,
         "pit_lap": 24,
@@ -152,8 +156,8 @@ GRID = [
     # --- Back markers (P15-P22) — significantly slower ---
     {
         "car_number": 31,
-        "driver": "Oscar Patel",
-        "team": "Alpine Force",
+        "driver": "Esteban Ocon",
+        "team": "Haas Velocity",
         "start_position": 15,
         "pit_lap": 26,
         "pit_tire": "HARD",
@@ -161,8 +165,8 @@ GRID = [
         "pace_delta": 1.00,
     },
     {
-        "car_number": 20,
-        "driver": "Kevin Andersen",
+        "car_number": 87,
+        "driver": "Oliver Bearman",
         "team": "Haas Velocity",
         "start_position": 16,
         "pit_lap": 28,
@@ -172,8 +176,8 @@ GRID = [
     },
     {
         "car_number": 27,
-        "driver": "Nico Hoffman",
-        "team": "Haas Velocity",
+        "driver": "Nico Hulkenberg",
+        "team": "Sauber Spirit",
         "start_position": 17,
         "pit_lap": 30,
         "pit_tire": "HARD",
@@ -182,8 +186,8 @@ GRID = [
     },
     {
         "car_number": 23,
-        "driver": "Li Wei",
-        "team": "Sauber Spirit",
+        "driver": "Alexander Albon",
+        "team": "Williams Heritage",
         "start_position": 18,
         "pit_lap": 27,
         "pit_tire": "HARD",
@@ -192,8 +196,8 @@ GRID = [
     },
     {
         "car_number": 6,
-        "driver": "Alex Nakamura",
-        "team": "Williams Heritage",
+        "driver": "Isack Hadjar",
+        "team": "Racing Bulls",
         "start_position": 19,
         "pit_lap": 29,
         "pit_tire": "HARD",
@@ -201,9 +205,9 @@ GRID = [
         "pace_delta": 1.20,
     },
     {
-        "car_number": 8,
-        "driver": "Logan Mitchell",
-        "team": "Williams Heritage",
+        "car_number": 5,
+        "driver": "Gabriel Bortoleto",
+        "team": "Sauber Spirit",
         "start_position": 20,
         "pit_lap": 32,
         "pit_tire": "HARD",
@@ -212,8 +216,8 @@ GRID = [
     },
     {
         "car_number": 22,
-        "driver": "Liam O'Brien",
-        "team": "Racing Bulls",
+        "driver": "Yuki Tsunoda",
+        "team": "Titan Dynamics",
         "start_position": 21,
         "pit_lap": 25,
         "pit_tire": "HARD",
@@ -221,9 +225,9 @@ GRID = [
         "pace_delta": 1.30,
     },
     {
-        "car_number": 21,
-        "driver": "Isack Mbeki",
-        "team": "Racing Bulls",
+        "car_number": 7,
+        "driver": "Jack Doohan",
+        "team": "Alpine Force",
         "start_position": 22,
         "pit_lap": 31,
         "pit_tire": "HARD",

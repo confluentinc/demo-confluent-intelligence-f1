@@ -22,5 +22,6 @@ docker run -d \
   -v /opt/postgres-init:/docker-entrypoint-initdb.d \
   postgres:15 \
   -c wal_level=logical \
-  -c max_replication_slots=5 \
-  -c max_wal_senders=5
+  -c max_replication_slots=${max_replication_slots} \
+  -c max_wal_senders=${max_replication_slots} \
+  -c max_connections=500

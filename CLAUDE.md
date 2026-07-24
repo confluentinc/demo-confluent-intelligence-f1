@@ -1,40 +1,82 @@
-# F1 Pit Wall AI Demo
+# F1 Pit Wall AI Workshop
 
-Real-time F1 pit strategy system. Streams simulated race telemetry through Confluent Cloud, detects tire anomalies via Flink + AI_DETECT_ANOMALIES, and runs a Flink Streaming Agent (Bedrock/Claude) to recommend pit stops.
+Multi-attendee, instructor-led workshop. Each attendee gets an isolated Confluent
+Cloud environment with a live race feed; they use Flink SQL to detect tire
+anomalies (`ML_DETECT_ANOMALIES`) and run a Flink Streaming Agent (Bedrock/Claude)
+that recommends pit stops, then (LAB 5) build a no-code IBM watsonx Orchestrate
+agent that drafts social posts from the same live feed. Organizers provision
+everything from a single Confluent org + AWS account with **`wsa`**
+(confluentinc/workshop-setup-accelerator, run from a sibling checkout, driven by
+this repo's `wsa-spec-aws.yaml`); attendees never run Terraform and **never log
+in to the Confluent Console** — they claim an account through the wsa dispenser
+(or get an instructor-distributed card) and run Flink SQL through the bundled
+shell (`uv run f1-sql`). See "WSA (organizer provisioning)" below.
 
-**Team:** River Racing | **Driver:** Sean Falconer (#44) | **Circuit:** Silverstone | **57 laps, ~10s each, ~9.5 min total**
+**Team:** River Racing | **Driver:** John Doe (#88) | **Circuit:** Silverstone | **60 laps**
 
 ---
 
 ## Commands
 
 ```bash
-uv run deploy                  # Interactive deploy: prompts → credentials.env → terraform core → terraform demo
-uv run deploy --automated      # Same as above but also deploys Jobs 1 & 2 via Terraform (full pipeline, no Workspace needed)
-uv run destroy                 # Tear down demo then core (confirms before each)
-uv run reset                   # Stop Flink jobs, drop topics/schemas, recreate + Jobs 1 & 2 (default: automated)
-uv run reset --manual          # Same but skips Jobs 1 & 2; re-deploy them manually in SQL Workspace
+# Organizer: full workshop (many attendees) via wsa — run from a SIBLING
+# workshop-setup-accelerator checkout (its ONBOARDING.md "Local layout"),
+# pointed at this repo's wsa-spec-aws.yaml.
+op run --env-file=.env.tpl -- ./bin/wsa validate -w <path-to-this-repo>/wsa-spec-aws.yaml
+op run --env-file=.env.tpl -- ./bin/wsa build -w <path-to-this-repo>/wsa-spec-aws.yaml \
+  --accounts 1-20 --concurrency 4       # applies terraform/aws-shared then N terraform/aws
+./bin/wsa dispenser-upload --sheets-credentials sheets-credentials.json  # self-serve claim (optional)
+op run --env-file=.env.tpl -- ./bin/wsa clean -w <path-to-this-repo>/wsa-spec-aws.yaml
+#   --no-password-reset --no-dispenser-clear   # skip if this workshop doesn't use the dispenser
+
+# Organizer: turn wsa's build-output.csv into the credential cards our tools expect
+uv run workshop creds --csv <wsa-repo>/wsa-output/<run-id>/build-output.csv --name <name>
+uv run workshop validate --creds-glob 'runs/*/credentials/*.env'   # API-key health checks, no AWS/login needed
+
+# Attendee, self-serve (wsa dispenser claim email -> local credentials.env)
+uv run f1-onboard                # prompts field-by-field, or --paste to parse a pasted email
+
+# Attendee (no Console login): run Flink SQL with a credential card
+uv run f1-sql --creds runs/<name>/credentials/f1wp001.env   # or ./credentials.env from f1-onboard
+
+# Attendee: live race dashboard (consumes their own Kafka topics, no login)
+uv run f1-pitwall --creds runs/<name>/credentials/f1wp001.env   # → http://localhost:8000
+uv run f1-pitwall --mock                                        # offline demo/dev, no Confluent env
+
+# Organizer: shared race-feed service for LAB 5 (OpenAPI tool for watsonx Orchestrate)
+uv run f1-social-feed --creds-glob 'runs/*/credentials/*.env'   # → :8080, serves /race-feed/{prefix}
+uv run f1-social-feed --mock                                    # offline demo/dev, no Confluent env
+# Same OpenAPI tool, but sourced from the Real-Time Context Engine (MCP) instead of Kafka:
+RTCE_API_KEY=... RTCE_API_SECRET=... uv run f1-social-feed-rtce --creds-glob 'runs/*/credentials/*.env'
+RTCE_API_KEY=... RTCE_API_SECRET=... uv run f1-social-feed-rtce --probe --creds <card>.env  # validate RTCE contract
+
+# Organizer: single environment (smoke test / demo) — shared then attendee
+uv run deploy                  # prompts → credentials.env → terraform/aws-shared → terraform/aws
+uv run deploy --automated      # same, no prompts (reads credentials.env)
+uv run destroy                 # tear down terraform/aws then terraform/aws-shared
+
+# Self-service (solo): Confluent-only, NO AWS infra (no Postgres/CDC/ECS/ECR/Docker)
+uv run selfservice up          # apply terraform/self-service → credential card → seed driver_race_history
+uv run selfservice up --automated   # no prompts (reads credentials.env)
+uv run selfservice down        # tear down terraform/self-service
+uv run f1-race --creds runs/selfservice/credentials/solo.env   # local simulator (ECS stand-in)
+
+# Control all attendee race feeds (ECS services)
+uv run start-all-races         # scale every attendee simulator to 1
+uv run stop-all-races          # scale every attendee simulator to 0
+uv run reset                   # clear one attendee's lab objects (car_state, pit_decisions, agent)
+
 uv run api-keys create         # Create AWS IAM user + keys for Bedrock access
-uv run setup-mcp               # Write confluent-mcp.env from TF outputs, register MCP server with Claude Code
 
-./scripts/start-race.sh   # Launch race simulator in ECS Fargate
-./scripts/stop-race.sh    # Stop ECS task
-aws logs tail /ecs/f1-simulator --follow
+# Read attendee Terraform outputs
+cd terraform/aws && terraform output -json attendee_credentials
 
-# Read Terraform outputs
-cd terraform/core && terraform output      # CC: env, cluster, flink, API keys
-cd terraform/demo && terraform output      # AWS: MQ IP, Postgres IP, ECS cluster
+# Logs for one attendee simulator
+aws logs tail /ecs/<prefix>-<hex>-simulator --follow
 
-# Force simulator rebuild after changing datagen/
-terraform -chdir=terraform/demo taint module.ecs.null_resource.docker_build_push
-terraform -chdir=terraform/demo apply -auto-approve
-
-# Deploy connectors manually (generated/ has real values; demo-reference/ has placeholders)
-confluent connect cluster create --config-file generated/mq_connector_config.json \
-  --environment $(cd terraform/core && terraform output -raw environment_id) \
-  --cluster $(cd terraform/core && terraform output -raw cluster_id)
-
-cd datagen && python -m pytest tests/ -v
+# Tests / lint
+uv run --with "confluent-kafka[avro]" --with httpx --with pytest --with fastavro python -m pytest datagen/tests/
+uv run --with ruff ruff check datagen/ scripts/ deploy.py
 ```
 
 ---
@@ -42,99 +84,142 @@ cd datagen && python -m pytest tests/ -v
 ## Architecture
 
 ```
-Race Simulator (ECS Fargate)
-  ├── Kafka produce (AVRO)   → car_telemetry
-  └── MQ publish (JMS text)  → IBM MQ EC2 → MQ Source Connector → race_standings_raw
-                                                                         │
-                                                          Job 0 (Terraform-managed Flink SQL)
-                                                          Parse JMS envelope, key by car_number
-                                                          WHERE car_number > 0 (drops warmup)
-                                                                         │
-                                                                  race_standings
-                                                                         │
-Postgres (EC2) → CDC Debezium Connector → driver_race_history ──────────┤
-                                                                         │
-                                                          Job 1 (manual Flink SQL)
-                                                          10s tumbling window + temporal join
-                                                          AI_DETECT_ANOMALIES(tire_temp_fl_c)
-                                                                         │
-                                                                     car_state
-                                                                         │
-                                                          Job 2 (manual Flink SQL)
-                                                          AI_RUN_AGENT → pit_decisions
-                                                                         │
-                                                              Tableflow → S3 → Databricks Genie
+Race Simulator (ECS Fargate service, one per attendee, RACE_LOOP=true)
+  ├── car_telemetry   (car #88, AVRO)            → Kafka (direct)
+  └── race_standings  (22 cars, AVRO, keyed)     → Kafka (direct, upsert)
+                                                         │
+Shared Postgres → CDC Debezium (per-attendee slot) → driver_race_history
+                                                         │
+                              LAB 3 — Flink SQL (attendee-written)
+                              10s tumbling window + temporal join
+                              ML_DETECT_ANOMALIES(tire_temp_fl_c) → car_state
+                                                         │
+                              LAB 4 — Flink SQL (attendee-written)
+                              CREATE AGENT + AI_RUN_AGENT → pit_decisions
+                                                         │
+                              LAB 5 — IBM watsonx Orchestrate (no-code)
+                              OpenAPI tool → f1-social-feed → drafted social posts
 ```
+
+There is **no IBM MQ and no Job 0** — the simulator produces `race_standings`
+straight to Kafka as keyed Avro, so the topic is already a clean upsert/versioned
+table. There is **no Tableflow/Databricks/dbt**. The only external SaaS is **IBM
+watsonx Orchestrate** in LAB 5, reached read-only via the shared `f1-social-feed`
+HTTP service (an OpenAPI tool) — everything upstream is Confluent-only.
 
 ---
 
 ## Terraform Layout
 
-Two stacks — deploy core first. Demo reads core via `terraform_remote_state` (local backend). Demo has zero variables.
+Two tiers. `aws-shared` is applied once; `aws` is applied per attendee (by `wsa`,
+or once by `deploy.py`). The `aws` tier consumes `aws-shared` outputs as variables
+(injected by wsa, or by `deploy.py` reading the shared state).
 
-| Stack | Path | What it creates |
-|-------|------|-----------------|
-| core | `terraform/core/` | CC environment, Kafka cluster, Schema Registry, Flink compute pool, Bedrock LLM connections + models, API keys |
-| demo | `terraform/demo/` | `car_telemetry` + `race_standings` topics (Flink CREATE TABLE), IBM MQ EC2, ECS Fargate, Postgres EC2, S3 Tableflow, MQ + CDC connectors, Job 0 Flink statement |
+| Tier | Path | What it creates |
+|------|------|-----------------|
+| shared | `terraform/aws-shared/` | Default VPC/subnets lookup, shared Postgres (N replication slots, seeded `driver_race_history`), ECR repo + simulator image build |
+| per-attendee | `terraform/aws/` | CC environment, cluster, SR, Flink pool + keys, `modules/llm` (Bedrock connections + `CREATE MODEL`), topics (`car_telemetry`, `race_standings`), per-attendee Postgres CDC connector, ECS cluster + task def + **service** running the simulator |
+| self-service | `terraform/self-service/` | Confluent-**only**: CC environment, cluster, SR, Flink pool, topics, `modules/llm`, and an empty `driver_race_history` table. **No** AWS (Postgres/CDC/ECS/ECR). `uv run selfservice up` seeds `driver_race_history` with a bounded Flink INSERT and the local `f1-race` simulator feeds the topics. |
 
-**Naming:** `RIVER-RACING-${deployment_id}` prefix. CC resources uppercase (`RIVER-RACING-PROD-ENV`); AWS modules apply `lower()` internally. `deployment_id` accepts any alphanumeric ≤8 chars (e.g., `PROD`).
+The Bedrock connections + `CREATE MODEL` statements live in the shared
+`terraform/modules/llm/` module, consumed by both `terraform/aws` and
+`terraform/self-service` (keep them in sync via the module, not by copy).
 
-**Core variables:** `confluent_cloud_api_key`, `confluent_cloud_api_secret`, `owner_email`, `deployment_id`, `aws_bedrock_access_key`, `aws_bedrock_secret_key`, `aws_session_token` (optional, required for `ASIA*` temp keys). Region hardcoded to `us-east-1`.
+**Naming:** per-attendee CC resources use `RIVER-RACING-${prefix}` (e.g.
+`RIVER-RACING-f1wp001-ENV`); ECS resources use the lowercased
+`river-racing-${prefix}-<hex>-simulator` (the instructor scripts filter on
+`river-racing`).
+
+**Per-attendee isolation:** separate CC environment/cluster/Flink pool; CDC
+connector uses `slot.name=f1_cdc_${prefix}` + `publication.name=f1_pub_${prefix}`
+so many connectors share one Postgres. Bedrock credentials are shared across all
+attendees. `aws-shared` sets `max_replication_slots = attendee_count + 10`.
+
+**Key `aws` variables:** `prefix`, `owner_email`, `region`,
+`confluent_cloud_api_key/_secret`, `aws_bedrock_access_key/_secret`,
+`aws_session_token` (optional), and the shared inputs `shared_vpc_id`,
+`shared_subnet_ids`, `shared_postgres_host`, `shared_postgres_password`,
+`shared_ecr_image_uri` — every `shared_*` variable name must exactly match an
+output name in `terraform/aws-shared/outputs.tf` (`shared_X` ← output `X`),
+since `wsa` injects them by that naming convention as `TF_VAR_shared_X`.
+`flink_max_cfu` (default 5), `seconds_per_lap` (default 60 → 60-minute race),
+`race_loop` (default true) tune cost/pacing.
 
 ---
 
 ## Kafka Topics
 
-| Topic | Created by | Tableflow | Notes |
-|-------|-----------|-----------|-------|
-| `car_telemetry` | Terraform (Flink CREATE TABLE) | No | AVRO, 1 partition, no PRIMARY KEY |
-| `race_standings_raw` | MQ Connector (auto on warmup message) | No | JMS envelope schema |
-| `race_standings` | Terraform (Flink CREATE TABLE) | No | PRIMARY KEY(car_number) for versioned temporal join |
-| `driver_race_history` | CDC Connector | Yes | 198 rows historical |
-| `car_state` | Job 1 Flink statement | No | One record per 10s window |
-| `pit_decisions` | Job 2 Flink statement | Yes | Agent output |
+| Topic | Created by | Notes |
+|-------|-----------|-------|
+| `car_telemetry` | Terraform (Flink CREATE TABLE) | AVRO, no PRIMARY KEY, string message key |
+| `race_standings` | Terraform (Flink CREATE TABLE) | AVRO, PRIMARY KEY(car_number), upsert — produced directly by the simulator |
+| `driver_race_history` | per-attendee CDC connector | 198 historical rows |
+| `car_state` | LAB 3 Flink statement | one record per 10s window |
+| `pit_decisions` | LAB 4 Flink statement | agent output |
 
-Topic schemas (CREATE TABLE SQL): `terraform/modules/topics/main.tf`
-`pit_decisions` schema: `demo-reference/streaming_agent_pit_decisions.sql`
+Topic schemas (CREATE TABLE SQL): `terraform/modules/topics/main.tf`.
 
 ---
 
-## Flink Jobs
+## Flink Jobs (the labs)
 
-Jobs 1 and 2 are copy-pasted into Flink SQL Workspace during the demo, or deployed via Terraform with `--automated`. Job 0 is always Terraform-managed.
+Jobs 1 & 2 are **not** pre-deployed — attendees write them in LAB 3 / LAB 4. The
+canonical SQL is in `demo-reference/` and reproduced in the lab guides.
 
-| Job | SQL file | How deployed | Input → Output |
-|-----|----------|--------------|----------------|
-| 0 | `demo-reference/parse_standings.sql` | Terraform | `race_standings_raw` → `race_standings` |
-| 1 | `demo-reference/enrichment_anomaly.sql` | Manual (Workspace) — or via `--automated` | `car_telemetry` + `race_standings` → `car_state` |
-| 2a | `demo-reference/streaming_agent_create_agent.sql` | Manual (Workspace) — or via `--automated` | Creates `pit_strategy_agent` |
-| 2b | `demo-reference/streaming_agent_pit_decisions.sql` | Manual (Workspace) — or via `--automated` | `car_state` → `pit_decisions` |
+| Job | SQL file | Input → Output |
+|-----|----------|----------------|
+| 1 | `demo-reference/enrichment_anomaly.sql` | `car_telemetry` + `race_standings` → `car_state` |
+| 2a | `demo-reference/streaming_agent_create_agent.sql` | creates `pit_strategy_agent` |
+| 2b | `demo-reference/streaming_agent_pit_decisions.sql` | `car_state` → `pit_decisions` |
 
-**Job 1 CTE pattern:** `enriched` (temporal join on `event_time`) → `windowed` (10s TUMBLE, AVG sensors) → `anomaly` (AI_DETECT_ANOMALIES on `tire_temp_fl_c`, conf=99.99, minTraining=20, maxTraining=50, enableStl=false) → final SELECT with `actual_value > upper_bound` filter.
+`llm_textgen_model` / `llm_embedding_model` are pre-deployed per environment by
+`terraform/aws`.
 
-**Job 2 pattern:** CREATE AGENT (Bedrock Claude) → AI_RUN_AGENT on each `car_state` row → REGEXP_EXTRACT 7 labeled fields from response text.
+**LAB 5 is not Flink** — it's a no-code IBM watsonx Orchestrate agent that reads
+the live feed via an OpenAPI tool served by `scripts/social_feed/` (`f1-social-feed`).
+Canonical agent config: `demo-reference/orchestrate_social_agent.md`. Lab order is
+now LAB 1–4 (Flink/SQL) → LAB 5 (Orchestrate) → LAB 6 (wrap-up).
 
-**DBT:** Integration is planned but not implemented — no dbt project exists in the repo. Do not attempt to run `dbt run` or scaffold a dbt project without being explicitly asked.
+The OpenAPI tool has **two interchangeable backends** behind the identical
+`/race-feed/{prefix}` + `/openapi.json` surface: `f1-social-feed` (tails Kafka) and
+`f1-social-feed-rtce` (MCP client to the Real-Time Context Engine). Orchestrate
+imports the same spec either way — only which service you host changes. Orchestrate
+can't consume RTCE's MCP endpoint directly (it supports only *local* MCP servers),
+which is why the shim re-exposes RTCE as REST/OpenAPI.
 
 ---
 
 ## Critical Gotchas
 
-**Temporal join ordering:** The temporal join (`FOR SYSTEM_TIME AS OF event_time`) must be in an early CTE on the raw stream. After OVER() aggregations, `window_time` loses its rowtime attribute — the join silently returns zero rows.
+**Direct `race_standings` production (the new failure mode):** the simulator now
+owns producing schema-valid Avro to `race_standings` with the correct **key**.
+`datagen/simulator.py` resolves the registered `race_standings-key` schema and
+encodes the key as a primitive int or a record automatically. After the first
+deploy, verify the `race_standings-key`/`-value` subjects look right — a wrong key
+encoding makes the LAB 3 temporal join silently return zero rows.
 
-**No PRIMARY KEY on `car_telemetry`:** Only `race_standings` needs PRIMARY KEY for versioned-table semantics. Adding it to `car_telemetry` registers an Avro INT key schema; the simulator writes string keys and Job 1 deserialization fails.
+**Temporal join ordering:** `FOR SYSTEM_TIME AS OF event_time` must be in an early
+CTE on the raw stream. After OVER()/TUMBLE aggregations, `window_time` loses its
+rowtime attribute and the join silently returns zero rows.
 
-**AI_DETECT_ANOMALIES warmup:** Emits rows with NULL `is_anomaly` for the first `minTrainingSize` rows. Normal — don't filter these out entirely.
+**No PRIMARY KEY on `car_telemetry`:** only `race_standings` is keyed. The
+telemetry producer writes a string message key; do not add a PK that would
+register an Avro int key schema.
 
-**SR hard-delete after DROP TABLE:** Dropping a Flink table leaves `<topic>-key` and `<topic>-value` subjects in Schema Registry. Recreating with a different schema fails. Delete both subjects with `--permanent` before recreating.
+**ML_DETECT_ANOMALIES warmup:** withholds output for the first `minTrainingSize`
+(20) windows. The simulator produces 4 warmup telemetry windows (lap=0) to prime
+it; Job 1 filters `lap > 0`.
 
-**`json` format unsupported:** Use `json-registry` (not `json`) in Flink CREATE TABLE. Pair with `"output.data.format": "JSON_SR"` on the connector side.
+**SR hard-delete after DROP TABLE:** dropping a Flink table leaves `<topic>-key`
+and `<topic>-value` subjects. `scripts/reset.py` deletes them with `--permanent`.
 
-**`PROCTIME()` unsupported:** CC Flink only supports event-time temporal joins. No `FOR SYSTEM_TIME AS OF PROCTIME()`.
+**`json` format unsupported:** use `json-registry` in Flink CREATE TABLE.
 
-**Deploy jobs before race starts:** Default scan startup mode is `latest` — jobs miss earlier laps if deployed after race starts. Add `/*+ OPTIONS('scan.startup.mode'='earliest-offset') */` if deploying mid-race.
+**Deploy jobs before/independent of race start:** default scan startup is
+`latest`. `pit_decisions` uses `scan.startup.mode=earliest-offset` so it processes
+laps already in `car_state`.
 
-Full technical discoveries (MQ, Terraform, serialization, git): `docs/technical-discoveries.md`
+Full technical discoveries: `docs/technical-discoveries.md`.
 
 ---
 
@@ -142,19 +227,51 @@ Full technical discoveries (MQ, Terraform, serialization, git): `docs/technical-
 
 | File | Purpose | Created by |
 |------|---------|------------|
-| `credentials.env` | All deploy secrets | `deploy.py` (interactive prompts) |
-| `terraform/core/terraform.tfvars` | TF variables | `deploy.py` |
-| `generated/mq_connector_config.json` | MQ connector with real values | Terraform |
-| `generated/cdc_connector_config.json` | CDC connector with real values | Terraform |
-| `confluent-mcp.env` | MCP server env vars | `uv run setup-mcp` |
+| `credentials.env` | Deploy secrets (TF_VAR_*) | `deploy.py` |
 
-All gitignored. Do not commit any of these files.
+Gitignored. Do not commit. The `aws` tier's flat outputs (`environment_id`,
+`kafka_api_key`, `sr_api_key`, ...) are what `wsa-spec-aws.yaml`'s
+`credentials:` fields point at (`source: terraform`); `wsa` turns those into
+the dispenser CSV and each attendee's claim email. The nested
+`attendee_credentials` map output still exists for the single-environment
+smoke-test flow (`terraform output -json attendee_credentials`, `deploy.py`).
+
+---
+
+## WSA (organizer provisioning)
+
+Provisioning and teardown are owned by `wsa` (confluentinc/workshop-setup-accelerator),
+not a repo-local orchestrator. Run it from a **sibling checkout**
+(`workshop-setup-accelerator/`, per that repo's `ONBOARDING.md` "Local
+layout"), pointed at this repo's `wsa-spec-aws.yaml` with `-w`.
+
+- **Spec:** `wsa-spec-aws.yaml` (repo root) — `account_count: 20` by default;
+  bump `terraform/aws-shared`'s `attendee_count` Terraform default to match if
+  you need more (`wsa` does not forward `account_count` to the shared apply).
+- **Terraform contract:** `shared_infra_path: terraform/aws-shared/`,
+  `terraform_path: terraform/aws/`. Every `credentials:` field with
+  `source: terraform` must match a flat root `output` in
+  `terraform/aws/outputs.tf` by name.
+- **Secrets:** plain `.env`/shell `TF_VAR_*` exports (Confluent + Bedrock
+  keys) — this workshop does not use the TMM 1Password vault, so `op` is
+  omitted from `tools_required`.
+- **Dispenser:** attendees can claim via `wsa dispenser-upload` (Google
+  Form/Sheet) and self-serve `uv run f1-onboard` their claim-email values
+  into a local `credentials.env`, or an instructor can run
+  `uv run workshop creds --csv <run>/build-output.csv --name <name>` and hand
+  out `runs/<name>/credentials/<prefix>.{env,md}` directly — same downstream
+  tools either way.
+- **Clean:** `wsa clean -w wsa-spec-aws.yaml` — pass `--no-password-reset
+  --no-dispenser-clear` if this run never used the dispenser/Gmail reset.
 
 ---
 
 ## File Sync Rule
 
-`demo-reference/*.sql` and `Walkthrough.md` must stay identical. When you modify SQL in one, update the other in the same pass.
+`demo-reference/*.sql` and the lab guides under `labs/instructor-led/` must stay
+in sync — when you change the SQL in one, update the other in the same pass. The
+same applies to `demo-reference/orchestrate_social_agent.md` ↔ the LAB 5 guide
+(`labs/instructor-led/LAB5_orchestrate_integration/LAB5.md`).
 
 ---
 
@@ -162,35 +279,30 @@ All gitignored. Do not commit any of these files.
 
 | File | Purpose |
 |------|---------|
-| `deploy.py` | Deployment orchestrator |
-| `scripts/reset.py` | Reset for fresh race re-run |
+| `deploy.py` | Standalone two-tier deploy (shared + one attendee) |
+| `scripts/reset.py` | Clear an attendee's lab objects |
+| `scripts/pitwall/` | `f1-pitwall` live web dashboard — Kafka consumer → FastAPI/websocket → animated browser view; progressive reveal of LAB 3/4 panels; `--mock` offline feed |
+| `scripts/social_feed/` | `f1-social-feed` shared HTTP service for LAB 5 — tails each attendee's Kafka topics, serves `GET /race-feed/{prefix}` + auto OpenAPI spec for the watsonx Orchestrate tool; reuses pitwall consumer; `--mock` offline feed |
+| `scripts/social_feed_rtce/` | `f1-social-feed-rtce` — same OpenAPI tool, but an MCP client to the Real-Time Context Engine (RTCE) instead of Kafka. Reuses `social_feed`'s `FeedState`+`create_app`; new bits are the RTCE MCP client + poller. Global API key via `RTCE_API_KEY/SECRET`; per-attendee endpoint from card `F1_RTCE_MCP_ENDPOINT`; `--probe` validates the live contract |
+| `scripts/instructor/` | Fan-out start/stop of all attendee race feeds |
 | `scripts/common/` | Shared utils: terraform, credentials, UI |
-| `datagen/simulator.py` | Race simulator main loop |
-| `datagen/race_script.py` | Lap-by-lap race state machine |
-| `datagen/config.py` | Simulator env var definitions |
-| `terraform/core/main.tf` | CC infra definition |
-| `terraform/demo/main.tf` | AWS + Flink tables + connectors + Jobs 0–2 (automated) |
-| `terraform/modules/topics/main.tf` | `car_telemetry` + `race_standings` CREATE TABLE SQL |
-| `demo-reference/enrichment_anomaly.sql` | Job 1 (copy-paste to Workspace or via --automated) |
-| `demo-reference/streaming_agent_create_agent.sql` | Job 2a — CREATE AGENT (copy-paste or via --automated) |
-| `demo-reference/streaming_agent_pit_decisions.sql` | Job 2b — CREATE TABLE pit_decisions (copy-paste or via --automated) |
-| `Walkthrough.md` | Step-by-step demo guide |
-
----
-
-## Reference Docs
-
-| What | Where |
-|------|-------|
-| Use case + race narrative (lap-by-lap script, Genie expected answers) | `docs/USE-CASE.md` |
-| Demo constraints (Must Have / Must NOT Have) | `docs/constraints.md` |
-| Full technical discoveries (all numbered gotchas) | `docs/technical-discoveries.md` |
-| Tableflow setup | `docs/SETUP-TABLEFLOW.md` |
-| Genie setup + example queries | `docs/SETUP-GENIE.md`, `tableflow/EXAMPLE-QUERIES.md` |
-| DBT adapter setup | `docs/SETUP-DBT-ADAPTER.md` |
+| `datagen/simulator.py` | Race simulator — produces telemetry + standings to Kafka, RACE_LOOP |
+| `datagen/config.py` | Simulator env vars |
+| `terraform/aws-shared/` | Shared infra (VPC, Postgres, ECR image) |
+| `terraform/aws/` | Per-attendee CC env + ECS simulator service |
+| `terraform/modules/topics/main.tf` | `car_telemetry` + `race_standings` CREATE TABLE |
+| `wsa-spec-aws.yaml` | wsa orchestration spec — read by `wsa build`/`clean`/`validate` |
+| `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md` |
+| `scripts/workshop/onboard.py` | `f1-onboard` — self-serve: wsa claim-email values → local `credentials.env` |
+| `scripts/workshop/validate.py` | `workshop validate` — API-key health checks against one or many cards |
+| `labs/` | Attendee lab guides |
+| `demo-reference/*.sql` | Canonical lab SQL |
+| `demo-reference/orchestrate_social_agent.md` | Canonical LAB 5 Orchestrate agent config (persona, tool, prompts) |
 
 ---
 
 ## Git
 
-Standalone repo with its own `.git`. Remote: `confluentinc/demo-confluent-intelligence-f1`. Use `git push-external` to push (Confluent airlock policy for org repos).
+Standalone repo with its own `.git`. Remote:
+`confluentinc/demo-confluent-intelligence-f1`. Use `git push-external` to push
+(Confluent airlock policy for org repos).

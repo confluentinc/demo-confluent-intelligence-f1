@@ -1,7 +1,7 @@
 """Generates driver_race_history_seed.sql with 198 rows (22 drivers x 9 races).
 
 Designed correlation: drivers running SOFT-MEDIUM (1-stop) gain the most positions
-on average. Sean Falconer's record on SOFT-MEDIUM is +2.75; on other strategies, -2.4.
+on average. John Doe's record on SOFT-MEDIUM is +2.75; on other strategies, -2.4.
 This matches the simulator's lap-33 anomaly-forced 1-stop pit onto MEDIUM today.
 
 Strategy distribution per race (22 drivers):
@@ -35,32 +35,32 @@ RACES = [
 # Drivers — same 22 as datagen/drivers.py and data/drivers_seed.sql.
 # tier: 1=top (P1-6), 2=upper midfield (P5-12), 3=lower midfield (P10-17), 4=back (P15-22)
 DRIVERS = [
-    (1, "Max Eriksson", "Titan Dynamics", 1),
-    (4, "Luca Novak", "Apex Motorsport", 1),
-    (44, "Sean Falconer", "River Racing", 1),  # special-cased below
-    (16, "Carlos Vega", "Scuderia Rossa", 2),
-    (63, "Oliver Walsh", "Sterling GP", 2),
-    (14, "Fernando Reyes", "Aston Verde", 2),
-    (10, "Theo Martin", "Alpine Force", 2),
-    (24, "Valtteri Koskinen", "Sauber Spirit", 2),
-    (3, "Daniel Costa", "Apex Motorsport", 2),
-    (6, "Alex Nakamura", "Williams Heritage", 3),
-    (55, "Marco Rossi", "Scuderia Rossa", 3),
-    (2, "Yuki Tanaka", "Titan Dynamics", 3),
+    (1, "Max Verstappen", "Titan Dynamics", 1),
+    (4, "Lando Norris", "Apex Motorsport", 1),
+    (88, "John Doe", "River Racing", 1),  # special-cased below
+    (81, "Oscar Piastri", "Apex Motorsport", 2),
+    (16, "Charles Leclerc", "Scuderia Rossa", 2),
+    (63, "George Russell", "Sterling GP", 2),
+    (44, "Lewis Hamilton", "Scuderia Rossa", 2),
+    (14, "Fernando Alonso", "Aston Verde", 2),
+    (10, "Pierre Gasly", "Alpine Force", 2),
+    (55, "Carlos Sainz", "Williams Heritage", 3),
+    (23, "Alexander Albon", "Williams Heritage", 3),
+    (30, "Liam Lawson", "Racing Bulls", 3),
+    (18, "Lance Stroll", "Aston Verde", 3),
     (77, "Sophie Laurent", "River Racing", 3),
-    (18, "Kimi Lahtinen", "Aston Verde", 3),
-    (12, "Pierre Blanc", "Sterling GP", 3),
-    (31, "Oscar Patel", "Alpine Force", 3),
-    (23, "Li Wei", "Sauber Spirit", 4),
-    (20, "Kevin Andersen", "Haas Velocity", 4),
-    (27, "Nico Hoffman", "Haas Velocity", 4),
-    (8, "Logan Mitchell", "Williams Heritage", 4),
-    (22, "Liam O'Brien", "Racing Bulls", 4),
-    (21, "Isack Mbeki", "Racing Bulls", 4),
+    (12, "Kimi Antonelli", "Sterling GP", 3),
+    (31, "Esteban Ocon", "Haas Velocity", 3),
+    (6, "Isack Hadjar", "Racing Bulls", 4),
+    (87, "Oliver Bearman", "Haas Velocity", 4),
+    (27, "Nico Hulkenberg", "Sauber Spirit", 4),
+    (5, "Gabriel Bortoleto", "Sauber Spirit", 4),
+    (22, "Yuki Tsunoda", "Titan Dynamics", 4),
+    (7, "Jack Doohan", "Alpine Force", 4),
 ]
 
-# Sean's hand-crafted arc — must match the demo narrative
-SEAN_ARC = [
+# John's hand-crafted arc — must match the demo narrative
+JOHN_ARC = [
     # (gp_index, sequence,                start, finish)
     (0, ["SOFT", "MEDIUM"], 3, 1),  # Bahrain        +2
     (1, ["MEDIUM", "HARD"], 3, 2),  # Saudi Arabia   +1
@@ -112,15 +112,15 @@ def quoted(s: str) -> str:
 def build_grid(race_idx: int) -> dict:
     """Return {car_number: starting_grid_position} for one race.
 
-    Sean gets his hand-crafted starting position. Others are biased by tier.
+    John gets his hand-crafted starting position. Others are biased by tier.
     """
     rng = random.Random(1000 + race_idx)
-    sean_start = SEAN_ARC[race_idx][2]
-    grid = {44: sean_start}
-    used_positions = {sean_start}
+    john_start = JOHN_ARC[race_idx][2]
+    grid = {88: john_start}
+    used_positions = {john_start}
 
     # Sort drivers by tier; within tier, randomize per race
-    others = [d for d in DRIVERS if d[0] != 44]
+    others = [d for d in DRIVERS if d[0] != 88]
     rng.shuffle(others)
     others.sort(key=lambda d: d[3])
 
@@ -141,20 +141,20 @@ def build_grid(race_idx: int) -> dict:
 def assign_strategies(race_idx: int) -> dict:
     """Return {car_number: strategy_name} for one race honoring the quota.
 
-    Sean's strategy is fixed by SEAN_ARC. Others are biased so:
+    John's strategy is fixed by JOHN_ARC. Others are biased so:
       - top tier prefers SOFT-MEDIUM (the winning pattern)
       - back tier prefers SOFT-MEDIUM-MEDIUM / SOFT-SOFT-MEDIUM (losing patterns)
     """
     rng = random.Random(2000 + race_idx)
 
-    sean_seq = SEAN_ARC[race_idx][1]
-    sean_strategy = "-".join(sean_seq)
-    strategies = {44: sean_strategy}
+    john_seq = JOHN_ARC[race_idx][1]
+    john_strategy = "-".join(john_seq)
+    strategies = {88: john_strategy}
 
-    # Remaining quota after Sean
+    # Remaining quota after John
     quota = dict(STRATEGY_QUOTA)
-    quota[sean_strategy] -= 1
-    assert quota[sean_strategy] >= 0
+    quota[john_strategy] -= 1
+    assert quota[john_strategy] >= 0
 
     # Strategy preferences by tier (weighted draws)
     tier_weights = {
@@ -192,7 +192,7 @@ def assign_strategies(race_idx: int) -> dict:
         },
     }
 
-    others = [d for d in DRIVERS if d[0] != 44]
+    others = [d for d in DRIVERS if d[0] != 88]
     rng.shuffle(others)
     # Process top-tier first so they get first pick of winning strategies
     others.sort(key=lambda d: d[3])
@@ -223,15 +223,15 @@ def compute_finish(grid: dict, strategies: dict, race_idx: int) -> dict:
     """Return {car_number: finishing_pos}."""
     rng = random.Random(3000 + race_idx)
 
-    # Sean is fixed
-    sean_finish = SEAN_ARC[race_idx][3]
-    finishes = {44: sean_finish}
+    # John is fixed
+    john_finish = JOHN_ARC[race_idx][3]
+    finishes = {88: john_finish}
 
-    # Compute "race score" for non-Sean drivers
+    # Compute "race score" for non-John drivers
     # Lower score = better finish. Score = starting_grid + strategy_delta + tier_bias + noise
     scores = []
     for car_number, _driver, _team, tier in DRIVERS:
-        if car_number == 44:
+        if car_number == 88:
             continue
         start = grid[car_number]
         strat = strategies[car_number]
@@ -242,9 +242,9 @@ def compute_finish(grid: dict, strategies: dict, race_idx: int) -> dict:
         noise = rng.gauss(0, 0.5)
         scores.append((car_number, start + delta + tier_bias + noise))
 
-    # Sort by score, assign positions 1-22 skipping Sean's slot
+    # Sort by score, assign positions 1-22 skipping John's slot
     scores.sort(key=lambda x: x[1])
-    used = {sean_finish}
+    used = {john_finish}
     pos = 1
     for car_number, _ in scores:
         while pos in used:
@@ -256,8 +256,15 @@ def compute_finish(grid: dict, strategies: dict, race_idx: int) -> dict:
     return finishes
 
 
-def emit_race(race_idx: int) -> list[str]:
-    """Return list of INSERT VALUES tuples for one race."""
+def build_race_rows(race_idx: int) -> list[dict]:
+    """Return the historical rows for one race as structured dicts.
+
+    This is the single source of truth for the seed data. ``main()`` renders
+    these as Postgres INSERT VALUES; the self-service seeder
+    (``scripts/selfservice/seed.py``) renders the same rows as a bounded Flink
+    INSERT so the ``driver_race_history`` table can be populated without a
+    Postgres/CDC pipeline.
+    """
     race_id, gp_name, race_date = RACES[race_idx]
     grid = build_grid(race_idx)
     strategies = assign_strategies(race_idx)
@@ -267,20 +274,45 @@ def emit_race(race_idx: int) -> list[str]:
     for car_number, driver, team, _tier in DRIVERS:
         start = grid[car_number]
         finish = finishes[car_number]
-        gained = start - finish
         strat_name = strategies[car_number]
         stints = next(s[1] for s in STRATEGIES if s[0] == strat_name)
-        pit_stops = len(stints) - 1
-        s1 = stints[0]
-        s2 = stints[1]
-        s3 = stints[2] if len(stints) > 2 else "n/a"
         rows.append(
-            f"  ({quoted(race_id)}, {quoted(gp_name)}, DATE {quoted(race_date)}, "
-            f"{car_number}, {quoted(driver)}, {quoted(team)}, "
-            f"{start}, {finish}, {gained}, {pit_stops}, "
-            f"{quoted(s1)}, {quoted(s2)}, {quoted(s3)})"
+            {
+                "race_id": race_id,
+                "gp_name": gp_name,
+                "race_date": race_date,
+                "car_number": car_number,
+                "driver": driver,
+                "team": team,
+                "starting_grid": start,
+                "finishing_pos": finish,
+                "positions_gained": start - finish,
+                "pit_stops": len(stints) - 1,
+                "stint_1_tire": stints[0],
+                "stint_2_tire": stints[1],
+                "stint_3_tire": stints[2] if len(stints) > 2 else "n/a",
+            }
         )
     return rows
+
+
+def build_all_rows() -> list[dict]:
+    """Return all 198 historical rows (22 drivers x 9 races) as dicts."""
+    rows: list[dict] = []
+    for race_idx in range(len(RACES)):
+        rows.extend(build_race_rows(race_idx))
+    return rows
+
+
+def emit_race(race_idx: int) -> list[str]:
+    """Return list of Postgres INSERT VALUES tuples for one race."""
+    return [
+        f"  ({quoted(r['race_id'])}, {quoted(r['gp_name'])}, DATE {quoted(r['race_date'])}, "
+        f"{r['car_number']}, {quoted(r['driver'])}, {quoted(r['team'])}, "
+        f"{r['starting_grid']}, {r['finishing_pos']}, {r['positions_gained']}, {r['pit_stops']}, "
+        f"{quoted(r['stint_1_tire'])}, {quoted(r['stint_2_tire'])}, {quoted(r['stint_3_tire'])})"
+        for r in build_race_rows(race_idx)
+    ]
 
 
 def main() -> None:

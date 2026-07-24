@@ -15,7 +15,7 @@ resource "confluent_flink_compute_pool" "main" {
   display_name = "${var.name_prefix}-pool"
   cloud        = var.cloud_provider
   region       = var.cloud_region
-  max_cfu      = 10
+  max_cfu      = var.max_cfu
 
   environment {
     id = var.environment_id

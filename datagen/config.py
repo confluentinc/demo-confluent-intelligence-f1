@@ -2,37 +2,37 @@
 
 import os
 
-# Kafka settings (car_telemetry producer)
+# Kafka settings — both car_telemetry and race_standings are produced directly
+# to Confluent Cloud (Avro via Schema Registry). There is no IBM MQ hop anymore.
 KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "localhost:9092")
 KAFKA_API_KEY = os.environ.get("KAFKA_API_KEY", "")
 KAFKA_API_SECRET = os.environ.get("KAFKA_API_SECRET", "")
 KAFKA_TOPIC = "car_telemetry"
+# Race standings for all 22 cars, keyed by car_number (upsert table in Flink).
+STANDINGS_TOPIC = os.environ.get("STANDINGS_TOPIC", "race_standings")
 
 # Schema Registry settings
 SR_URL = os.environ.get("SR_URL", "")
 SR_API_KEY = os.environ.get("SR_API_KEY", "")
 SR_API_SECRET = os.environ.get("SR_API_SECRET", "")
 
-# MQ settings (race_standings producer)
-MQ_HOST = os.environ.get("MQ_HOST", "localhost")
-MQ_PORT = int(os.environ.get("MQ_PORT", "1414"))
-MQ_QUEUE_MANAGER = os.environ.get("MQ_QUEUE_MANAGER", "QM1")
-MQ_CHANNEL = os.environ.get("MQ_CHANNEL", "DEV.ADMIN.SVRCONN")
-MQ_TOPIC = os.environ.get("MQ_TOPIC", "dev/race_standings")
-MQ_USER = os.environ.get("MQ_USER", "admin")
-MQ_PASSWORD = os.environ.get("MQ_PASSWORD", "passw0rd")
-
-# Race timing
-TOTAL_LAPS = 57
-SECONDS_PER_LAP = int(os.environ.get("SECONDS_PER_LAP", "10"))
+# Race timing — 60 laps at 60 seconds/lap == a 60-minute race (one lap per minute).
+TOTAL_LAPS = 60
+SECONDS_PER_LAP = int(os.environ.get("SECONDS_PER_LAP", "60"))
 TELEMETRY_INTERVAL_SEC = 2
 
+# Workshop lifecycle: when RACE_LOOP=true the simulator replays the race
+# back-to-back (a fresh grid each time) so attendees always have a live feed,
+# sleeping RESTART_DELAY_SEC between races. Set RACE_LOOP=false for a single run.
+RACE_LOOP = os.environ.get("RACE_LOOP", "false").lower() == "true"
+RESTART_DELAY_SEC = int(os.environ.get("RESTART_DELAY_SEC", "30"))
+
 # Pre-race warm-up: number of dummy windows (lap=0) to produce before lap 1.
-# AI_DETECT_ANOMALIES withholds output until ~5 data points are available, so
+# ML_DETECT_ANOMALIES withholds output until ~5 data points are available, so
 # 4 warm-up windows ensure the function emits starting at real lap 1.
 PRE_RACE_WARMUP_LAPS = int(os.environ.get("PRE_RACE_WARMUP_LAPS", "4"))
 # Sleep between warm-up windows (seconds) to allow pipeline propagation.
 PRE_RACE_LAP_DELAY_SEC = int(os.environ.get("PRE_RACE_LAP_DELAY_SEC", "15"))
 
 # Our car
-OUR_CAR_NUMBER = 44
+OUR_CAR_NUMBER = 88

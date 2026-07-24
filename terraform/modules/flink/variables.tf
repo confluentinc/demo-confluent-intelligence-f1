@@ -38,6 +38,12 @@ variable "service_account_id" {
   type        = string
 }
 
+variable "max_cfu" {
+  description = "Max CFUs for the Flink compute pool. Lower per-attendee values keep aggregate workshop cost down."
+  type        = number
+  default     = 10
+}
+
 variable "owner_email" {
   description = "Owner email for AWS resource tagging"
   type        = string

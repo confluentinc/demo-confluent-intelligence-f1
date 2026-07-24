@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>River Racing · Pit Wall</title>
+  <link rel="stylesheet" href="/static/pitwall.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">▶</span>
+      <span class="brand-name">RIVER RACING</span>
+      <span class="brand-sub">PIT WALL</span>
+    </div>
+    <div class="race-meta">
+      <span class="circuit">SILVERSTONE</span>
+      <span class="lap">LAP <b id="lap">--</b><span class="lap-total">/60</span></span>
+      <span id="conn" class="conn offline">● CONNECTING</span>
+    </div>
+  </header>
+
+  <main class="grid">
+    <!-- Track map -->
+    <section class="card track-card">
+      <h2 class="card-title">CIRCUIT</h2>
+      <svg id="track" viewBox="0 0 800 460" preserveAspectRatio="xMidYMid meet">
+        <path id="track-path"
+          d="M 90 360
+             C 60 300, 70 210, 140 180
+             C 210 150, 250 200, 320 180
+             C 390 160, 400 90, 470 80
+             C 560 68, 600 130, 660 140
+             C 730 152, 760 210, 720 260
+             C 690 298, 610 290, 560 320
+             C 500 356, 470 410, 390 408
+             C 300 406, 280 350, 210 348
+             C 150 346, 120 410, 90 360 Z"
+          fill="none" />
+        <g id="cars"></g>
+      </svg>
+      <p class="track-note">Car positions are an illustrative approximation from race order &amp; gaps.</p>
+    </section>
+
+    <!-- Leaderboard -->
+    <section class="card board-card">
+      <h2 class="card-title">LEADERBOARD</h2>
+      <table class="board">
+        <thead>
+          <tr><th>P</th><th>#</th><th>DRIVER</th><th>TYRE</th><th>AGE</th><th>GAP</th><th>STOP</th></tr>
+        </thead>
+        <tbody id="board-body"></tbody>
+      </table>
+    </section>
+
+    <!-- Telemetry gauges -->
+    <section class="card telem-card">
+      <h2 class="card-title">CAR #88 · JOHN DOE <span id="telem-pos" class="pos-pill"></span></h2>
+      <div class="tyres" id="tyres">
+        <div class="tyre" data-k="fl"><span class="tyre-label">FL</span><div class="bar"><i></i></div><span class="tyre-val">--</span></div>
+        <div class="tyre" data-k="fr"><span class="tyre-label">FR</span><div class="bar"><i></i></div><span class="tyre-val">--</span></div>
+        <div class="tyre" data-k="rl"><span class="tyre-label">RL</span><div class="bar"><i></i></div><span class="tyre-val">--</span></div>
+        <div class="tyre" data-k="rr"><span class="tyre-label">RR</span><div class="bar"><i></i></div><span class="tyre-val">--</span></div>
+      </div>
+      <div class="meters">
+        <div class="meter"><label>FUEL</label><div class="mbar fuel"><i id="m-fuel"></i></div><span id="m-fuel-v">--</span></div>
+        <div class="meter"><label>BATTERY</label><div class="mbar batt"><i id="m-batt"></i></div><span id="m-batt-v">--</span></div>
+        <div class="readouts">
+          <div><span class="ro-v" id="ro-speed">--</span><span class="ro-l">km/h</span></div>
+          <div><span class="ro-v" id="ro-throttle">--</span><span class="ro-l">throttle</span></div>
+          <div><span class="ro-v" id="ro-drs">--</span><span class="ro-l">DRS</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Anomaly panel (LAB 3) -->
+    <section class="card lab-card" id="anomaly-card">
+      <h2 class="card-title">ANOMALY DETECTION <span class="tag">LAB 3 · car_state</span></h2>
+      <div class="lab-locked" id="anomaly-locked">
+        <span class="lock">🔒</span>
+        <p>Build <code>car_state</code> in <b>LAB 3</b> to activate.<br/>Run <code>ML_DETECT_ANOMALIES</code> and this panel lights up.</p>
+      </div>
+      <div class="lab-live hidden" id="anomaly-live">
+        <div class="anom-status" id="anom-status">NOMINAL</div>
+        <div class="anom-grid">
+          <div><span class="anom-l">FL TEMP</span><span class="anom-v" id="anom-fl">--</span></div>
+          <div><span class="anom-l">TYRE</span><span class="anom-v" id="anom-compound">--</span></div>
+          <div><span class="anom-l">TYRE AGE</span><span class="anom-v" id="anom-age">--</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Agent panel (LAB 4) -->
+    <section class="card lab-card" id="agent-card">
+      <h2 class="card-title">AI PIT STRATEGIST <span class="tag">LAB 4 · pit_decisions</span></h2>
+      <div class="lab-locked" id="agent-locked">
+        <span class="lock">🔒</span>
+        <p>Build <code>pit_decisions</code> in <b>LAB 4</b> to activate.<br/>The Flink agent's calls stream in here.</p>
+      </div>
+      <div class="lab-live hidden" id="agent-live">
+        <div class="agent-banner" id="agent-banner">STAY OUT</div>
+        <h3 class="feed-title">DECISION FEED</h3>
+        <ul class="feed" id="agent-feed"></ul>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/pitwall.js"></script>
+</body>
+</html>

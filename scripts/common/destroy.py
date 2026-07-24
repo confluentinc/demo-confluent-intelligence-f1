@@ -2,14 +2,37 @@
 Destroy all F1 demo resources (demo first, then core).
 """
 
+import json
 import os
 import shutil
 import sys
 from pathlib import Path
 
 from .credentials import load_or_create_credentials_file
-from .terraform import get_project_root
+from .terraform import get_project_root, run_terraform_output
 from .terraform_runner import run_terraform_destroy
+
+
+def _inject_shared_vars(root: Path) -> None:
+    """Set TF_VAR_shared_* from aws-shared outputs so the aws destroy has the
+    required variable values (Terraform evaluates the config even on destroy)."""
+    shared_state = root / "terraform" / "aws-shared" / "terraform.tfstate"
+    if not shared_state.exists():
+        return
+    try:
+        shared = run_terraform_output(shared_state)
+    except Exception:
+        return
+    mapping = {
+        "TF_VAR_shared_vpc_id": shared.get("vpc_id", ""),
+        "TF_VAR_shared_subnet_ids": json.dumps(shared.get("subnet_ids", [])),
+        "TF_VAR_shared_postgres_host": shared.get("postgres_host", ""),
+        "TF_VAR_shared_postgres_password": shared.get("postgres_password", ""),
+        "TF_VAR_shared_ecr_image_uri": shared.get("ecr_image_uri", ""),
+    }
+    for k, v in mapping.items():
+        if v:
+            os.environ[k] = v
 
 
 def cleanup_terraform_artifacts(env_path: Path) -> None:
@@ -50,7 +73,8 @@ def main():
         if value:
             os.environ[key] = value
 
-    envs_to_destroy = ["demo", "core"]
+    # Attendee resources first (they reference the shared layer), then shared.
+    envs_to_destroy = ["aws", "aws-shared"]
 
     # Check what's actually deployed
     deployed = []
@@ -80,6 +104,11 @@ def main():
             print(f"\nSkipping {env}: no state found")
             continue
 
+        # The aws tier has required shared_* variables that Terraform evaluates
+        # even on destroy — populate them from the aws-shared outputs.
+        if env == "aws":
+            _inject_shared_vars(root)
+
         print(f"\n-> Destroying {env}...")
         success = run_terraform_destroy(env_path)
         cleanup_terraform_artifacts(env_path)
@@ -87,38 +116,6 @@ def main():
             print(f"\nDestroy failed at {env} (state cleaned up). Continuing with remaining...")
 
     print("\nDestroy process completed!")
-    _cleanup_mcp(root)
-
-
-def _cleanup_mcp(root: Path) -> None:
-    """Remove MCP server config files and deregister from Claude Code."""
-    import subprocess
-
-    mcp_env = root / "confluent-mcp.env"
-    if mcp_env.exists():
-        mcp_env.unlink()
-        print("✓ Removed confluent-mcp.env")
-
-    result = subprocess.run(
-        ["claude", "mcp", "remove", "confluent-f1-mcp", "-s", "local"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        print("✓ Removed confluent-f1-mcp from Claude Code")
-
-    node_modules = root / "node_modules"
-    if node_modules.exists():
-        try:
-            shutil.rmtree(node_modules)
-            print("✓ Removed node_modules/")
-        except Exception:
-            pass
-
-    pkg_lock = root / "package-lock.json"
-    if pkg_lock.exists():
-        pkg_lock.unlink()
-        print("✓ Removed package-lock.json")
 
 
 if __name__ == "__main__":

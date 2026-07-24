@@ -23,10 +23,10 @@ def _noise(amplitude=0.5):
 
 
 def generate_telemetry(lap, tire_age, tire_compound, post_pit):
-    """Generate one telemetry reading for car #44.
+    """Generate one telemetry reading for car #88.
 
     Args:
-        lap: Current race lap (1-57)
+        lap: Current race lap (1-60)
         tire_age: Laps on current tire set (resets after pit)
         tire_compound: SOFT, MEDIUM, or HARD
         post_pit: Whether car has pitted (resets tire baselines)

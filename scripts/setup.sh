@@ -1,46 +1,40 @@
 #!/bin/bash
-# NOTE: Prefer 'uv run deploy' instead — it handles credentials and tfvars automatically.
+# NOTE: Prefer 'uv run deploy' — it prompts for credentials and wires the shared
+# outputs into the attendee layer automatically. This script is a thin manual
+# fallback that assumes you have already provided variables (terraform.tfvars or
+# TF_VAR_* env vars) for each layer.
+#
+# For a real multi-attendee workshop, use `wsa` with wsa-spec-aws.yaml instead.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-CORE_DIR="$PROJECT_DIR/terraform/core"
-DEMO_DIR="$PROJECT_DIR/terraform/demo"
+SHARED_DIR="$PROJECT_DIR/terraform/aws-shared"
+AWS_DIR="$PROJECT_DIR/terraform/aws"
 
-echo "=== F1 Pit Wall AI Demo — Setup ==="
-echo ""
+echo "=== F1 Workshop — Setup (aws-shared -> aws) ==="
 
-# Check prerequisites
 if ! command -v terraform &> /dev/null; then
     echo "ERROR: terraform is not installed"
     exit 1
 fi
 
-if [ ! -f "$CORE_DIR/terraform.tfvars" ]; then
-    echo "ERROR: terraform/core/terraform.tfvars not found"
-    echo "Run 'uv run deploy' instead, or create terraform.tfvars in terraform/core/ and terraform/demo/"
-    exit 1
-fi
-
-# Deploy core
-echo "--- Deploying Core Infrastructure ---"
-cd "$CORE_DIR"
-terraform init
-terraform apply -auto-approve
-
-# Deploy demo
-echo ""
-echo "--- Deploying Demo Resources ---"
-cd "$DEMO_DIR"
+echo "--- Deploying shared infrastructure ---"
+cd "$SHARED_DIR"
 terraform init
 terraform apply -auto-approve
 
 echo ""
-echo "--- Outputs ---"
-terraform output
+echo "--- Deploying attendee environment ---"
+echo "NOTE: pass the shared outputs (vpc_id, subnet_ids, postgres_host,"
+echo "      postgres_password, ecr_image_uri, ...) as TF_VAR_shared_vpc_id,"
+echo "      TF_VAR_shared_subnet_ids, TF_VAR_shared_postgres_host, etc. first"
+echo "      (every terraform/aws shared_* variable = TF_VAR_shared_<aws-shared output name>),"
+echo "      or use 'uv run deploy' which does this for you."
+cd "$AWS_DIR"
+terraform init
+terraform apply -auto-approve
 
 echo ""
 echo "=== Setup Complete ==="
-echo ""
-echo "MQ Console:  https://$(terraform output -raw mq_public_ip):9443/ibmmq/console"
-echo "Postgres:    $(terraform output -raw postgres_connection_string)"
+echo "Attendee credentials:  cd terraform/aws && terraform output -json attendee_credentials"

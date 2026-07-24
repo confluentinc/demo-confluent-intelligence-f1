@@ -14,15 +14,32 @@ dependencies = [
     "python-dotenv>=1.0.0,<2.0",
     "rich>=13.0.0",
     "boto3>=1.26.0",
+    "pyyaml>=6.0",
+    "requests>=2.31.0",
+    # f1-pitwall live dashboard (consumes the attendee's own Kafka topics)
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "confluent-kafka[avro]>=2.3.0",
+    "fastavro>=1.9.0",
+    "httpx>=0.27.0",  # required by confluent-kafka's Schema Registry client
+    "mcp>=1.8.0",     # f1-social-feed-rtce: MCP client to the Real-Time Context Engine
 ]
 
 [project.scripts]
 deploy = "deploy:main"
 destroy = "scripts.common.destroy:main"
 api-keys = "scripts.common.api_keys:main"
-setup-mcp = "scripts.setup_mcp:main"
 reset = "scripts.reset:main"
-start-race = "scripts.start_race:main"
+start-all-races = "scripts.instructor.start_all_races:main"
+stop-all-races = "scripts.instructor.stop_all_races:main"
+workshop = "scripts.workshop.cli:main"
+selfservice = "scripts.selfservice.cli:main"
+f1-race = "scripts.selfservice.race:main"
+f1-sql = "scripts.workshop.sql_shell:main"
+f1-onboard = "scripts.workshop.onboard:main"
+f1-pitwall = "scripts.pitwall.app:main"
+f1-social-feed = "scripts.social_feed.app:main"
+f1-social-feed-rtce = "scripts.social_feed_rtce.app:main"
 
 [project.urls]
 Repository = "https://github.com/confluentinc/demo-confluent-intelligence-f1"

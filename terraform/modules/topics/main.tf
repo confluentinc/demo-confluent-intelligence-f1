@@ -32,7 +32,7 @@ resource "confluent_flink_statement" "create_car_telemetry_table" {
   statement = <<-EOT
     CREATE TABLE `car_telemetry` (
       `car_number` INT COMMENT 'Car number identifier',
-      `lap` INT COMMENT 'Current lap number (1-57)',
+      `lap` INT COMMENT 'Current lap number (1-60)',
       `tire_temp_fl_c` DOUBLE COMMENT 'Front-left tire temperature in Celsius',
       `tire_temp_fr_c` DOUBLE COMMENT 'Front-right tire temperature in Celsius',
       `tire_temp_rl_c` DOUBLE COMMENT 'Rear-left tire temperature in Celsius',
@@ -104,7 +104,7 @@ resource "confluent_flink_statement" "create_race_standings_table" {
       `car_number` INT COMMENT 'Car number identifier',
       `driver` STRING COMMENT 'Driver full name',
       `team` STRING COMMENT 'Constructor team name',
-      `lap` INT COMMENT 'Current lap number (1-57)',
+      `lap` INT COMMENT 'Current lap number (1-60)',
       `position` INT COMMENT 'Current race position (1-22)',
       `gap_to_leader_sec` DOUBLE COMMENT 'Time gap to race leader in seconds',
       `gap_to_ahead_sec` DOUBLE COMMENT 'Time gap to car directly ahead in seconds',
@@ -116,55 +116,11 @@ resource "confluent_flink_statement" "create_race_standings_table" {
       `event_time` TIMESTAMP(3) COMMENT 'FIA timing feed timestamp',
       WATERMARK FOR `event_time` AS `event_time` - INTERVAL '10' SECOND,
       PRIMARY KEY (`car_number`) NOT ENFORCED
-    ) DISTRIBUTED BY (`car_number`) INTO 1 BUCKETS;
-  EOT
-
-  properties = {
-    "sql.current-catalog"  = var.environment_name
-    "sql.current-database" = var.cluster_name
-  }
-
-  depends_on = [confluent_flink_statement.create_car_telemetry_table]
-}
-
-# Create race_standings_raw topic via Flink CREATE TABLE
-# This materialises the Kafka topic + JSON_SR schema so that the MQ Source
-# Connector can start producing to a pre-existing topic with the correct
-# schema, and Job 0 can validate its SQL against it immediately.
-resource "confluent_flink_statement" "create_race_standings_raw_table" {
-  organization {
-    id = var.organization_id
-  }
-  environment {
-    id = var.environment_id
-  }
-  compute_pool {
-    id = var.compute_pool_id
-  }
-  principal {
-    id = var.service_account_id
-  }
-
-  rest_endpoint = var.flink_rest_endpoint
-
-  credentials {
-    key    = var.flink_api_key
-    secret = var.flink_api_secret
-  }
-
-  statement = <<-EOT
-    CREATE TABLE `race_standings_raw` (
-      `text` VARCHAR(2147483647)
-    )
-    DISTRIBUTED INTO 1 BUCKETS
+    ) DISTRIBUTED BY (`car_number`) INTO 1 BUCKETS
     WITH (
-      'changelog.mode' = 'append',
+      'changelog.mode' = 'upsert',
       'connector' = 'confluent',
-      'kafka.cleanup-policy' = 'delete',
-      'kafka.message-timestamp-type' = 'create-time',
-      'kafka.retention.time' = '7 d',
-      'scan.startup.mode' = 'earliest-offset',
-      'value.format' = 'json-registry'
+      'value.format' = 'avro-registry'
     );
   EOT
 
@@ -173,6 +129,6 @@ resource "confluent_flink_statement" "create_race_standings_raw_table" {
     "sql.current-database" = var.cluster_name
   }
 
-  depends_on = [confluent_flink_statement.create_race_standings_table]
+  depends_on = [confluent_flink_statement.create_car_telemetry_table]
 }
 

@@ -10,7 +10,7 @@
 --    loses its rowtime attribute and `FOR SYSTEM_TIME AS OF` silently emits
 --    zero rows. Joining on raw `event_time` keeps the rowtime clean.
 --
--- 2. Only `tire_temp_fl_c` runs through AI_DETECT_ANOMALIES. The simulator's
+-- 2. Only `tire_temp_fl_c` runs through ML_DETECT_ANOMALIES. The simulator's
 --    other metrics (brake/battery/engine) carry too much noise (~±25°C on
 --    brakes), and the predictable ones (tire_temp_fr/rl/rr, pressures, fuel)
 --    only generate false positives that distract from the demo narrative.
@@ -72,7 +72,7 @@ windowed AS (
 anomaly AS (
   SELECT
     *,
-    AI_DETECT_ANOMALIES(tire_temp_fl_c, window_time,
+    ML_DETECT_ANOMALIES(tire_temp_fl_c, window_time,
       JSON_OBJECT('minTrainingSize' VALUE 20,
                   'maxTrainingSize' VALUE 50,
                   'confidencePercentage' VALUE 99.99,

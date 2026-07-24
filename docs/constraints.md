@@ -1,22 +1,20 @@
-# Demo Constraints
+# Workshop Constraints
 
-These are hard constraints for this demo. Do not violate them.
+These are hard constraints for this workshop. Do not violate them.
 
 ## Must Have
 
-- Three data sources, three ingestion paths: direct Kafka (telemetry), MQ pub/sub (standings), Postgres CDC (history)
-- `AI_DETECT_ANOMALIES` running, but only `tire_temp_fl_c` fires an anomaly
+- Two ingestion paths: direct Kafka (telemetry + standings, produced by the simulator), Postgres CDC (history)
+- `ML_DETECT_ANOMALIES` running, but only `tire_temp_fl_c` fires an anomaly
 - Single anomaly at lap 32 — no other anomalies in the entire race
 - AI agent decides pit strategy — no threshold formulas in Flink SQL
 - +6 positions gained after agent recommendation (P8 → P2)
-- 10 seconds per simulated lap (~9.5 min total race)
-- All fictional drivers and teams: team = River Racing, driver = Sean Falconer, car #44
+- 60 seconds per simulated lap by default (60-min race, one lap per minute, spans the full lab session); tunable via `seconds_per_lap`
+- Hero entry is fictional: team = River Racing, driver = John Doe, car #88. The rest of the grid uses real 2025 F1 driver names (with fictional team names); car #44 is Lewis Hamilton
 - Circuit: Silverstone; 22 drivers, 11 teams
-- Tableflow on `pit_decisions` + `driver_race_history` only
-- Databricks Genie for analytics
-- Everything deployable via Terraform + Python scripts
-- Race simulator runs on ECS Fargate, started manually via `./scripts/start-race.sh`
-- MQ messages sent as JMS TextMessage (RFH2 headers) — do not use BytesMessage
+- Per-attendee isolation: separate CC environment/cluster/Flink pool per attendee; shared Postgres/ECR/Bedrock
+- Everything provisioned by organizers via `wsa` (or `deploy.py` for a single environment) — attendees never run Terraform
+- Race simulator runs as an ECS Fargate service per attendee with `RACE_LOOP=true` so the feed is always live; instructors control fleets via `start-all-races` / `stop-all-races`
 - Single partition topics: `DISTRIBUTED BY (col) INTO 1 BUCKETS`
 
 ## Must NOT Have
@@ -26,6 +24,6 @@ These are hard constraints for this demo. Do not violate them.
 - Probability formulas or threshold logic in Flink SQL
 - Real driver or team names
 - A Copilot/chatbot layer on top of the agent output
-- Tableflow on `race_standings` or `car_telemetry`
+- Anything outside Confluent Cloud + AWS in the attendee path — no Tableflow, Databricks, dbt, or IBM MQ
 - Batch processing anywhere in the pipeline
-- MQ queues — use pub/sub topic `dev/race_standings` with durable subscription `f1-mq-source-sub`; do not revert to queues
+- Attendee-run infrastructure steps — labs are Flink SQL only (LAB 3 / LAB 4)

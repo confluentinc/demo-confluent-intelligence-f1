@@ -77,6 +77,10 @@ credentials.json
 # Generated configs (contain secrets)
 generated/
 
+# Workshop orchestrator run artifacts — per-attendee Terraform state, plugin
+# cache, logs, and generated credential cards (contain secrets).
+runs/
+
 # Sensitive credential files
 confluent_api_keys.md
 mongodb_commands.txt

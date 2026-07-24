@@ -1,13 +1,15 @@
 """
-Reset lab state for a fresh race re-run.
+Reset an attendee's lab state for a fresh run of the stream-processing labs.
 
-Stops all running Flink statements, drops demo Flink objects (car_state and
-pit_decisions tables, pit_strategy_agent), drops all topics and their SR
-subjects, then recreates schema-bearing topics via `terraform apply -replace
--target` so Terraform is the single source of truth for topic schemas.
-Also resets the MQ connector for a clean subscription.
+Stops running Flink statements and drops the objects attendees create during
+the labs — the `car_state` and `pit_decisions` tables, the `pit_strategy_agent`,
+and their backing topics + Schema Registry subjects. The schema-bearing source
+topics (`car_telemetry`, `race_standings`) are owned by Terraform and fed by the
+live race simulator, so they are left untouched.
 
-Usage: uv run reset [--manual]
+This is a Confluent-only operation — it does not run Terraform.
+
+Usage: uv run reset
 """
 
 import argparse
@@ -24,40 +26,16 @@ from dotenv import dotenv_values
 from scripts.common.login_checks import ensure_confluent_login
 from scripts.common.terraform import get_project_root, run_terraform_output
 
-# Topics created by Terraform — deleted and recreated via terraform apply -replace
-SCHEMA_TOPICS = ["car_telemetry", "race_standings", "race_standings_raw"]
+# Topics created by attendees while running the labs — deleted only (they are
+# recreated when the attendee re-runs the Flink jobs).
+LAB_TOPICS = ["car_state", "pit_decisions"]
 
-# Topics created during the demo — deleted only (user re-creates them by running the jobs)
-DEMO_TOPICS = ["car_state", "pit_decisions"]
-
-TF_RESOURCES = [
-    "module.topics.confluent_flink_statement.create_car_telemetry_table",
-    "module.topics.confluent_flink_statement.create_race_standings_table",
-    "module.topics.confluent_flink_statement.create_race_standings_raw_table",
-]
-
-# Job 0 is always recreated in the same terraform apply as the topics,
-# since race_standings_raw now exists as a Terraform resource (no MQ warmup needed).
-JOB0_TF_RESOURCE = "confluent_flink_statement.job0_parse_standings"
-
-AUTOMATED_TF_RESOURCES = [
-    "confluent_flink_statement.job1_enrichment_anomaly[0]",
-    "confluent_flink_statement.job2_create_agent[0]",
-    "confluent_flink_statement.job2_pit_decisions[0]",
-]
-
-ALL_DROPS = [
-    ("drop-race_standings_raw", "DROP TABLE IF EXISTS `race_standings_raw`"),
-    ("drop-race_standings",     "DROP TABLE IF EXISTS `race_standings`"),
-    ("drop-car_telemetry",      "DROP TABLE IF EXISTS `car_telemetry`"),
-    ("drop-car_state",          "DROP TABLE IF EXISTS `car_state`"),
-    ("drop-pit_decisions",      "DROP TABLE IF EXISTS `pit_decisions`"),
-    ("drop-pit-agent",          "DROP AGENT IF EXISTS `pit_strategy_agent`"),
-]
-
-DBT_DROPS = [
-    ("drop-car_state",    "DROP TABLE IF EXISTS `car_state`"),
-    ("drop-pit_decisions","DROP TABLE IF EXISTS `pit_decisions`"),
+# Flink objects created by the labs, dropped before their topics. Labels become
+# part of the Flink statement name, which rejects underscores (HTTP 400).
+LAB_DROPS = [
+    ("drop-car-state",     "DROP TABLE IF EXISTS `car_state`"),
+    ("drop-pit-decisions", "DROP TABLE IF EXISTS `pit_decisions`"),
+    ("drop-pit-agent",     "DROP AGENT IF EXISTS `pit_strategy_agent`"),
 ]
 
 
@@ -66,12 +44,12 @@ def run_cli(cmd: list[str], confirm: bool = False) -> tuple[int, str, str]:
     return result.returncode, result.stdout, result.stderr
 
 
-def delete_flink_statements(core: dict) -> None:
-    env_id = core["environment_id"]
-    org_id = core["organization_id"]
-    rest = core["flink_rest_endpoint"].rstrip("/")
-    api_key = core["flink_api_key"]
-    api_secret = core["flink_api_secret"]
+def delete_flink_statements(tf: dict) -> None:
+    env_id = tf["environment_id"]
+    org_id = tf["organization_id"]
+    rest = tf["flink_rest_endpoint"].rstrip("/")
+    api_key = tf["flink_api_key"]
+    api_secret = tf["flink_api_secret"]
 
     token = b64encode(f"{api_key}:{api_secret}".encode()).decode()
     auth = {"Authorization": f"Basic {token}"}
@@ -141,20 +119,16 @@ def delete_topic_and_subjects(topic: str, env_id: str, cluster_id: str) -> None:
         print(f"  SR {subject}: cleaned")
 
 
-def drop_flink_objects(core: dict, drops: list) -> None:
-    """Submit DROP TABLE / DROP AGENT statements via REST API.
-
-    Pass ALL_DROPS for a full reset (clears Terraform-managed catalog entries so
-    Terraform can re-CREATE them) or DBT_DROPS to clear only dbt-managed objects.
-    """
-    org_id = core["organization_id"]
-    env_id = core["environment_id"]
-    rest = core["flink_rest_endpoint"].rstrip("/")
-    api_key = core["flink_api_key"]
-    api_secret = core["flink_api_secret"]
-    compute_pool_id = core["compute_pool_id"]
-    catalog = core["environment_name"]
-    database = core["cluster_name"]
+def drop_flink_objects(tf: dict, drops: list) -> None:
+    """Submit DROP TABLE / DROP AGENT statements via the Flink REST API."""
+    org_id = tf["organization_id"]
+    env_id = tf["environment_id"]
+    rest = tf["flink_rest_endpoint"].rstrip("/")
+    api_key = tf["flink_api_key"]
+    api_secret = tf["flink_api_secret"]
+    compute_pool_id = tf["compute_pool_id"]
+    catalog = tf["environment_name"]
+    database = tf["cluster_name"]
 
     token = b64encode(f"{api_key}:{api_secret}".encode()).decode()
     headers = {"Authorization": f"Basic {token}", "Content-Type": "application/json"}
@@ -183,104 +157,10 @@ def drop_flink_objects(core: dict, drops: list) -> None:
             print(f"  {sql}: {e}")
 
 
-MQ_CONNECTOR_NAME = "f1-mq-source"
-MQ_CONNECTOR_CONFIG = "generated/mq_connector_config.json"
-
-
-def get_connector_id(env_id: str, cluster_id: str, name: str) -> str | None:
-    """Return the connector ID for the given name, or None if not found."""
-    rc, stdout, _ = run_cli(
-        ["confluent", "connect", "cluster", "list", "-o", "json", "--environment", env_id, "--cluster", cluster_id]
-    )
-    if rc != 0:
-        return None
-    try:
-        for c in json.loads(stdout):
-            if c.get("name") == name:
-                return c["id"]
-    except (json.JSONDecodeError, KeyError):
-        pass
-    return None
-
-
-def reset_mq_connector(env_id: str, cluster_id: str, root) -> None:
-    config_path = root / MQ_CONNECTOR_CONFIG
-    if not config_path.exists():
-        print(f"  Skipping — {MQ_CONNECTOR_CONFIG} not found (run 'uv run deploy' first)")
-        return
-
-    connector_id = get_connector_id(env_id, cluster_id, MQ_CONNECTOR_NAME)
-    if connector_id is None:
-        print(f"  {MQ_CONNECTOR_NAME} not found — skipping delete, proceeding to create")
-    else:
-        rc, _, stderr = run_cli(
-            [
-                "confluent",
-                "connect",
-                "cluster",
-                "delete",
-                connector_id,
-                "--force",
-                "--environment",
-                env_id,
-                "--cluster",
-                cluster_id,
-            ],
-        )
-        first_line = stderr.strip().splitlines()[0] if stderr.strip() else ""
-        if rc == 0:
-            print(f"  Deleted {MQ_CONNECTOR_NAME} ({connector_id})")
-        else:
-            print(f"  Delete failed: {first_line}")
-            if get_connector_id(env_id, cluster_id, MQ_CONNECTOR_NAME) is not None:
-                print(f"  {MQ_CONNECTOR_NAME} still exists — delete failed. Aborting connector reset.")
-                print(f"  To fix: delete the connector manually then re-run reset.")
-                return
-            print(f"  Confirmed {MQ_CONNECTOR_NAME} is gone — proceeding to recreate")
-
-    rc, _, stderr = run_cli(
-        [
-            "confluent",
-            "connect",
-            "cluster",
-            "create",
-            "--config-file",
-            str(config_path),
-            "--environment",
-            env_id,
-            "--cluster",
-            cluster_id,
-        ]
-    )
-    if rc == 0:
-        print(f"  Recreated {MQ_CONNECTOR_NAME}")
-    else:
-        print(f"  Failed to recreate {MQ_CONNECTOR_NAME}: {stderr.strip()}")
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Reset F1 demo for a fresh race re-run")
-    parser.add_argument(
-        "--manual",
-        action="store_true",
-        default=False,
-        help="Skip recreating Jobs 1 & 2 via Terraform; re-deploy them manually in SQL Workspace after reset.",
-    )
-    parser.add_argument(
-        "--dbt",
-        action="store_true",
-        default=False,
-        help="Tear down only dbt-managed tables (car_state, pit_decisions) for a dbt re-run.",
-    )
-    args = parser.parse_args()
+    argparse.ArgumentParser(description="Reset attendee lab state for a fresh stream-processing run").parse_args()
 
-    if args.manual and args.dbt:
-        print("Error: --manual and --dbt are mutually exclusive")
-        sys.exit(1)
-
-    automated = not args.manual
-
-    print("=== F1 Demo Reset ===\n")
+    print("=== F1 Workshop Lab Reset ===\n")
 
     root = get_project_root()
 
@@ -298,81 +178,30 @@ def main() -> None:
     if creds.get("TF_VAR_confluent_cloud_api_secret"):
         os.environ["CONFLUENT_CLOUD_API_SECRET"] = creds["TF_VAR_confluent_cloud_api_secret"]
 
-    core_state = root / "terraform" / "core" / "terraform.tfstate"
+    tf_state = root / "terraform" / "aws" / "terraform.tfstate"
     try:
-        core = run_terraform_output(core_state)
+        tf = run_terraform_output(tf_state)
     except Exception as e:
-        print(f"Error reading terraform state: {e}\nHave you run 'uv run deploy' yet?")
+        print(f"Error reading terraform state: {e}\nHave you provisioned the attendee environment yet?")
         sys.exit(1)
 
-    env_id = core["environment_id"]
-    cluster_id = core["cluster_id"]
-
-    if args.dbt:
-        print("1. Stopping Flink statements...")
-        delete_flink_statements(core)
-
-        print("\n2. Dropping dbt-managed Flink tables (car_state, pit_decisions)...")
-        drop_flink_objects(core, DBT_DROPS)
-
-        print("\n3. Dropping dbt-managed topics and SR subjects...")
-        for topic in DEMO_TOPICS:
-            delete_topic_and_subjects(topic, env_id, cluster_id)
-
-        print("\n4. Restarting Job 0 (parse_standings) via Terraform...")
-        cmd = [
-            "terraform", f"-chdir={root}/terraform/demo", "apply",
-            f"-target={JOB0_TF_RESOURCE}", f"-replace={JOB0_TF_RESOURCE}",
-            "-auto-approve",
-        ]
-        result = subprocess.run(cmd)
-        if result.returncode != 0:
-            print("\nError: terraform apply failed — check output above.")
-            sys.exit(1)
-
-        print("\n=== Reset complete ===")
-        print("Next steps:")
-        print("  1. Deploy dbt models:  cd dbt/confluent_intelligence_f1 && dbt run")
-        print("  2. Start the race:     ./scripts/start-race.sh")
-        return
+    env_id = tf["environment_id"]
+    cluster_id = tf["cluster_id"]
 
     print("1. Stopping Flink statements...")
-    delete_flink_statements(core)
+    delete_flink_statements(tf)
 
-    print("\n2. Dropping all Flink objects (tables + agent)...")
-    drop_flink_objects(core, ALL_DROPS)
+    print("\n2. Dropping lab Flink objects (car_state, pit_decisions, pit_strategy_agent)...")
+    drop_flink_objects(tf, LAB_DROPS)
 
-    print("\n3. Dropping topics and SR subjects...")
-    for topic in SCHEMA_TOPICS + DEMO_TOPICS:
+    print("\n3. Dropping lab topics and SR subjects...")
+    for topic in LAB_TOPICS:
         delete_topic_and_subjects(topic, env_id, cluster_id)
-
-    if automated:
-        os.environ["TF_VAR_automated"] = "true"
-
-    print("\n4. Recreating schema topics + Job 0 (and Jobs 1 & 2 unless --manual) via Terraform...")
-    target_flags = [f"-target={r}" for r in TF_RESOURCES]
-    replace_flags = [f"-replace={r}" for r in TF_RESOURCES]
-    target_flags += [f"-target={JOB0_TF_RESOURCE}"]
-    replace_flags += [f"-replace={JOB0_TF_RESOURCE}"]
-    if automated:
-        target_flags += [f"-target={r}" for r in AUTOMATED_TF_RESOURCES]
-        replace_flags += [f"-replace={r}" for r in AUTOMATED_TF_RESOURCES]
-    cmd = ["terraform", f"-chdir={root}/terraform/demo", "apply", *target_flags, *replace_flags, "-auto-approve"]
-    result = subprocess.run(cmd)
-    if result.returncode != 0:
-        print("\nError: terraform apply failed — check output above.")
-        sys.exit(1)
-
-    print("\n5. Resetting MQ connector...")
-    reset_mq_connector(env_id, cluster_id, root)
 
     print("\n=== Reset complete ===")
     print("Next steps:")
-    if automated:
-        print("  1. Start the race:  ./scripts/start-race.sh")
-    else:
-        print("  1. Re-deploy Flink Jobs 1 & 2 in the SQL Workspace (Job 0 already deployed)")
-        print("  2. Start the race:  ./scripts/start-race.sh")
+    print("  Re-run the stream-processing labs (LAB3 → LAB4) in the Flink SQL Workspace.")
+    print("  The race simulator keeps feeding car_telemetry and race_standings — no restart needed.")
 
 
 if __name__ == "__main__":

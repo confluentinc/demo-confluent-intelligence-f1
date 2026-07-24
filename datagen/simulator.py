@@ -1,9 +1,15 @@
-"""F1 Race Simulator — produces car telemetry to Kafka and race standings to MQ.
+"""F1 Race Simulator — produces car telemetry and race standings to Kafka.
 
-Simulates a 57-lap race at Silverstone in ~9.5 minutes of real time.
-Two outputs:
-  - Car telemetry (car #44 only) → Kafka topic 'car_telemetry' via confluent-kafka
-  - Race standings (all 22 cars) → IBM MQ queue via pymqi
+Simulates a 60-lap race at Silverstone in ~60 minutes of real time (one lap
+per minute at the default SECONDS_PER_LAP=60).
+Two Kafka outputs (both Avro via Schema Registry, produced directly to
+Confluent Cloud — there is no IBM MQ hop):
+  - Car telemetry (car #88 only) → topic 'car_telemetry'
+  - Race standings (all 22 cars)  → topic 'race_standings', keyed by car_number
+
+The race_standings topic backs a Flink upsert table (PRIMARY KEY car_number),
+so each record's key is Avro-encoded against the registered '<topic>-key'
+subject and the value against '<topic>-value'.
 """
 
 import json
@@ -13,7 +19,6 @@ import random
 import time
 from datetime import datetime, timezone
 
-import pymqi
 from confluent_kafka import Producer
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
@@ -30,16 +35,53 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Optional deterministic mode: set RACE_SEED env var (any int) for reproducible
-# telemetry noise/sensor values. Unset for live-race-style variability.
-_seed = os.environ.get("RACE_SEED")
-if _seed:
-    random.seed(int(_seed))
-    logger.info(f"Deterministic mode: random.seed({_seed})")
+
+def _seed_random():
+    """Apply RACE_SEED for reproducible telemetry/lap noise, if set.
+
+    Called at the start of every race so that looped races (RACE_LOOP=true)
+    stay reproducible instead of drifting after the first iteration.
+    """
+    seed = os.environ.get("RACE_SEED")
+    if seed:
+        random.seed(int(seed))
+        logger.info(f"Deterministic mode: random.seed({seed})")
+
+
+def _now_millis():
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+def _build_standings_key_fn(sr_client, avro_serializer):
+    """Return a function that Avro-encodes a race_standings message key.
+
+    Confluent Cloud Flink registers the key schema for a single-column
+    PRIMARY KEY either as a primitive ("int") or as a record wrapping the
+    key column. We inspect the registered '<topic>-key' schema once and
+    build the right payload shape for either case.
+    """
+    ctx = SerializationContext(config.STANDINGS_TOPIC, MessageField.KEY)
+    latest = sr_client.get_latest_version(f"{config.STANDINGS_TOPIC}-key")
+    parsed = json.loads(latest.schema.schema_str)
+    is_record = isinstance(parsed, dict) and parsed.get("type") == "record"
+    field_name = parsed["fields"][0]["name"] if is_record else None
+
+    def key_fn(car_number):
+        payload = {field_name: car_number} if is_record else car_number
+        return avro_serializer(payload, ctx)
+
+    return key_fn
 
 
 def _create_kafka_producer():
-    """Create a Kafka producer with Avro serializer for car telemetry."""
+    """Create the Kafka producer plus the Avro serializer used for all topics.
+
+    A single AvroSerializer instance serves car_telemetry-value,
+    race_standings-value and race_standings-key — the subject is resolved
+    per-call from the SerializationContext (auto.register disabled,
+    use.latest.version enabled), so the latest registered schema is fetched
+    for whichever subject the context names.
+    """
     sr_client = SchemaRegistryClient(
         {
             "url": config.SR_URL,
@@ -66,60 +108,52 @@ def _create_kafka_producer():
         }
     )
 
-    return producer, avro_serializer
+    return producer, sr_client, avro_serializer
 
 
-def _connect_mq():
-    """Connect to IBM MQ for race standings (pub/sub topic)."""
-    conn_info = f"{config.MQ_HOST}({config.MQ_PORT})"
-    qmgr = pymqi.connect(
-        config.MQ_QUEUE_MANAGER,
-        config.MQ_CHANNEL,
-        conn_info,
-        config.MQ_USER,
-        config.MQ_PASSWORD,
+def _produce_telemetry(producer, avro_serializer, telemetry):
+    """Produce one car_telemetry reading (car #88) to Kafka."""
+    producer.produce(
+        config.KAFKA_TOPIC,
+        key=str(config.OUR_CAR_NUMBER).encode("utf-8"),
+        value=avro_serializer(
+            telemetry,
+            SerializationContext(config.KAFKA_TOPIC, MessageField.VALUE),
+        ),
     )
-    topic = pymqi.Topic(
-        qmgr, topic_string=config.MQ_TOPIC, open_opts=pymqi.CMQC.MQOO_OUTPUT | pymqi.CMQC.MQOO_FAIL_IF_QUIESCING
-    )
-    return qmgr, topic
 
 
-def _run_warmup_laps(producer, avro_serializer, mq_topic, rfh2):
-    """Produce pre-race windows (lap=0) to prime AI_DETECT_ANOMALIES.
+def _produce_standings(producer, avro_serializer, key_fn, standings):
+    """Produce a race_standings record for every car, keyed by car_number."""
+    value_ctx = SerializationContext(config.STANDINGS_TOPIC, MessageField.VALUE)
+    ts = _now_millis()
+    for standing in standings:
+        standing["event_time"] = ts
+        producer.produce(
+            config.STANDINGS_TOPIC,
+            key=key_fn(standing["car_number"]),
+            value=avro_serializer(standing, value_ctx),
+        )
+    producer.poll(0)
 
-    AI_DETECT_ANOMALIES withholds output until ~5 data points are available.
+
+def _run_warmup_laps(producer, avro_serializer):
+    """Produce pre-race telemetry windows (lap=0) to prime ML_DETECT_ANOMALIES.
+
+    ML_DETECT_ANOMALIES withholds output until ~5 data points are available.
     These warmup windows supply the first 4 so real lap 1 is the 5th point
-    and triggers the first car_state emission.
+    and triggers the first car_state emission. Only telemetry is produced here
+    — race_standings is materialized by Terraform (CREATE TABLE) and only needs
+    real lap data (Job 1 filters lap > 0).
     """
-    warm_race = RaceState(GRID)
-    warm_race.advance_lap()
-
     for i in range(config.PRE_RACE_WARMUP_LAPS):
-        ts = int(datetime.now(timezone.utc).timestamp() * 1000)
-
-        for standing in warm_race.get_standings():
-            standing["event_time"] = ts
-            md = pymqi.MD()
-            md.Format = pymqi.CMQC.MQFMT_RF_HEADER_2
-            md.Encoding = 273
-            md.CodedCharSetId = 1208
-            mq_topic.pub_rfh2(json.dumps(standing).encode("utf-8"), md, pymqi.PMO(), [rfh2])
-
         readings_per_lap = config.SECONDS_PER_LAP // config.TELEMETRY_INTERVAL_SEC
         for _ in range(readings_per_lap):
             telemetry = generate_telemetry(lap=0, tire_age=0, tire_compound="SOFT", post_pit=False)
             telemetry["car_number"] = config.OUR_CAR_NUMBER
             telemetry["lap"] = 0
-            telemetry["event_time"] = int(datetime.now(timezone.utc).timestamp() * 1000)
-            producer.produce(
-                config.KAFKA_TOPIC,
-                key=str(config.OUR_CAR_NUMBER).encode("utf-8"),
-                value=avro_serializer(
-                    telemetry,
-                    SerializationContext(config.KAFKA_TOPIC, MessageField.VALUE),
-                ),
-            )
+            telemetry["event_time"] = _now_millis()
+            _produce_telemetry(producer, avro_serializer, telemetry)
             producer.poll(0)
             time.sleep(config.TELEMETRY_INTERVAL_SEC)
 
@@ -134,87 +168,66 @@ def _run_warmup_laps(producer, avro_serializer, mq_topic, rfh2):
 
 
 def run_race():
-    """Run the full 57-lap race simulation."""
+    """Run a single full 60-lap race simulation."""
     logger.info("=== F1 RACE SIMULATOR — SILVERSTONE ===")
     logger.info(f"Total laps: {config.TOTAL_LAPS}")
     logger.info(f"Seconds per lap: {config.SECONDS_PER_LAP}")
     logger.info(f"Our car: #{config.OUR_CAR_NUMBER}")
 
-    # Initialize connections
-    producer, avro_serializer = _create_kafka_producer()
-    qmgr, mq_topic = _connect_mq()
+    _seed_random()
 
-    # RFH2 header template — marks messages as JMS TextMessage
-    rfh2 = pymqi.RFH2()
-    rfh2["Format"] = pymqi.CMQC.MQFMT_STRING
-    rfh2["CodedCharSetId"] = 1208
-    rfh2["NameValueCCSID"] = 1208
-    rfh2.add_folder(b"<mcd><Msd>jms_text</Msd></mcd>")
-    rfh2.add_folder(b"<jms><Dst>topic://dev/race_standings</Dst><Dlv>2</Dlv></jms>")
+    # Initialize Kafka producer + serializers
+    producer, sr_client, avro_serializer = _create_kafka_producer()
+    standings_key_fn = _build_standings_key_fn(sr_client, avro_serializer)
 
     # Initialize race state
     race = RaceState(GRID)
 
-    # Track car 44's tire state for telemetry generation
-    car44_tire_age = 0
-    car44_tire_compound = "SOFT"
-    car44_post_pit = False
+    # Track car 88's tire state for telemetry generation
+    car88_tire_age = 0
+    car88_tire_compound = "SOFT"
+    car88_post_pit = False
 
     try:
-        _run_warmup_laps(producer, avro_serializer, mq_topic, rfh2)
+        _run_warmup_laps(producer, avro_serializer)
 
         for lap in range(1, config.TOTAL_LAPS + 1):
             lap_start = time.time()
 
             # Advance race state (positions, tires, gaps)
             race.advance_lap()
-            car44 = race.get_car(config.OUR_CAR_NUMBER)
+            car88 = race.get_car(config.OUR_CAR_NUMBER)
 
             # Update tire tracking for telemetry
-            car44_tire_age = car44["tire_age_laps"]
-            car44_tire_compound = car44["tire_compound"]
-            if car44["pit_stops"] > 0:
-                car44_post_pit = True
+            car88_tire_age = car88["tire_age_laps"]
+            car88_tire_compound = car88["tire_compound"]
+            if car88["pit_stops"] > 0:
+                car88_post_pit = True
 
             logger.info(
                 f"Lap {lap:2d}/{config.TOTAL_LAPS} | "
-                f"P{car44['position']:2d} | "
-                f"{car44['tire_compound']:6s} age {car44['tire_age_laps']:2d} | "
-                f"gap {car44['gap_to_leader_sec']:5.1f}s"
+                f"P{car88['position']:2d} | "
+                f"{car88['tire_compound']:6s} age {car88['tire_age_laps']:2d} | "
+                f"gap {car88['gap_to_leader_sec']:5.1f}s"
             )
 
-            # Produce race standings to MQ (all 22 cars)
-            standings = race.get_standings()
-            for standing in standings:
-                standing["event_time"] = int(datetime.now(timezone.utc).timestamp() * 1000)
-                md = pymqi.MD()
-                md.Format = pymqi.CMQC.MQFMT_RF_HEADER_2
-                md.Encoding = 273
-                md.CodedCharSetId = 1208
-                pmo = pymqi.PMO()
-                mq_topic.pub_rfh2(json.dumps(standing).encode("utf-8"), md, pmo, [rfh2])
+            # Produce race standings to Kafka (all 22 cars, keyed by car_number)
+            _produce_standings(producer, avro_serializer, standings_key_fn, race.get_standings())
 
             # Produce car telemetry to Kafka (multiple readings per lap)
             readings_per_lap = config.SECONDS_PER_LAP // config.TELEMETRY_INTERVAL_SEC
             for i in range(readings_per_lap):
                 telemetry = generate_telemetry(
                     lap=lap,
-                    tire_age=car44_tire_age,
-                    tire_compound=car44_tire_compound,
-                    post_pit=car44_post_pit,
+                    tire_age=car88_tire_age,
+                    tire_compound=car88_tire_compound,
+                    post_pit=car88_post_pit,
                 )
                 telemetry["car_number"] = config.OUR_CAR_NUMBER
                 telemetry["lap"] = lap
-                telemetry["event_time"] = int(datetime.now(timezone.utc).timestamp() * 1000)
+                telemetry["event_time"] = _now_millis()
 
-                producer.produce(
-                    config.KAFKA_TOPIC,
-                    key=str(config.OUR_CAR_NUMBER).encode("utf-8"),
-                    value=avro_serializer(
-                        telemetry,
-                        SerializationContext(config.KAFKA_TOPIC, MessageField.VALUE),
-                    ),
-                )
+                _produce_telemetry(producer, avro_serializer, telemetry)
                 producer.poll(0)
 
                 # Sleep between telemetry readings
@@ -233,14 +246,25 @@ def run_race():
                 time.sleep(remaining)
 
         logger.info("=== RACE COMPLETE ===")
-        car44_final = race.get_car(config.OUR_CAR_NUMBER)
-        logger.info(f"Car 44 final position: P{car44_final['position']}")
+        car88_final = race.get_car(config.OUR_CAR_NUMBER)
+        logger.info(f"Car 88 final position: P{car88_final['position']}")
 
     finally:
         producer.flush()
-        mq_topic.close()
-        qmgr.disconnect()
+
+
+def main():
+    """Run one race, or loop races back-to-back when RACE_LOOP=true."""
+    if not config.RACE_LOOP:
+        run_race()
+        return
+
+    logger.info(f"RACE_LOOP enabled — replaying races with {config.RESTART_DELAY_SEC}s between each.")
+    while True:
+        run_race()
+        logger.info(f"Race finished. Restarting in {config.RESTART_DELAY_SEC}s...")
+        time.sleep(config.RESTART_DELAY_SEC)
 
 
 if __name__ == "__main__":
-    run_race()
+    main()

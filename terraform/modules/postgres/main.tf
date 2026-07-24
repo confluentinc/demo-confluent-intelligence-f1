@@ -56,6 +56,7 @@ resource "aws_instance" "postgres" {
   # the 198-row driver_race_history seed exceeds that uncompressed).
   user_data = templatefile("${path.module}/user_data.sh", {
     driver_race_history_seed_b64 = base64gzip(file("${path.module}/../../../data/driver_race_history_seed.sql"))
+    max_replication_slots        = var.max_replication_slots
   })
 
   root_block_device {
