@@ -110,6 +110,10 @@ scripts/.race-task-arn
 # Storyboard / recording prep (local only)
 storyboard/
 
+# Local-only wsa spec variant (points terraform at a local path instead of the
+# remote repo) — keep on disk for local testing, never commit.
+wsa-spec-*-localtest.yaml
+
 # Logs
 *.log
 logs/

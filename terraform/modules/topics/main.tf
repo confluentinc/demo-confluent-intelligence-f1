@@ -7,7 +7,13 @@ terraform {
 }
 
 # Create car_telemetry topic via Flink CREATE TABLE
-# This auto-creates the backing Kafka topic + schema subjects
+# This auto-creates the backing Kafka topic + schema subjects.
+# IF NOT EXISTS is required for reliability at scale: the Confluent provider
+# intermittently "orphans" a statement under concurrent builds (the table is
+# created server-side but the resource errors out, leaving it absent from TF
+# state). Without IF NOT EXISTS every retry then fails with "table already
+# exists" and the account can never recover; with it, the retry is a
+# successful no-op so wsa's per-account retries self-heal the flaky create.
 resource "confluent_flink_statement" "create_car_telemetry_table" {
   organization {
     id = var.organization_id
@@ -30,7 +36,7 @@ resource "confluent_flink_statement" "create_car_telemetry_table" {
   }
 
   statement = <<-EOT
-    CREATE TABLE `car_telemetry` (
+    CREATE TABLE IF NOT EXISTS `car_telemetry` (
       `car_number` INT COMMENT 'Car number identifier',
       `lap` INT COMMENT 'Current lap number (1-60)',
       `tire_temp_fl_c` DOUBLE COMMENT 'Front-left tire temperature in Celsius',
@@ -100,7 +106,7 @@ resource "confluent_flink_statement" "create_race_standings_table" {
   }
 
   statement = <<-EOT
-    CREATE TABLE `race_standings` (
+    CREATE TABLE IF NOT EXISTS `race_standings` (
       `car_number` INT COMMENT 'Car number identifier',
       `driver` STRING COMMENT 'Driver full name',
       `team` STRING COMMENT 'Constructor team name',

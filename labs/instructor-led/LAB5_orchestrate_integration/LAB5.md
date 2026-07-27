@@ -23,11 +23,10 @@ UI and point it at a race-feed tool your instructor is hosting.
 - [LAB 4](../LAB4_streaming_agent/LAB4.md) — `car_state` and `pit_decisions` exist
   and a race is running, so the feed has tire/anomaly and pit-call data to post
   about. (Standings alone work even before LAB 3/4 — those fields just stay empty.)
-- An **IBM Cloud / watsonx Orchestrate** account (sign-up was a workshop
-  prerequisite — see [LAB 1](../LAB1_claim_account/LAB1.md)).
-- The **race-feed base URL**, on your credential card as `F1_SOCIAL_FEED_URL`
-  (your instructor can also share it directly). One shared service serves
-  everyone; you select your own race with your prefix.
+- **IBM watsonx Orchestrate access** — provided by your instructor during the
+  workshop; there's nothing to sign up for in advance.
+- The **race-feed base URL** — your instructor shares this. It's one shared
+  service that serves everyone; you select your own race with your prefix.
 
 > The canonical agent persona, instructions, and example prompts also live in
 > [`demo-reference/orchestrate_social_agent.md`](../../../demo-reference/orchestrate_social_agent.md).
@@ -37,11 +36,11 @@ UI and point it at a race-feed tool your instructor is hosting.
 ### Step 1: Add the race-feed tool
 
 In watsonx Orchestrate, open **Agent Builder** and go to **Tools → Add tool →
-Import from OpenAPI**. Give it the spec URL — your card's `F1_SOCIAL_FEED_URL`
-with `/openapi.json` appended:
+Import from OpenAPI**. Give it the spec URL — the **race-feed base URL** your
+instructor shared, with `/openapi.json` appended:
 
 ```
-<F1_SOCIAL_FEED_URL>/openapi.json
+<race-feed-base-url>/openapi.json
 ```
 
 Import the **`get_race_feed`** operation (`GET /race-feed/{prefix}`). It takes one

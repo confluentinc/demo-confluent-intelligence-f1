@@ -14,10 +14,9 @@ SQL shell, using a credential card your instructor gives you.
 3. Confirm your environment is live
 4. Open your live **Pit Wall** dashboard
 
-> **Prerequisite for LAB 5:** [LAB 5](../LAB5_orchestrate_integration/LAB5.md) uses
-> **IBM watsonx Orchestrate**. If you haven't already, create a free **IBM Cloud /
-> watsonx Orchestrate** account now so it's ready when you get there — sign-up can
-> take a few minutes to activate.
+> **Heads-up for LAB 5:** [LAB 5](../LAB5_orchestrate_integration/LAB5.md) uses
+> **IBM watsonx Orchestrate**. Your instructor provides access during the
+> workshop — there's nothing to sign up for or set up in advance.
 
 ## Steps
 
@@ -55,8 +54,11 @@ F1_COMPUTE_POOL_ID=lfcp-xxxxx
 F1_FLINK_API_KEY=...
 F1_FLINK_API_SECRET=...
 ... (Kafka + Schema Registry keys too)
-F1_SOCIAL_FEED_URL=https://...      # used in LAB 5 (watsonx Orchestrate)
 ```
+
+> **LAB 5** also needs a **race-feed base URL**, but that's *not* on your card —
+> it's one shared service your instructor gives you the URL for. See
+> [LAB 5](../LAB5_orchestrate_integration/LAB5.md).
 
 > Your prefix (`f1wp###` above) is unique to you. You never sign in with an
 > email and password — the keys in this file are your access.

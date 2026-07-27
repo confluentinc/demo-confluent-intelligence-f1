@@ -27,7 +27,7 @@ cloud: AWS
 # wsa's shared-infra apply only forwards cloud_region/owner_email/data-gen/
 # alert_email/run_id, so keep that Terraform default comfortably above this
 # number by hand if you run a larger workshop.
-account_count: 20
+account_count: 40
 
 # {N} is replaced with the account number (1..account_count).
 email_pattern: "dmarsh+f1wp{N}@confluent.io"

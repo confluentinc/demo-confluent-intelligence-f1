@@ -102,7 +102,7 @@ WHERE lap > 0;
 ```
 
 The shell will report the statement as **running** and print its name — this is a
-continuous job, so leave it running and open expectations for the next step.
+continuous job, so leave it running for the next step.
 
 ### Why it's built this way
 
@@ -131,11 +131,6 @@ to `true` and `tire_temp_fl_c` spikes to ~145°C. (Ctrl-C to stop the query.)
 > `ML_DETECT_ANOMALIES` needs ~20 data points before it fires, so it won't flag
 > the first laps. If `car_state` stays empty, see
 > [troubleshooting](../../shared/troubleshooting.md).
-
-> 🏁 **Check your Pit Wall.** Switch to the dashboard from LAB 1 — the
-> **ANOMALY DETECTION** panel has unlocked and is now live. Watch car #88's
-> front-left tyre climb over the laps and the panel flip to **⚠ ANOMALY** around
-> lap 32. You just brought that panel to life.
 
 ## Conclusion
 
