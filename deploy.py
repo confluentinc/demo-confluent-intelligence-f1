@@ -98,6 +98,8 @@ def main():
             if api_key and api_secret:
                 set_key(str(creds_file), "TF_VAR_confluent_cloud_api_key", api_key)
                 set_key(str(creds_file), "TF_VAR_confluent_cloud_api_secret", api_secret)
+                creds["TF_VAR_confluent_cloud_api_key"] = api_key
+                creds["TF_VAR_confluent_cloud_api_secret"] = api_secret
 
         print("\n--- Configuration ---\n")
         api_key = prompt_with_default("Confluent Cloud API Key", creds.get("TF_VAR_confluent_cloud_api_key", ""))
