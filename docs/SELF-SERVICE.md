@@ -24,8 +24,11 @@ Everything the labs touch is identical: the same topics (`car_telemetry`,
 ## Prerequisites
 
 - [`uv`](https://docs.astral.sh/uv/) and Terraform ≥ 1.3
-- The **Confluent CLI logged in** (`confluent login`) with rights to create an
-  environment, or a Confluent Cloud API key/secret with those rights
+- The **Confluent CLI** installed, with rights to create an environment (or a
+  Confluent Cloud API key/secret with those rights). You do not need to log in
+  first — the scripts prompt for your Confluent Cloud email/password once, save
+  them to the gitignored `credentials.env`, and re-authenticate automatically on
+  later runs. SSO accounts must log in manually with `confluent login --no-browser`.
 - **AWS Bedrock credentials** (an access key/secret with `bedrock:InvokeModel`).
   These are credentials only — no AWS infrastructure is created. Mint a
   least-privilege key with:

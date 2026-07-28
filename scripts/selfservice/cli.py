@@ -77,7 +77,7 @@ def _collect_config(creds_file, creds: dict, automated: bool) -> dict[str, str]:
 
     generate = input("\nGenerate new Confluent Cloud API keys? (y/n) [n]: ").strip().lower()
     if generate == "y":
-        if not ensure_confluent_login(creds):
+        if not ensure_confluent_login(creds, creds_file=creds_file, interactive=True):
             sys.exit(1)
         api_key, api_secret = generate_confluent_api_keys()
         if api_key and api_secret:

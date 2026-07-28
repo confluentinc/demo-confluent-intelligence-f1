@@ -57,7 +57,7 @@ def main():
 
     creds_file, creds = load_or_create_credentials_file(root)
 
-    if not ensure_confluent_login(creds):
+    if not ensure_confluent_login(creds, creds_file=creds_file, interactive=not args.automated):
         sys.exit(1)
     print("  Confluent CLI logged in")
 

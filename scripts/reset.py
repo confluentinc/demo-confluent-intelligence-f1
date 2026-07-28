@@ -167,7 +167,7 @@ def main() -> None:
     creds_file = root / "credentials.env"
     creds = dotenv_values(creds_file) if creds_file.exists() else {}
 
-    if not ensure_confluent_login(creds):
+    if not ensure_confluent_login(creds, creds_file=creds_file, interactive=True):
         sys.exit(1)
 
     for k, v in creds.items():
