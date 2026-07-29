@@ -20,7 +20,8 @@ FROM `pit_decisions`
 WHERE suggestion <> 'STAY OUT';
 ```
 
-Rows stream in roughly in lap order (`pit_decisions` is produced lap-by-lap), so
+Rows stream in roughly in lap order (`pit_decisions` follows `car_state`, which is
+produced window by window), so
 you'll see the `PIT SOON` warnings as the tire degrades, then the decisive
 `PIT NOW` at the anomaly around lap 32 — each with the agent's reasoning.
 

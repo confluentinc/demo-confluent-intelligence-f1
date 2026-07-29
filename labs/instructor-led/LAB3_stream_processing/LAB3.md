@@ -8,7 +8,7 @@ anomaly that signals a failing tire — using Flink's built-in `ML_DETECT_ANOMAL
 
 ### What you'll accomplish
 
-1. Tumble `car_telemetry` into 10-second windows (one row per lap)
+1. Tumble `car_telemetry` into 10-second windows
 2. Temporal-join with `race_standings` to add position, gaps, and tire context
 3. Run `ML_DETECT_ANOMALIES` on `tire_temp_fl_c`
 4. Produce the `car_state` table
@@ -125,11 +125,13 @@ SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
 FROM `car_state`;
 ```
 
-You should see one row per lap. Around **lap 32**, `anomaly_tire_temp_fl` flips
-to `true` and `tire_temp_fl_c` spikes to ~145°C. (Ctrl-C to stop the query.)
+You should see a row every 10 seconds — six per lap at the default 60s/lap pace.
+Around **lap 32**, `anomaly_tire_temp_fl` flips to `true` and `tire_temp_fl_c`
+spikes to ~145°C. (Ctrl-C to stop the query.)
 
-> `ML_DETECT_ANOMALIES` needs ~20 data points before it fires, so it won't flag
-> the first laps. If `car_state` stays empty, see
+> `ML_DETECT_ANOMALIES` needs 20 windows before it fires — 20 × 10 seconds, so
+> about 3½ minutes of live data — and it won't flag anything before then. If
+> `car_state` stays empty, see
 > [troubleshooting](../../shared/troubleshooting.md).
 
 ## Conclusion

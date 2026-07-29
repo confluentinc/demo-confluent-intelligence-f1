@@ -2,10 +2,11 @@
 
 ## Overview
 
-Now the payoff: an **AI Streaming Agent** evaluates `car_state` every lap and
-recommends `PIT NOW` / `PIT SOON` / `STAY OUT`, with a recommended compound and
-natural-language reasoning. The agent uses the pre-deployed `llm_textgen_model`
-(AWS Bedrock / Claude) — no connection setup required.
+Now the payoff: an **AI Streaming Agent** evaluates every `car_state` row — one per
+10-second window — and recommends `PIT NOW` / `PIT SOON` / `STAY OUT`, with a
+recommended compound and natural-language reasoning. The agent uses the
+pre-deployed `llm_textgen_model` (AWS Bedrock / Claude) — no connection setup
+required.
 
 ### What you'll accomplish
 
@@ -24,8 +25,8 @@ lap-32 anomaly.
 
 The agent's full prompt lives in
 [`demo-reference/streaming_agent_create_agent.sql`](../../../demo-reference/streaming_agent_create_agent.sql).
-Open it, copy the `CREATE AGENT` statement, and paste it into your `f1-sql` shell
-(end with `;`). It's a long prompt — paste the whole thing as one statement.
+Open it and paste the whole file into your `f1-sql` shell — comment header and
+all — as one statement, ending with `;`.
 
 The prompt pins the agent to a strict decision algorithm:
 
