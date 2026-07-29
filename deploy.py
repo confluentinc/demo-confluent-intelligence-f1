@@ -33,8 +33,31 @@ from scripts.common.login_checks import (
 from scripts.common.terraform import get_project_root, run_terraform_output
 from scripts.common.terraform_runner import run_terraform
 from scripts.common.ui import prompt_with_default
+from scripts.workshop import creds as creds_mod
 
 SHARED_PREFIX = "f1-workshop"
+
+# Credential cards for this flow land in runs/<RUN_NAME>/credentials/ (mirrors
+# `uv run selfservice up`, which writes to runs/selfservice/).
+RUN_NAME = "standalone"
+
+# Race pacing. terraform/aws defaults to 60 (a 60-lap race takes an hour, with
+# the lap-32 anomaly ~32 minutes in) because that's the right pace for an
+# instructor-led workshop. A standalone demo wants to reach the payoff sooner,
+# so prompt for it and default lower. Below ~10s/lap ML_DETECT_ANOMALIES can't
+# accumulate its 20 training windows before lap 32 and the anomaly never fires.
+DEFAULT_SECONDS_PER_LAP = "20"
+MIN_SECONDS_PER_LAP = 10
+
+
+def _seconds_per_lap_default(creds: dict) -> str:
+    """Pacing to use when the user doesn't pick one.
+
+    Precedence: an explicit TF_VAR_seconds_per_lap in the environment (so
+    `export TF_VAR_seconds_per_lap=15; uv run deploy` still works), then the
+    value saved in credentials.env, then the demo default.
+    """
+    return os.environ.get("TF_VAR_seconds_per_lap") or creds.get("TF_VAR_seconds_per_lap") or DEFAULT_SECONDS_PER_LAP
 
 
 def main():
@@ -82,6 +105,7 @@ def main():
         aws_bedrock_key = creds.get("TF_VAR_aws_bedrock_access_key", "")
         aws_bedrock_secret = creds.get("TF_VAR_aws_bedrock_secret_key", "")
         aws_session_token = creds.get("TF_VAR_aws_session_token", "")
+        seconds_per_lap = _seconds_per_lap_default(creds)
 
         missing = [
             k
@@ -126,6 +150,14 @@ def main():
         aws_bedrock_secret = prompt_with_default(
             "AWS Bedrock Secret Key", creds.get("TF_VAR_aws_bedrock_secret_key", "")
         )
+        while True:
+            seconds_per_lap = prompt_with_default(
+                f"Seconds per lap (60-lap race, so 20 = ~20 min; minimum {MIN_SECONDS_PER_LAP})",
+                _seconds_per_lap_default(creds),
+            )
+            if seconds_per_lap.isdigit() and int(seconds_per_lap) >= MIN_SECONDS_PER_LAP:
+                break
+            print(f"  Must be a whole number >= {MIN_SECONDS_PER_LAP}.")
         aws_session_token = ""
         if aws_bedrock_key.startswith("ASIA"):
             aws_session_token = prompt_with_default(
@@ -140,6 +172,7 @@ def main():
             "TF_VAR_prefix": prefix,
             "TF_VAR_aws_bedrock_access_key": aws_bedrock_key,
             "TF_VAR_aws_bedrock_secret_key": aws_bedrock_secret,
+            "TF_VAR_seconds_per_lap": seconds_per_lap,
         }.items():
             set_key(str(creds_file), k, v)
         if aws_session_token:
@@ -153,6 +186,7 @@ def main():
     print(f"  Prefix:   {prefix}")
     print(f"  CC Key:   {api_key[:8]}...")
     print(f"  Bedrock:  {aws_bedrock_key[:8]}..." if aws_bedrock_key else "  Bedrock:  (not set)")
+    print(f"  Pacing:   {seconds_per_lap}s/lap (~{60 * int(seconds_per_lap) // 60}-min race)")
     print("  Deploys:  aws-shared -> aws")
 
     if not args.automated:
@@ -193,6 +227,7 @@ def main():
         "TF_VAR_aws_bedrock_access_key": aws_bedrock_key,
         "TF_VAR_aws_bedrock_secret_key": aws_bedrock_secret,
         "TF_VAR_aws_session_token": aws_session_token,
+        "TF_VAR_seconds_per_lap": seconds_per_lap,
         "TF_VAR_shared_vpc_id": shared["vpc_id"],
         "TF_VAR_shared_subnet_ids": json.dumps(shared["subnet_ids"]),
         "TF_VAR_shared_postgres_host": shared["postgres_host"],
@@ -205,11 +240,27 @@ def main():
         print("\nAttendee deployment failed. Shared infra is still running — `uv run destroy` to clean up.")
         sys.exit(1)
 
+    # --- 3. Credential card ---
+    # f1-sql / f1-pitwall authenticate with a card, not a Confluent login, so
+    # write one here from the fresh outputs (same generator the workshop and
+    # self-service flows use, so the card format is identical everywhere).
+    attendee_out = run_terraform_output(attendee_path / "terraform.tfstate")
+    creds_dir = root / "runs" / RUN_NAME / "credentials"
+    creds_dir.mkdir(parents=True, exist_ok=True)
+    fields = creds_mod._card_fields(prefix, owner_email, attendee_out, social_feed_url="", region=region)
+    creds_mod._write_env(creds_dir, fields)
+    creds_mod._write_md(creds_dir, fields)
+    card = f"runs/{RUN_NAME}/credentials/{prefix}.env"
+
     print("\n=== Deployment Complete ===\n")
     print("The race simulator runs as an always-on ECS service (RACE_LOOP=true) — the feed is")
-    print("already live. View attendee credentials with:")
-    print("  cd terraform/aws && terraform output -json attendee_credentials")
-    print("\nTo tear down all resources:  uv run destroy")
+    print(f"already live. Your credential card:  {card}\n")
+    print("1. Open the SQL shell for the labs:")
+    print(f"     uv run f1-sql --creds {card}")
+    print("2. Open the live dashboard (second terminal):")
+    print(f"     uv run f1-pitwall --creds {card}")
+    print("\nWalkthrough: docs/STANDALONE-DEMO.md")
+    print("Tear down all resources:  uv run destroy")
 
 
 if __name__ == "__main__":
