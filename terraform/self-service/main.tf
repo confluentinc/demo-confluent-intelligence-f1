@@ -62,6 +62,13 @@ module "topics" {
   flink_api_key       = module.flink.flink_api_key
   flink_api_secret    = module.flink.flink_api_secret
   owner_email         = var.owner_email
+
+  # The value edges above reach only confluent_service_account.app, NOT the role
+  # bindings that give it authority. On destroy those edges reverse, so without
+  # this the role bindings and these statements become siblings and Terraform is
+  # free to revoke the principal's permissions first — then the statement delete
+  # fails 403 Forbidden. Same guard module.llm already carries below.
+  depends_on = [module.cluster]
 }
 
 # --- Stream Catalog tag on the raw ingest topic (LAB 2 catalog story) ---

@@ -11,6 +11,11 @@
 variable "prefix" {
   description = "Short per-attendee identifier (e.g. f1wp001). Namespaces the Confluent environment/cluster and the attendee's CDC slot + AWS resources."
   type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9]{1,12}$", var.prefix))
+    error_message = "prefix must be 1-12 alphanumeric characters (e.g. f1wp001). It is lowercased where AWS/Postgres require it."
+  }
 }
 
 variable "owner_email" {

@@ -10,6 +10,11 @@ variable "prefix" {
   description = "Short identifier that namespaces the Confluent environment/cluster (e.g. solo)."
   type        = string
   default     = "solo"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9]{1,12}$", var.prefix))
+    error_message = "prefix must be 1-12 alphanumeric characters (e.g. solo). It is lowercased where AWS/Postgres require it."
+  }
 }
 
 variable "owner_email" {

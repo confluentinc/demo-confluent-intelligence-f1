@@ -59,6 +59,13 @@ module "topics" {
   flink_api_key       = module.flink.flink_api_key
   flink_api_secret    = module.flink.flink_api_secret
   owner_email         = var.owner_email
+
+  # The value edges above reach only confluent_service_account.app, NOT the role
+  # bindings that give it authority. On destroy those edges reverse, so without
+  # this the role bindings and these statements become siblings and Terraform is
+  # free to revoke the principal's permissions first — then the statement delete
+  # fails 403 Forbidden. Same guard module.llm already carries below.
+  depends_on = [module.cluster]
 }
 
 # --- Stream Catalog tag on the raw ingest topic ---
@@ -165,8 +172,9 @@ resource "confluent_connector" "postgres_cdc" {
     "output.data.format"       = "JSON"
     "tasks.max"                = "1"
     # Per-attendee slot + publication so many connectors share one Postgres.
-    "slot.name"                   = "f1_cdc_${var.prefix}"
-    "publication.name"            = "f1_pub_${var.prefix}"
+    # Postgres slot/publication names only allow [a-z0-9_], so lowercase the prefix.
+    "slot.name"                   = "f1_cdc_${lower(var.prefix)}"
+    "publication.name"            = "f1_pub_${lower(var.prefix)}"
     "publication.autocreate.mode" = "filtered"
     # Strip "f1demo.public." prefix so the topic is just `driver_race_history`.
     "transforms"                        = "Reroute,Unwrap"
