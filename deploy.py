@@ -23,6 +23,7 @@ from dotenv import set_key
 from scripts.common.credentials import (
     generate_confluent_api_keys,
     load_or_create_credentials_file,
+    set_active_card,
 )
 from scripts.common.login_checks import (
     check_aws_configured,
@@ -252,13 +253,18 @@ def main():
     creds_mod._write_md(creds_dir, fields)
     card = f"runs/{RUN_NAME}/credentials/{prefix}.env"
 
+    # Point credentials.env at the new card so f1-sql / f1-pitwall find it with
+    # no flags, in any terminal — nothing for the user to export or remember.
+    set_active_card(root, root / card)
+
     print("\n=== Deployment Complete ===\n")
     print("The race simulator runs as an always-on ECS service (RACE_LOOP=true) — the feed is")
-    print(f"already live. Your credential card:  {card}\n")
+    print(f"already live. Your credential card:  {card}")
+    print("It's recorded as F1_CARD in credentials.env, so the tools below need no flags.\n")
     print("1. Open the SQL shell for the labs:")
-    print(f"     uv run f1-sql --creds {card}")
+    print("     uv run f1-sql")
     print("2. Open the live dashboard (second terminal):")
-    print(f"     uv run f1-pitwall --creds {card}")
+    print("     uv run f1-pitwall")
     print("\nWalkthrough: docs/STANDALONE-DEMO.md")
     print("Tear down all resources:  uv run destroy")
 

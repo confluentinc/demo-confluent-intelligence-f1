@@ -22,7 +22,7 @@ import os
 import sys
 from pathlib import Path
 
-from .credentials import load_or_create_credentials_file
+from .credentials import clear_active_card, load_or_create_credentials_file
 from .terraform import cleanup_terraform_artifacts, get_project_root, run_terraform_output
 from .terraform_runner import run_terraform_destroy
 
@@ -54,6 +54,14 @@ GROUPS = [
     ("deploy", ["aws", "aws-shared"], "single-environment demo (Confluent + Postgres/CDC/ECS)"),
     ("self-service", ["self-service"], "solo, Confluent-only (no AWS infra)"),
 ]
+
+# Which runs/ directory each tier's credential card lives in, so destroying a
+# tier can drop a now-dead F1_CARD pointer from credentials.env. `aws-shared`
+# owns no card. Must match RUN_NAME in deploy.py / scripts/selfservice/cli.py.
+TIER_RUN_DIRS = {
+    "aws": "standalone",
+    "self-service": "selfservice",
+}
 
 
 def _looks_like_workshop_shared(root: Path) -> bool:
@@ -179,6 +187,11 @@ def main():
             # Only wipe artifacts on success. Deleting state after a failed
             # destroy strands whatever Terraform did not delete.
             cleanup_terraform_artifacts(env_path)
+            # The environment behind this tier's card is gone — stop pointing
+            # the attendee tools at it. Scoped, so tearing down one deployment
+            # leaves another deployment's pointer alone.
+            if env in TIER_RUN_DIRS:
+                clear_active_card(root, only_if_under=root / "runs" / TIER_RUN_DIRS[env])
         else:
             failed.append(env)
             print(f"\nDestroy failed at {env} — state kept at {state_file}")

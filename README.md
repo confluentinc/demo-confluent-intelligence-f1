@@ -71,16 +71,19 @@ from the claim email:
 uv run f1-onboard   # prompts field-by-field, or --paste to parse a pasted email
 ```
 
-Either way, attendees run Flink SQL with their credential card:
+Either way, attendees run Flink SQL with their credential card. `f1-onboard` writes it
+to `./credentials.env`, which the tools pick up on their own:
 
 ```bash
-uv run f1-sql --creds runs/<name>/credentials/f1wp001.env   # or ./credentials.env from f1-onboard
+uv run f1-sql                                               # card found automatically
+uv run f1-sql --creds runs/<name>/credentials/f1wp001.env   # or name one explicitly
 ```
 
 ## Standalone demo (single environment)
 
 Provisions the shared layer and a single environment for one presenter or a quick
-smoke test.
+smoke test. End-to-end walkthrough (deploy → labs → teardown):
+**[docs/STANDALONE-DEMO.md](docs/STANDALONE-DEMO.md)**.
 
 ```bash
 uv run deploy              # prompts → credentials.env → terraform/aws-shared → terraform/aws
@@ -100,9 +103,9 @@ Flink `INSERT`, so setup takes ~5 minutes and needs no Docker or AWS infrastruct
 
 ```bash
 uv run selfservice up      # provision Confluent + write a credential card + seed data
-uv run f1-race --creds runs/selfservice/credentials/solo.env    # start the live feed
-uv run f1-sql  --creds runs/selfservice/credentials/solo.env    # run the labs
-uv run f1-pitwall --creds runs/selfservice/credentials/solo.env # live dashboard
+uv run f1-race             # start the live feed
+uv run f1-sql              # run the labs
+uv run f1-pitwall          # live dashboard
 uv run selfservice down    # tear it all down
 ```
 

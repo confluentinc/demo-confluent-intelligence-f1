@@ -69,8 +69,12 @@ From the workshop materials directory (your instructor will tell you where, or
 you'll be in a prepared environment already), run:
 
 ```bash
-uv run f1-sql --creds f1wp###.env
+uv run f1-sql
 ```
+
+The shell finds your card on its own — `f1-onboard` saves it as `credentials.env`,
+and a card file you were handed is picked up as long as it sits in the workshop
+directory. If you keep it somewhere else, name it: `uv run f1-sql --creds <path>`.
 
 You should see:
 
@@ -107,10 +111,10 @@ and return to the prompt.)
 ### Step 4: Open your Pit Wall dashboard
 
 Open a **second terminal** (keep `f1-sql` running in the first) and launch the
-live race dashboard with the same credential card:
+live race dashboard — it uses the same credential card:
 
 ```bash
-uv run f1-pitwall --creds f1wp###.env
+uv run f1-pitwall
 ```
 
 A browser opens at **http://localhost:8000** showing your race: a Silverstone

@@ -4,7 +4,7 @@ The self-service stand-in for the ECS Fargate simulator service in the AWS path.
 Maps the ``F1_*`` credential-card variables to the simulator's expected env
 (``datagen/config.py``) and runs it against the user's own Confluent cluster.
 
-  uv run f1-race --creds runs/selfservice/credentials/solo.env
+  uv run f1-race
   uv run f1-race --creds <card>.env --seconds-per-lap 60 --once
 """
 
@@ -13,9 +13,8 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from pathlib import Path
 
-from dotenv import dotenv_values
+from scripts.common.credentials import load_card
 
 
 def _strip_scheme(bootstrap: str) -> str:
@@ -25,7 +24,10 @@ def _strip_scheme(bootstrap: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the F1 race simulator locally from a credential card")
-    parser.add_argument("--creds", required=True, help="Path to your <prefix>.env credential card")
+    parser.add_argument(
+        "--creds",
+        help="Path to your <prefix>.env credential card (default: read from credentials.env)",
+    )
     parser.add_argument(
         "--seconds-per-lap",
         type=int,
@@ -35,10 +37,8 @@ def main() -> None:
     parser.add_argument("--once", action="store_true", help="Run a single race instead of looping continuously")
     args = parser.parse_args()
 
-    path = Path(args.creds)
-    if not path.exists():
-        sys.exit(f"Credential file not found: {path}")
-    card = dotenv_values(path)
+    path, card = load_card(args.creds)
+    print(f"Using credential card: {path}")
 
     def need(key: str) -> str:
         v = card.get(key)

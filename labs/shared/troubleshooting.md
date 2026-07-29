@@ -2,7 +2,9 @@
 
 ## `f1-sql` won't connect
 
-- Double-check you passed the right card: `uv run f1-sql --creds <your-prefix>.env`.
+- The shell prints which card it used, right under the `Connected` line — check it's
+  yours. If it says it found none (or more than one), name yours explicitly:
+  `uv run f1-sql --creds <your-prefix>.env`.
 - The card must contain `F1_FLINK_*`, `F1_ORGANIZATION_ID`, `F1_ENVIRONMENT_ID`,
   and `F1_COMPUTE_POOL_ID`. If a key is missing, ask your instructor to
   regenerate it (`uv run workshop creds`).
@@ -13,7 +15,7 @@
 
 The race simulator runs as an always-on service that replays the race
 back-to-back (`RACE_LOOP=true`). Between races there's a short pause, and laps
-arrive at the configured pace (default ~20s/lap). Re-run your `SELECT` after a
+arrive at the configured pace (default 60s/lap). Re-run your `SELECT` after a
 few seconds. If nothing arrives for several minutes, tell your instructor — they
 can check the simulator or restart all feeds with `uv run start-all-races`.
 

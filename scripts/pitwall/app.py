@@ -1,7 +1,8 @@
 """F1 Pit Wall — live race dashboard for workshop attendees.
 
-  uv run f1-pitwall --creds <prefix>.env          # live, from your own topics
-  uv run f1-pitwall --creds <prefix>.env --mock    # offline demo / dev (no Kafka)
+  uv run f1-pitwall                       # live, card resolved from credentials.env
+  uv run f1-pitwall --creds <prefix>.env  # live, from a specific card
+  uv run f1-pitwall --mock                # offline demo / dev (no Kafka)
 
 Starts a local web server, opens a browser, and streams the race — leaderboard,
 car #88 telemetry gauges, and (once you build them in LAB 3 / LAB 4) the anomaly
@@ -14,14 +15,12 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
 import threading
 import webbrowser
-from pathlib import Path
 
 import uvicorn
-from dotenv import dotenv_values
 
+from scripts.common.credentials import load_card
 from scripts.pitwall.server import create_app
 from scripts.pitwall.state import RaceState
 
@@ -31,7 +30,10 @@ logger = logging.getLogger("f1-pitwall")
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="F1 Pit Wall live dashboard (API-key access, no login)")
-    parser.add_argument("--creds", help="Path to your <prefix>.env credential card (required unless --mock)")
+    parser.add_argument(
+        "--creds",
+        help="Path to your <prefix>.env credential card (default: read from credentials.env)",
+    )
     parser.add_argument("--port", type=int, default=8000, help="Local port (default 8000)")
     parser.add_argument("--no-browser", action="store_true", help="Do not auto-open a browser")
     parser.add_argument("--mock", action="store_true", help="Offline demo feed — no Kafka / no Confluent env needed")
@@ -45,15 +47,8 @@ def main() -> None:
 
         feed = threading.Thread(target=run_mock, args=(state, stop), daemon=True)
     else:
-        if not args.creds:
-            sys.exit(
-                "--creds is required (or use --mock). "
-                "Example: uv run f1-pitwall --creds runs/<name>/credentials/f1wp001.env"
-            )
-        path = Path(args.creds)
-        if not path.exists():
-            sys.exit(f"Credential file not found: {path}")
-        creds = dotenv_values(path)
+        path, creds = load_card(args.creds)
+        logger.info("Using credential card: %s", path)
 
         from scripts.pitwall.consumer import run_consumer
 

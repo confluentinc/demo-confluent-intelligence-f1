@@ -52,28 +52,31 @@ topics, the Bedrock connections + LLM models, and an empty `driver_race_history`
 table), writes a credential card to `runs/selfservice/credentials/<prefix>.env`, and
 seeds the 198 historical rows into `driver_race_history` with a Flink `INSERT`.
 
+The card's path is recorded as `F1_CARD` in `credentials.env`, so the commands below
+find it on their own. Pass `--creds <path>` to override.
+
 ## 2. Start the live race feed
 
 Leave this running in its own terminal — it's the local stand-in for the ECS
 simulator:
 
 ```bash
-uv run f1-race --creds runs/selfservice/credentials/solo.env
+uv run f1-race
 ```
 
 By default it loops races back-to-back at 20 seconds per lap (~20-minute race). Tune
 it:
 
 ```bash
-uv run f1-race --creds runs/selfservice/credentials/solo.env --seconds-per-lap 60   # 60-min race
-uv run f1-race --creds runs/selfservice/credentials/solo.env --once                 # single race, no loop
+uv run f1-race --seconds-per-lap 60   # 60-min race
+uv run f1-race --once                 # single race, no loop
 ```
 
 ## 3. Run the labs
 
 ```bash
-uv run f1-sql     --creds runs/selfservice/credentials/solo.env   # Flink SQL shell
-uv run f1-pitwall --creds runs/selfservice/credentials/solo.env   # live dashboard → http://localhost:8000
+uv run f1-sql       # Flink SQL shell
+uv run f1-pitwall   # live dashboard → http://localhost:8000
 ```
 
 Confirm the environment is live:

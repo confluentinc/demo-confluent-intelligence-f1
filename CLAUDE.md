@@ -36,12 +36,14 @@ uv run workshop validate --creds-glob 'runs/*/credentials/*.env'   # API-key hea
 # Attendee, self-serve (wsa dispenser claim email -> local credentials.env)
 uv run f1-onboard                # prompts field-by-field, or --paste to parse a pasted email
 
-# Attendee (no Console login): run Flink SQL with a credential card
-uv run f1-sql --creds runs/<name>/credentials/f1wp001.env   # or ./credentials.env from f1-onboard
+# Attendee (no Console login): run Flink SQL with a credential card.
+# The card is resolved automatically — see "Credential card resolution" below.
+uv run f1-sql
+uv run f1-sql --creds runs/<name>/credentials/f1wp001.env   # override
 
 # Attendee: live race dashboard (consumes their own Kafka topics, no login)
-uv run f1-pitwall --creds runs/<name>/credentials/f1wp001.env   # → http://localhost:8000
-uv run f1-pitwall --mock                                        # offline demo/dev, no Confluent env
+uv run f1-pitwall                                           # → http://localhost:8000
+uv run f1-pitwall --mock                                    # offline demo/dev, no Confluent env
 
 # Organizer: shared race-feed service for LAB 5 (OpenAPI tool for watsonx Orchestrate)
 uv run f1-social-feed --creds-glob 'runs/*/credentials/*.env'   # → :8080, serves /race-feed/{prefix}
@@ -63,7 +65,7 @@ uv run destroy                 # pick which local deployment(s) to tear down, co
 uv run selfservice up          # apply terraform/self-service → credential card → seed driver_race_history
 uv run selfservice up --automated   # no prompts (reads credentials.env)
 uv run selfservice down        # tear down terraform/self-service
-uv run f1-race --creds runs/selfservice/credentials/solo.env   # local simulator (ECS stand-in)
+uv run f1-race                 # local simulator (ECS stand-in)
 
 # Control all attendee race feeds (ECS services)
 uv run start-all-races         # scale every attendee simulator to 1
@@ -231,7 +233,26 @@ Full technical discoveries: `docs/technical-discoveries.md`.
 
 | File | Purpose | Created by |
 |------|---------|------------|
-| `credentials.env` | Deploy secrets (TF_VAR_*) | `deploy.py` |
+| `credentials.env` | Deploy secrets (`TF_VAR_*`) + the `F1_CARD` pointer | `deploy.py` |
+| `runs/<name>/credentials/<prefix>.env` | Credential card (`F1_*`) — what the attendee tools authenticate with | `workshop creds`, `deploy.py`, `selfservice up` |
+
+### Credential card resolution
+
+`f1-sql` / `f1-pitwall` / `f1-race` no longer require `--creds`. `resolve_card()` in
+`scripts/common/credentials.py` picks the card, first hit wins:
+
+1. `--creds <path>`
+2. `$F1_CREDS`
+3. `credentials.env` — its `F1_CARD=<path>` pointer (skipped if the target is gone), or
+   the file itself when it holds `F1_*` keys (what `f1-onboard` writes)
+4. the only card under `runs/*/credentials/*.env`
+
+Ambiguity is an error, never a guess: several cards and no pointer exits listing them.
+`deploy.py` and `selfservice up` call `set_active_card()`; `destroy` and
+`selfservice down` call `clear_active_card(only_if_under=...)`, scoped so tearing down
+one deployment leaves another's pointer alone. The organizer fan-out tools
+(`f1-social-feed`, `f1-social-feed-rtce`, `workshop validate`) deliberately keep
+explicit `--creds` / `--creds-glob` — operating over many cards is their whole job.
 
 Gitignored. Do not commit. The `aws` tier's flat outputs (`environment_id`,
 `kafka_api_key`, `sr_api_key`, ...) are what `wsa-spec-aws.yaml`'s

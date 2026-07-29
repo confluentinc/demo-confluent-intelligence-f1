@@ -20,7 +20,12 @@ import sys
 
 from dotenv import dotenv_values, set_key
 
-from scripts.common.credentials import generate_confluent_api_keys, load_or_create_credentials_file
+from scripts.common.credentials import (
+    clear_active_card,
+    generate_confluent_api_keys,
+    load_or_create_credentials_file,
+    set_active_card,
+)
 from scripts.common.login_checks import check_terraform_installed, ensure_confluent_login
 from scripts.common.terraform import cleanup_terraform_artifacts, get_project_root, run_terraform_output
 from scripts.common.terraform_runner import run_terraform, run_terraform_destroy
@@ -189,7 +194,10 @@ def up(args: argparse.Namespace) -> None:
     creds_mod._write_env(creds_dir, fields)
     creds_mod._write_md(creds_dir, fields)
     card_path = creds_dir / f"{cfg['prefix']}.env"
-    print(f"\nCredential card: {card_path}")
+    # Point credentials.env at the new card so f1-race / f1-sql / f1-pitwall
+    # find it with no flags, in any terminal.
+    set_active_card(root, card_path)
+    print(f"\nCredential card: {card_path}  (recorded as F1_CARD in credentials.env)")
 
     # Seed driver_race_history (once — the topic is append-only).
     marker = run_root / ".seeded"
@@ -204,14 +212,13 @@ def up(args: argparse.Namespace) -> None:
         else:
             print("  seeding failed — re-run `uv run selfservice up` to retry.")
 
-    rel = f"runs/{RUN_NAME}/credentials/{cfg['prefix']}.env"
     print("\n=== Ready ===\n")
     print("1. Start the live race feed (leave running in its own terminal):")
-    print(f"     uv run f1-race --creds {rel}")
+    print("     uv run f1-race")
     print("2. Open the SQL shell for the labs:")
-    print(f"     uv run f1-sql --creds {rel}")
+    print("     uv run f1-sql")
     print("3. Open the live dashboard:")
-    print(f"     uv run f1-pitwall --creds {rel}")
+    print("     uv run f1-pitwall")
     print("\nWork through labs/instructor-led: LAB 1 → LAB 4, then LAB 6.")
     print("Optional LAB 5 (watsonx Orchestrate) — see docs/SELF-SERVICE.md.")
     print("\nTear down when finished:  uv run selfservice down")
@@ -239,6 +246,7 @@ def down(args: argparse.Namespace) -> None:
         # therefore all topics + subjects), so no separate SR cleanup is needed.
         marker = root / "runs" / RUN_NAME / ".seeded"
         marker.unlink(missing_ok=True)
+        clear_active_card(root, only_if_under=root / "runs" / RUN_NAME)
         # Clean slate: no state, no .terraform, no lock left behind. Only on
         # success — keeping state after a failure is what makes a retry possible.
         cleanup_terraform_artifacts(ss_path)

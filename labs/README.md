@@ -20,7 +20,7 @@ Instead you get a **credential card** (a small `.env` file) and run Flink SQL
 through the workshop's command-line shell:
 
 ```bash
-uv run f1-sql --creds <your-prefix>.env
+uv run f1-sql
 ```
 
 Labs 1–4 happen in that shell; LAB 5 is a no-code agent you build in the IBM

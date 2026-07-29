@@ -1,5 +1,6 @@
 """Attendee Flink SQL shell — the no-login access surface.
 
+  uv run f1-sql                      # card resolved from credentials.env
   uv run f1-sql --creds <prefix>.env
 
 Authenticates to the attendee's Flink compute pool with their API keys (from the
@@ -14,14 +15,13 @@ submitted and left running. Meta-commands: \\help, \\q.
 from __future__ import annotations
 
 import argparse
-import sys
 import time
-from pathlib import Path
 
 import requests
-from dotenv import dotenv_values
 from rich.console import Console
 from rich.table import Table
+
+from scripts.common.credentials import load_card
 
 console = Console()
 
@@ -229,14 +229,14 @@ def repl(session: FlinkSession) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="F1 workshop Flink SQL shell (API-key access, no login)")
-    parser.add_argument("--creds", required=True, help="Path to your <prefix>.env credential card")
+    parser.add_argument(
+        "--creds",
+        help="Path to your <prefix>.env credential card (default: read from credentials.env)",
+    )
     parser.add_argument("--exec", help="Run a single statement and exit (non-interactive)")
     args = parser.parse_args()
 
-    path = Path(args.creds)
-    if not path.exists():
-        sys.exit(f"Credential file not found: {path}")
-    creds = dotenv_values(path)
+    path, creds = load_card(args.creds)
     session = FlinkSession(creds)
 
     if args.exec:
@@ -245,6 +245,7 @@ def main() -> None:
         run_statement(session, args.exec.strip().rstrip(";").strip())
     else:
         console.print(f"[green]Connected[/green] to {session.catalog} / {session.database}")
+        console.print(f"[dim]card: {path}[/dim]")
         repl(session)
 
 
