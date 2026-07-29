@@ -326,8 +326,12 @@ All of these run from the repo root.
 **Watch the simulator logs**
 
 ```bash
-aws logs tail "$(cd terraform/aws && terraform output -raw ecs_log_group)" --follow
+aws logs tail --region us-east-1 "$(cd terraform/aws && terraform output -raw ecs_log_group)" --follow
 ```
+
+The demo always deploys to **us-east-1**, so pass `--region` explicitly — if your AWS
+CLI defaults elsewhere the command finds nothing and says the log group doesn't exist.
+(`start-all-races` / `stop-all-races` already default to us-east-1.)
 
 **Pause / resume the race feed**
 
