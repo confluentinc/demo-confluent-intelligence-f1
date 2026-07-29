@@ -70,7 +70,11 @@ uv run f1-race                 # local simulator (ECS stand-in)
 # Control all attendee race feeds (ECS services)
 uv run start-all-races         # scale every attendee simulator to 1
 uv run stop-all-races          # scale every attendee simulator to 0
-uv run reset                   # clear one attendee's lab objects (car_state, pit_decisions, agent)
+uv run reset                   # blank slate for a new race: drops lab objects (car_state,
+                               #   pit_decisions, agent) AND truncates car_telemetry so LAB 3
+                               #   doesn't replay finished races. race_standings is compacted,
+                               #   so it can't be truncated (harmless — see scripts/reset.py).
+                               #   --keep-source skips the truncation.
 
 uv run api-keys create         # Create AWS IAM user + keys for Bedrock access
 
@@ -305,7 +309,7 @@ same applies to `demo-reference/orchestrate_social_agent.md` ↔ the LAB 5 guide
 | File | Purpose |
 |------|---------|
 | `deploy.py` | Standalone two-tier deploy (shared + one attendee) |
-| `scripts/reset.py` | Clear an attendee's lab objects |
+| `scripts/reset.py` | Clear an attendee's lab objects + truncate source topics |
 | `scripts/pitwall/` | `f1-pitwall` live web dashboard — Kafka consumer → FastAPI/websocket → animated browser view; progressive reveal of LAB 3/4 panels; `--mock` offline feed |
 | `scripts/social_feed/` | `f1-social-feed` shared HTTP service for LAB 5 — tails each attendee's Kafka topics, serves `GET /race-feed/{prefix}` + auto OpenAPI spec for the watsonx Orchestrate tool; reuses pitwall consumer; `--mock` offline feed |
 | `scripts/social_feed_rtce/` | `f1-social-feed-rtce` — same OpenAPI tool, but an MCP client to the Real-Time Context Engine (RTCE) instead of Kafka. Reuses `social_feed`'s `FeedState`+`create_app`; new bits are the RTCE MCP client + poller. Global API key via `RTCE_API_KEY/SECRET`; per-attendee endpoint from card `F1_RTCE_MCP_ENDPOINT`; `--probe` validates the live contract |

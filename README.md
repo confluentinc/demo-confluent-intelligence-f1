@@ -120,5 +120,6 @@ automatically. To pause or synchronously restart everyone:
 ```bash
 uv run stop-all-races    # scale every simulator to 0
 uv run start-all-races   # scale every simulator back to 1
-uv run reset             # clear lab objects (car_state, pit_decisions, agent)
+uv run reset             # blank slate: drop lab objects + clear car_telemetry
+                         #   (--keep-source to leave the race data in place)
 ```

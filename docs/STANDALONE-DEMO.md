@@ -341,11 +341,24 @@ uv run start-all-races    # scale it back to 1 (restarts the race from lap 0)
 ```
 
 **Start the labs over** — drops `car_state`, `pit_decisions`, and the agent, plus their
-topics and Schema Registry subjects:
+topics and Schema Registry subjects, and clears the race data out of `car_telemetry`:
 
 ```bash
+uv run stop-all-races    # so nothing is producing while you clear
 uv run reset
+uv run start-all-races   # fresh race from lap 0
 ```
+
+Clearing `car_telemetry` matters more than it looks. The simulator loops races back to
+back, so the topic accumulates finished races — and LAB B reads what's already there.
+Re-run it against a full topic and `car_state` sprints through several old races in
+under a minute, surfacing the lap-32 anomaly immediately instead of when the live race
+reaches it. Pass `--keep-source` if you *want* that history retained.
+
+`race_standings` is compacted, so Kafka won't let its records be deleted; `reset` says
+so and moves on. It's harmless — the topic keeps only the latest row per car, lap 0 of
+the next race overwrites all 22, and the temporal join resolves by event time, so a
+finished race's rows can never be matched to newer telemetry.
 
 Or by hand in the shell:
 

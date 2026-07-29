@@ -98,8 +98,10 @@ Then work through the guides under [`labs/`](../labs/README.md):
 - **LAB 6** — wrap-up queries over `pit_decisions`.
 
 To re-run the stream-processing labs from scratch, `uv run reset` clears the lab
-objects (`car_state`, `pit_decisions`, `pit_strategy_agent`) while your feed keeps
-running.
+objects (`car_state`, `pit_decisions`, `pit_strategy_agent`) and empties
+`car_telemetry`, so LAB 3 sees only the race you run next rather than replaying
+finished ones. Stop `f1-race` first, reset, then start it again. `--keep-source`
+leaves the accumulated race data in place.
 
 ## LAB 5 (optional) — watsonx Orchestrate social agent
 
