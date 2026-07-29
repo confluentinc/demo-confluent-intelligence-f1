@@ -37,6 +37,11 @@ resource "null_resource" "docker_build_push" {
 
   provisioner "local-exec" {
     command = <<-EOT
+      set -e
+      if ! docker info >/dev/null 2>&1; then
+        echo "Error: Docker is not ready. Start Docker Desktop or Colima, verify with 'docker info', then retry." >&2
+        exit 1
+      fi
       aws ecr get-login-password --region ${var.region} | \
         docker login --username AWS --password-stdin ${aws_ecr_repository.simulator.repository_url}
       docker build --platform linux/amd64 -t ${aws_ecr_repository.simulator.repository_url}:${local.image_tag} ${local.datagen_path}

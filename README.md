@@ -85,7 +85,8 @@ smoke test.
 ```bash
 uv run deploy              # prompts → credentials.env → terraform/aws-shared → terraform/aws
 uv run deploy --automated  # same, no prompts (reads credentials.env)
-uv run destroy             # tear down terraform/aws then terraform/aws-shared
+uv run destroy             # pick which local deployment(s) to tear down, then destroy
+                           # (workshop teardown is `wsa clean`, not this script)
 ```
 
 ## Self-service (solo)

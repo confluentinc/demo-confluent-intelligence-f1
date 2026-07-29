@@ -5,6 +5,7 @@ Provides functions for:
 - Checking Confluent CLI login status
 - Keeping the Confluent CLI session alive (prompt once, then auto-login)
 - Checking AWS CLI configuration
+- Checking Docker daemon availability
 - Checking Terraform installation
 """
 
@@ -139,6 +140,15 @@ def check_terraform_installed() -> bool:
         subprocess.run(["terraform", "version"], capture_output=True, text=True, check=True)
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
+def check_docker_running() -> bool:
+    """Return True when the Docker CLI can reach a running Docker daemon."""
+    try:
+        result = subprocess.run(["docker", "info"], capture_output=True, text=True, timeout=10)
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
 

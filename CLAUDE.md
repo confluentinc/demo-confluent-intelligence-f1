@@ -53,7 +53,11 @@ RTCE_API_KEY=... RTCE_API_SECRET=... uv run f1-social-feed-rtce --probe --creds 
 # Organizer: single environment (smoke test / demo) — shared then attendee
 uv run deploy                  # prompts → credentials.env → terraform/aws-shared → terraform/aws
 uv run deploy --automated      # same, no prompts (reads credentials.env)
-uv run destroy                 # tear down terraform/aws then terraform/aws-shared
+uv run destroy                 # pick which local deployment(s) to tear down, confirm, destroy
+                               #   groups: "deploy" (aws + aws-shared) / "self-service"
+                               #   A wsa workshop is unreachable (wsa keeps state in its own
+                               #   run dir) — tear one down with `wsa clean`. Hand-applied
+                               #   aws-shared state IS reachable, behind a typed confirmation.
 
 # Self-service (solo): Confluent-only, NO AWS infra (no Postgres/CDC/ECS/ECR/Docker)
 uv run selfservice up          # apply terraform/self-service → credential card → seed driver_race_history

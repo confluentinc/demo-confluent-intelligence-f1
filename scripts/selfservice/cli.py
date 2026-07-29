@@ -22,7 +22,7 @@ from dotenv import dotenv_values, set_key
 
 from scripts.common.credentials import generate_confluent_api_keys, load_or_create_credentials_file
 from scripts.common.login_checks import check_terraform_installed, ensure_confluent_login
-from scripts.common.terraform import get_project_root, run_terraform_output
+from scripts.common.terraform import cleanup_terraform_artifacts, get_project_root, run_terraform_output
 from scripts.common.terraform_runner import run_terraform, run_terraform_destroy
 from scripts.common.ui import prompt_with_default
 from scripts.selfservice.seed import seed_driver_race_history
@@ -55,6 +55,25 @@ def _tf_env(cfg: dict[str, str]) -> dict[str, str]:
     if cfg.get("aws_session_token"):
         env["TF_VAR_aws_session_token"] = cfg["aws_session_token"]
     return env
+
+
+def export_selfservice_tf_env(creds: dict) -> None:
+    """Export the TF_VAR_* set the self-service tier needs, from credentials.env.
+
+    Terraform evaluates the config even on destroy, so teardown needs the same
+    variables as apply. Shared by `selfservice down` and `uv run destroy`.
+    """
+    cfg = {
+        "prefix": creds.get("TF_VAR_prefix", "") or "solo",
+        "owner_email": creds.get("TF_VAR_owner_email", ""),
+        "api_key": creds.get("TF_VAR_confluent_cloud_api_key", ""),
+        "api_secret": creds.get("TF_VAR_confluent_cloud_api_secret", ""),
+        "aws_bedrock_key": creds.get("TF_VAR_aws_bedrock_access_key", ""),
+        "aws_bedrock_secret": creds.get("TF_VAR_aws_bedrock_secret_key", ""),
+        "aws_session_token": creds.get("TF_VAR_aws_session_token", ""),
+    }
+    for k, v in _tf_env(cfg).items():
+        os.environ[k] = v
 
 
 def _collect_config(creds_file, creds: dict, automated: bool) -> dict[str, str]:
@@ -209,17 +228,7 @@ def down(args: argparse.Namespace) -> None:
         return
 
     # Destroy needs the same TF_VARs as apply (provider creds + required inputs).
-    cfg = {
-        "prefix": creds.get("TF_VAR_prefix", "") or "solo",
-        "owner_email": creds.get("TF_VAR_owner_email", ""),
-        "api_key": creds.get("TF_VAR_confluent_cloud_api_key", ""),
-        "api_secret": creds.get("TF_VAR_confluent_cloud_api_secret", ""),
-        "aws_bedrock_key": creds.get("TF_VAR_aws_bedrock_access_key", ""),
-        "aws_bedrock_secret": creds.get("TF_VAR_aws_bedrock_secret_key", ""),
-        "aws_session_token": creds.get("TF_VAR_aws_session_token", ""),
-    }
-    for k, v in _tf_env(cfg).items():
-        os.environ[k] = v
+    export_selfservice_tf_env(creds)
 
     if not args.yes and input("Destroy the self-service Confluent environment? (y/n): ").strip().lower() != "y":
         print("Cancelled.")
@@ -230,9 +239,13 @@ def down(args: argparse.Namespace) -> None:
         # therefore all topics + subjects), so no separate SR cleanup is needed.
         marker = root / "runs" / RUN_NAME / ".seeded"
         marker.unlink(missing_ok=True)
+        # Clean slate: no state, no .terraform, no lock left behind. Only on
+        # success — keeping state after a failure is what makes a retry possible.
+        cleanup_terraform_artifacts(ss_path)
         print("\n=== Teardown complete ===")
     else:
-        print("\nTeardown failed — inspect terraform/self-service and retry.")
+        print(f"\nTeardown failed — state kept at {ss_path / 'terraform.tfstate'}")
+        print("Inspect terraform/self-service and re-run `uv run selfservice down`.")
         sys.exit(1)
 
 

@@ -26,6 +26,7 @@ from scripts.common.credentials import (
 )
 from scripts.common.login_checks import (
     check_aws_configured,
+    check_docker_running,
     check_terraform_installed,
     ensure_confluent_login,
 )
@@ -54,6 +55,12 @@ def main():
         print("Error: Terraform not found. Install from https://developer.hashicorp.com/terraform/install")
         sys.exit(1)
     print("  Terraform installed")
+
+    if not check_docker_running():
+        print("\nError: Docker is not ready.")
+        print("Start Docker Desktop or run `colima start`, then verify with: docker info")
+        sys.exit(1)
+    print("  Docker running")
 
     creds_file, creds = load_or_create_credentials_file(root)
 
