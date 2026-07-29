@@ -32,6 +32,29 @@ KEEP_PREFIXES = ("CREATE", "INSERT", "DROP", "ALTER")
 MAX_STREAM_ROWS = 50
 
 
+def is_durable(sql: str) -> bool:
+    """True if the statement creates something and should be left running.
+
+    Classifies on the first *keyword*, not the first character: every file in
+    ``demo-reference/`` opens with a ``--`` header, and pasting one whole (or
+    piping it through ``--exec``) must not make a ``CREATE TABLE`` look like a
+    throwaway SELECT — that would delete the job moments after submitting it.
+    Leading line and block comments are skipped for this check only; the SQL
+    itself is still sent to Flink verbatim.
+    """
+    rest = sql.lstrip()
+    while rest:
+        if rest.startswith("--"):
+            _, _, rest = rest.partition("\n")
+            rest = rest.lstrip()
+        elif rest.startswith("/*"):
+            _, _, rest = rest.partition("*/")
+            rest = rest.lstrip()
+        else:
+            break
+    return rest.upper().startswith(KEEP_PREFIXES)
+
+
 class FlinkSession:
     def __init__(self, creds: dict[str, str]):
         try:
@@ -125,7 +148,7 @@ def _columns(status: dict) -> list[str]:
 
 
 def run_statement(session: FlinkSession, sql: str) -> None:
-    keep = sql.lstrip().upper().startswith(KEEP_PREFIXES)
+    keep = is_durable(sql)
     try:
         name = session.submit(sql)
     except RuntimeError as e:
@@ -194,7 +217,10 @@ def repl(session: FlinkSession) -> None:
             console.print(HELP)
             continue
         buffer.append(line)
-        if stripped.endswith(";"):
+        # A ';' inside a comment doesn't end a statement — demo-reference SQL has
+        # commented-out blocks whose lines end in ');', and treating those as
+        # terminators would submit the header alone and mangle the real statement.
+        if stripped.endswith(";") and not stripped.startswith("--"):
             sql = "\n".join(buffer).strip().rstrip(";").strip()
             buffer = []
             if sql:
@@ -214,7 +240,9 @@ def main() -> None:
     session = FlinkSession(creds)
 
     if args.exec:
-        run_statement(session, args.exec.rstrip(";"))
+        # rstrip whitespace first: piping a .sql file in leaves a trailing
+        # newline after the ';', which a bare rstrip(";") would not remove.
+        run_statement(session, args.exec.strip().rstrip(";").strip())
     else:
         console.print(f"[green]Connected[/green] to {session.catalog} / {session.database}")
         repl(session)
