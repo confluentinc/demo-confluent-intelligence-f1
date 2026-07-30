@@ -331,23 +331,43 @@ aws logs tail --region us-east-1 "$(cd terraform/aws && terraform output -raw ec
 
 The demo always deploys to **us-east-1**, so pass `--region` explicitly — if your AWS
 CLI defaults elsewhere the command finds nothing and says the log group doesn't exist.
-(`start-all-races` / `stop-all-races` already default to us-east-1.)
+(`start-all-races`, `stop-all-races`, and `reset` already default to us-east-1.)
 
-**Pause / resume the race feed**
+**Pause / resume the race feed** — leaves your Flink jobs and all accumulated data alone:
 
 ```bash
 uv run stop-all-races     # scale the simulator to 0
 uv run start-all-races    # scale it back to 1 (restarts the race from lap 0)
 ```
 
-**Start the labs over** — drops `car_state`, `pit_decisions`, and the agent, plus their
-topics and Schema Registry subjects, and clears the race data out of `car_telemetry`:
+These are the instructor fan-out commands — they scale *every* `river-racing*` simulator in
+the AWS account. In a standalone deploy that's just yours. Your Flink jobs keep running
+across the pause, and the simulator restarts at lap 0, so `car_state` and `pit_decisions`
+just get a second pass over laps 1–60 — including a second lap-32 anomaly. That's fine for
+a re-demo. Use the reset below when you want a genuinely clean run.
+
+**Start the demo over** — one command, nothing to sequence:
 
 ```bash
-uv run stop-all-races    # so nothing is producing while you clear
-uv run reset
-uv run start-all-races   # fresh race from lap 0
+uv run reset --with-labs
 ```
+
+It stops the simulator, drops `car_state` / `pit_decisions` / the agent along with their
+topics and Schema Registry subjects, clears the race data out of `car_telemetry`,
+rebuilds all three lab objects from `demo-reference/`, and starts a fresh race from lap
+0. When it prints `Environment is ready`, everything in this walkthrough exists and is
+running.
+
+The lab objects have to be rebuilt because `reset` drops them — they're created by the
+LAB B/C statements you ran, not by Terraform. Plain `uv run reset` leaves them dropped on
+purpose: in the instructor-led workshop, building them *is* LAB 3 and LAB 4.
+
+> The rebuild happens *before* the race restarts, not after — and the order matters
+> because of `race_standings`, not the telemetry. `car_telemetry` sets
+> `scan.startup.mode=earliest-offset` at the table level, so LAB B replays it from the
+> start either way. `race_standings` doesn't, so it starts from `latest`: any standings
+> row produced before the LAB B statement is `RUNNING` is never seen, those laps have no
+> version for the temporal join to match, and `car_state` silently loses its first laps.
 
 Clearing `car_telemetry` matters more than it looks. The simulator loops races back to
 back, so the topic accumulates finished races — and LAB B reads what's already there.
@@ -360,7 +380,8 @@ so and moves on. It's harmless — the topic keeps only the latest row per car, 
 the next race overwrites all 22, and the temporal join resolves by event time, so a
 finished race's rows can never be matched to newer telemetry.
 
-Or by hand in the shell:
+Or drop them by hand in the shell — but then re-run the LAB B and LAB C `--exec` commands
+from §4 and §5, in that order, or `pit_decisions` won't validate:
 
 ```sql
 DROP TABLE IF EXISTS `pit_decisions`;
@@ -408,6 +429,11 @@ re-deploy, or point at the right card with `--creds <path>`.
 **`No credential card found` / `Multiple credential cards found`.** The tools read
 `F1_CARD` from `credentials.env`; `uv run deploy` sets it. Re-run the deploy, or pass
 `--creds runs/standalone/credentials/<prefix>.env` for one command.
+
+**`Table (or view) 'pit_decisions' does not exist`** (or the same for `car_state`).
+Nothing created it yet. Both tables come from the LAB B/C statements — not Terraform — so
+they're gone after `uv run reset`, which drops them by design. Rebuild everything with
+`uv run reset --with-labs`, or re-run the `--exec` commands from §4 and §5 in order.
 
 **`car_state` is empty.** Almost always the `ML_DETECT_ANOMALIES` warmup — it needs 20
 × 10-second windows (~3.5 min of live data). If it's still empty after 5 minutes, check

@@ -39,6 +39,7 @@ from dotenv import dotenv_values
 
 from scripts.common.login_checks import ensure_confluent_login
 from scripts.common.terraform import get_project_root, run_terraform_output
+from scripts.instructor._common import DEFAULT_REGION
 
 # Topics created by attendees while running the labs — deleted only (they are
 # recreated when the attendee re-runs the Flink jobs).
@@ -54,6 +55,15 @@ LAB_DROPS = [
     ("drop-car-state",     "DROP TABLE IF EXISTS `car_state`"),
     ("drop-pit-decisions", "DROP TABLE IF EXISTS `pit_decisions`"),
     ("drop-pit-agent",     "DROP AGENT IF EXISTS `pit_strategy_agent`"),
+]
+
+# The canonical lab SQL, rebuilt by --with-labs. Dependency-ordered: pit_decisions
+# validates against both `car_state` and `pit_strategy_agent`, so a failure part-way
+# through stops the rest (there is nothing useful to submit after a broken link).
+LAB_BUILDS = [
+    ("enrichment_anomaly.sql",             "car_state"),
+    ("streaming_agent_create_agent.sql",   "pit_strategy_agent"),
+    ("streaming_agent_pit_decisions.sql",  "pit_decisions"),
 ]
 
 
@@ -269,12 +279,137 @@ def drop_flink_objects(tf: dict, drops: list) -> None:
             print(f"  {sql}: {e}")
 
 
+def _ecs_service(tf: dict, region: str):
+    """This deployment's own ECS client + cluster/service names.
+
+    Deliberately *not* `scale_all_services()` from scripts/instructor/_common.py:
+    that fans out over every `river-racing*` cluster in the AWS account, so using
+    it here would stop and restart all twenty attendees' feeds when an instructor
+    resets one environment mid-workshop. reset is single-environment; the
+    instructor fan-out helper is not.
+    """
+    import boto3
+
+    return boto3.client("ecs", region_name=region), tf["ecs_cluster_name"], tf["ecs_service_name"]
+
+
+def scale_simulator(tf: dict, region: str, count: int) -> bool:
+    """Scale this deployment's simulator service. Returns False if it couldn't."""
+    try:
+        ecs, cluster, service = _ecs_service(tf, region)
+        ecs.update_service(cluster=cluster, service=service, desiredCount=count)
+        print(f"  {cluster}/{service}: desiredCount -> {count}")
+        return True
+    except KeyError as e:
+        print(f"  Skipped: no {e} in Terraform state (re-run `uv run deploy` to refresh outputs).")
+        return False
+    except Exception as e:
+        print(f"  Could not scale the simulator: {e}")
+        return False
+
+
+def wait_for_drain(tf: dict, region: str, timeout: int = 180) -> None:
+    """Block until the simulator has no running task.
+
+    Truncating while it produces is pointless — records land again the moment
+    delete_records returns — so the stop has to actually finish before step 4.
+    """
+    try:
+        ecs, cluster, service = _ecs_service(tf, region)
+    except Exception:
+        return
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            services = ecs.describe_services(cluster=cluster, services=[service]).get("services", [])
+        except Exception as e:
+            print(f"  Could not confirm the simulator stopped: {e}")
+            return
+        if not services or services[0].get("runningCount", 0) == 0:
+            print("  Simulator stopped.")
+            return
+        time.sleep(5)
+    print("  Warning: simulator task still running after waiting — the source topics may")
+    print("  not stay empty. Check `uv run stop-all-races` and re-run.")
+
+
+def flink_session(tf: dict):
+    """A FlinkSession built from the per-attendee Terraform outputs.
+
+    Not `load_card()`: the credential card is resolved from credentials.env and
+    could point at a different environment than the state file the rest of this
+    reset operates on. Both halves must act on exactly one environment.
+    """
+    from scripts.workshop.sql_shell import FlinkSession
+
+    return FlinkSession(
+        {
+            "F1_FLINK_REST_ENDPOINT": tf["flink_rest_endpoint"],
+            "F1_ORGANIZATION_ID": tf["organization_id"],
+            "F1_ENVIRONMENT_ID": tf["environment_id"],
+            "F1_COMPUTE_POOL_ID": tf["compute_pool_id"],
+            "F1_CATALOG": tf["environment_name"],
+            "F1_DATABASE": tf["cluster_name"],
+            "F1_FLINK_API_KEY": tf["flink_api_key"],
+            "F1_FLINK_API_SECRET": tf["flink_api_secret"],
+        }
+    )
+
+
+def create_lab_objects(tf: dict, root) -> bool:
+    """Submit the canonical lab SQL and wait for each statement to come up.
+
+    Waiting matters: `CREATE AGENT` must reach COMPLETED and `car_state` must
+    exist before the pit_decisions statement will pass validation. Fire-and-forget
+    submission would race and fail with "table does not exist".
+    """
+    session = flink_session(tf)
+
+    for filename, creates in LAB_BUILDS:
+        path = root / "demo-reference" / filename
+        if not path.exists():
+            print(f"  {creates}: missing {path}")
+            return False
+
+        # Same normalization as `f1-sql --exec`: the trailing ';' in the .sql file
+        # is a shell-shell convention, not part of the statement.
+        sql = path.read_text().strip().rstrip(";").strip()
+
+        try:
+            name = session.submit(sql)
+        except Exception as e:
+            print(f"  {creates}: submit failed — {e}")
+            return False
+
+        status = session.wait(name, timeout=180)
+        phase = status["status"]["phase"]
+        if phase in ("RUNNING", "COMPLETED"):
+            print(f"  {creates}: {phase}  ({filename})")
+            continue
+
+        detail = (status.get("status") or {}).get("detail", "").strip()
+        print(f"  {creates}: {phase} — {detail or 'no detail returned'}")
+        return False
+
+    return True
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Reset attendee lab state for a fresh stream-processing run")
     parser.add_argument(
         "--keep-source",
         action="store_true",
         help="Leave car_telemetry / race_standings data in place (default: clear them for a blank slate)",
+    )
+    parser.add_argument(
+        "--with-labs",
+        action="store_true",
+        help=(
+            "Also stop the simulator, rebuild the lab objects from demo-reference/, "
+            "and restart the race — a ready-to-demo environment in one command. "
+            "Omit for the workshop, where attendees build the labs themselves."
+        ),
     )
     args = parser.parse_args()
 
@@ -284,6 +419,20 @@ def main() -> None:
 
     creds_file = root / "credentials.env"
     creds = dotenv_values(creds_file) if creds_file.exists() else {}
+
+    # Organizer-only, checked before anything interactive: the per-attendee
+    # Terraform state is the source of truth for every environment this touches,
+    # and it only exists on the machine that ran `uv run deploy` (gitignored).
+    # Checked ahead of the Confluent login so an attendee who runs this by mistake
+    # gets the real answer instead of a prompt for a login they don't have.
+    tf_state = root / "terraform" / "aws" / "terraform.tfstate"
+    if not tf_state.exists():
+        print(f"No Terraform state at {tf_state}")
+        print("\n`uv run reset` is an organizer command — it needs the state written by")
+        print("`uv run deploy`. If you're an attendee, ask your instructor to reset your")
+        print("environment. If you deployed with `uv run selfservice up`, reset doesn't")
+        print("support that tier yet — drop the lab objects by hand in `uv run f1-sql`.")
+        sys.exit(1)
 
     if not ensure_confluent_login(creds, creds_file=creds_file, interactive=True):
         sys.exit(1)
@@ -296,47 +445,92 @@ def main() -> None:
     if creds.get("TF_VAR_confluent_cloud_api_secret"):
         os.environ["CONFLUENT_CLOUD_API_SECRET"] = creds["TF_VAR_confluent_cloud_api_secret"]
 
-    tf_state = root / "terraform" / "aws" / "terraform.tfstate"
     try:
         tf = run_terraform_output(tf_state)
     except Exception as e:
-        print(f"Error reading terraform state: {e}\nHave you provisioned the attendee environment yet?")
+        print(f"Error reading terraform state: {e}")
         sys.exit(1)
 
     env_id = tf["environment_id"]
     cluster_id = tf["cluster_id"]
+    region = creds.get("TF_VAR_region") or DEFAULT_REGION
 
-    print("1. Stopping Flink statements...")
+    # Step numbers aren't fixed: --with-labs adds a stop before and a rebuild
+    # plus a start after, so they're numbered as they run.
+    counter = 0
+
+    def step(msg: str) -> None:
+        nonlocal counter
+        counter += 1
+        if counter > 1:
+            print()
+        print(f"{counter}. {msg}")
+
+    if args.with_labs:
+        step("Stopping the race simulator...")
+        scale_simulator(tf, region, 0)
+        wait_for_drain(tf, region)
+
+    step("Stopping Flink statements...")
     delete_flink_statements(tf)
 
-    print("\n2. Dropping lab Flink objects (car_state, pit_decisions, pit_strategy_agent)...")
+    step("Dropping lab Flink objects (car_state, pit_decisions, pit_strategy_agent)...")
     drop_flink_objects(tf, LAB_DROPS)
 
-    print("\n3. Dropping lab topics and SR subjects...")
+    step("Dropping lab topics and SR subjects...")
     for topic in LAB_TOPICS:
         delete_topic_and_subjects(topic, env_id, cluster_id)
 
     if args.keep_source:
-        print("\n4. Keeping source topic data (--keep-source).")
+        step("Keeping source topic data (--keep-source).")
     else:
-        print("\n4. Clearing race data from source topics...")
-        still_running = running_simulator_count()
+        step("Clearing race data from source topics...")
+        # --with-labs already stopped this deployment's simulator and waited for it
+        # to drain, so the only thing this warning could report is another
+        # attendee's feed, which doesn't produce to these topics.
+        still_running = 0 if args.with_labs else running_simulator_count(region)
         if still_running:
             print(f"  WARNING: {still_running} race simulator(s) still running — they will")
             print("  keep producing, so the topics will not stay empty. Stop them first with")
             print("  `uv run stop-all-races`, re-run this reset, then `uv run start-all-races`.")
         truncate_topics(tf, SOURCE_TOPICS)
 
+    labs_ok = True
+    if args.with_labs:
+        # Before the simulator restarts, not after. `car_telemetry` sets
+        # scan.startup.mode=earliest-offset at the table level (see
+        # terraform/modules/topics/main.tf), so it would replay either way — but
+        # `race_standings` does not, and it is the versioned side of LAB 3's
+        # temporal join. Standings rows produced before this statement is RUNNING
+        # are never seen, leaving those laps with no version to join against, so
+        # the join drops them and car_state silently loses its first laps.
+        step("Rebuilding lab objects from demo-reference/...")
+        labs_ok = create_lab_objects(tf, root)
+
+        step("Starting the race simulator...")
+        scale_simulator(tf, region, 1)
+
     print("\n=== Reset complete ===")
-    print("Next steps:")
-    if args.keep_source:
+    if args.with_labs and labs_ok:
+        print("Environment is ready — race running from lap 0, all lab objects rebuilt.")
+        print("  `car_state` stays empty for ~3.5 min while ML_DETECT_ANOMALIES trains")
+        print("  on its first 20 windows. The anomaly fires around lap 32.")
+        print("  Watch it: `uv run f1-pitwall`")
+    elif args.with_labs:
+        print("Lab rebuild FAILED — see the error above. The race feed is running, so")
+        print("re-run `uv run reset --with-labs` once the SQL problem is fixed.")
+        sys.exit(1)
+    elif args.keep_source:
+        print("Next steps:")
         print("  Re-run the stream-processing labs (LAB 3 → LAB 4).")
         print("  The race simulator keeps feeding car_telemetry and race_standings.")
     else:
+        print("Next steps:")
         print("  1. `uv run start-all-races`  — starts a fresh race from lap 0")
         print("  2. Re-run the stream-processing labs (LAB 3 → LAB 4)")
         print("  car_telemetry is empty, so LAB 3 sees only the new race instead of")
         print("  replaying finished ones.")
+        print("  (Or do all of that in one command next time: `uv run reset --with-labs`.)")
 
 
 if __name__ == "__main__":

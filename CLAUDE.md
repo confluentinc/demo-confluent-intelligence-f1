@@ -75,6 +75,13 @@ uv run reset                   # blank slate for a new race: drops lab objects (
                                #   doesn't replay finished races. race_standings is compacted,
                                #   so it can't be truncated (harmless — see scripts/reset.py).
                                #   --keep-source skips the truncation.
+uv run reset --with-labs       # same, then REBUILDS the lab objects from demo-reference/
+                               #   and restarts this deployment's simulator — one command to
+                               #   a ready-to-demo environment. For standalone demos only:
+                               #   plain `reset` leaves the labs dropped because building
+                               #   them is LAB 3/LAB 4. Scales only THIS deployment's ECS
+                               #   service (not the instructor fan-out), and submits the labs
+                               #   BEFORE restarting the race since car_state reads `latest`.
 
 uv run api-keys create         # Create AWS IAM user + keys for Bedrock access
 
@@ -228,6 +235,15 @@ and `<topic>-value` subjects. `scripts/reset.py` deletes them with `--permanent`
 **Deploy jobs before/independent of race start:** default scan startup is
 `latest`. `pit_decisions` uses `scan.startup.mode=earliest-offset` so it processes
 laps already in `car_state`.
+
+**Per-table `scan.startup.mode` overrides — check the table, not just the .sql:**
+`car_telemetry` sets `'scan.startup.mode' = 'earliest-offset'` in its CREATE TABLE
+(`terraform/modules/topics/main.tf`), so LAB 3 replays it from the start even with no
+inline hint. `race_standings` does **not** — it starts from `latest`. That asymmetry is
+why LAB 3 must be RUNNING before the simulator starts producing: standings rows written
+beforehand are never seen, those laps have no version for the temporal join, and
+`car_state` silently loses its first laps. Reading only the `demo-reference/*.sql` files
+will mislead you here; check the CREATE TABLE options too.
 
 Full technical discoveries: `docs/technical-discoveries.md`.
 

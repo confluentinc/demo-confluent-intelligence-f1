@@ -122,4 +122,10 @@ uv run stop-all-races    # scale every simulator to 0
 uv run start-all-races   # scale every simulator back to 1
 uv run reset             # blank slate: drop lab objects + clear car_telemetry
                          #   (--keep-source to leave the race data in place)
+uv run reset --with-labs # blank slate AND rebuild the labs + restart the race,
+                         #   for demos where nobody is writing LAB 3/4 by hand
 ```
+
+`stop-all-races` / `start-all-races` fan out over every attendee. `reset` is
+single-environment (it reads `terraform/aws` state), and organizer-only — an attendee
+machine has no Terraform state, so it exits before doing anything.
