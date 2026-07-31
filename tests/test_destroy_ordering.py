@@ -15,6 +15,7 @@ CWD to the nearest pyproject.toml, so without that patch these tests would delet
 real terraform state and real credential cards out of the working checkout.
 """
 
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -184,6 +185,80 @@ class DeadCardCleanupTests(DestroyHarness, unittest.TestCase):
         self.assertEqual(self.destroyed, ["aws", "aws-shared"])
         self.assertFalse(standalone["card"].exists())
         self.assertFalse(standalone["meta"].exists())
+
+
+class SharedVarInjectionTest(unittest.TestCase):
+    """A partial deployment must still get past Terraform's variable evaluation.
+
+    terraform/aws declares five shared_* variables with no default, and Terraform
+    evaluates variables even on destroy. _inject_shared_vars used to return early
+    when aws-shared had no state on disk, so `uv run destroy` against an `aws`
+    tier whose shared half was missing died with "No value for required variable"
+    without deleting anything — the teardown was unusable in the one situation
+    that needs it most.
+
+    These call the real function, so they patch nothing from DestroyHarness.
+    """
+
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        # Isolate os.environ — these mutate it by design.
+        p = patch.dict("os.environ", {}, clear=False)
+        p.start()
+        self.addCleanup(p.stop)
+        for key in destroy._SHARED_VAR_PLACEHOLDERS:
+            destroy.os.environ.pop(key, None)
+
+    def test_placeholders_set_when_shared_state_absent(self):
+        (self.root / "terraform" / "aws").mkdir(parents=True)
+
+        destroy._inject_shared_vars(self.root)
+
+        for key in destroy._SHARED_VAR_PLACEHOLDERS:
+            self.assertIn(key, destroy.os.environ, f"{key} unset — terraform would refuse to plan")
+        # list(string): a bare "" would fail type conversion, [] would break any
+        # config that indexes it. Must be a JSON list with at least one element.
+        subnets = json.loads(destroy.os.environ["TF_VAR_shared_subnet_ids"])
+        self.assertIsInstance(subnets, list)
+        self.assertTrue(subnets)
+
+    def test_real_outputs_win_over_placeholders(self):
+        shared = self.root / "terraform" / "aws-shared"
+        shared.mkdir(parents=True)
+        (shared / "terraform.tfstate").write_text("{}")
+        outputs = {
+            "vpc_id": "vpc-real",
+            "subnet_ids": ["subnet-a", "subnet-b"],
+            "postgres_host": "pg.real",
+            "postgres_password": "pw",
+            "ecr_image_uri": "ecr/real:tag",
+        }
+
+        with patch.object(destroy, "run_terraform_output", return_value=outputs):
+            destroy._inject_shared_vars(self.root)
+
+        self.assertEqual(destroy.os.environ["TF_VAR_shared_vpc_id"], "vpc-real")
+        self.assertEqual(
+            json.loads(destroy.os.environ["TF_VAR_shared_subnet_ids"]), ["subnet-a", "subnet-b"]
+        )
+
+    def test_empty_output_falls_back_to_placeholder(self):
+        # An aws-shared state that yields a blank output must not leave the
+        # variable unset — that reintroduces the same "required variable" abort.
+        shared = self.root / "terraform" / "aws-shared"
+        shared.mkdir(parents=True)
+        (shared / "terraform.tfstate").write_text("{}")
+
+        with patch.object(destroy, "run_terraform_output", return_value={"vpc_id": "vpc-real"}):
+            destroy._inject_shared_vars(self.root)
+
+        self.assertEqual(destroy.os.environ["TF_VAR_shared_vpc_id"], "vpc-real")
+        self.assertEqual(
+            destroy.os.environ["TF_VAR_shared_postgres_host"],
+            destroy._SHARED_VAR_PLACEHOLDERS["TF_VAR_shared_postgres_host"],
+        )
 
 
 if __name__ == "__main__":

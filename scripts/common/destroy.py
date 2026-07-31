@@ -34,10 +34,38 @@ from .deployment_meta import TRACKS, retire_track
 from .terraform import cleanup_terraform_artifacts, get_project_root, run_terraform_output
 from .terraform_runner import run_terraform_destroy
 
+# Stand-in values for a destroy that has no aws-shared state to read. Terraform
+# evaluates variables even on destroy and terraform/aws declares these five with
+# no default, so leaving one unset aborts the run with "No value for required
+# variable" before a single resource is deleted — exactly the case where you most
+# need the teardown to work. The values are never used for anything; they only
+# have to parse as the declared types, which is why shared_subnet_ids carries one
+# dummy element rather than [] (config that indexes it still has to evaluate).
+_SHARED_VAR_PLACEHOLDERS = {
+    "TF_VAR_shared_vpc_id": "vpc-00000000000000000",
+    "TF_VAR_shared_subnet_ids": '["subnet-00000000000000000"]',
+    "TF_VAR_shared_postgres_host": "destroyed.invalid",
+    "TF_VAR_shared_postgres_password": "unused",
+    "TF_VAR_shared_ecr_image_uri": "destroyed.invalid/unused:latest",
+}
+
 
 def _inject_shared_vars(root: Path) -> None:
-    """Set TF_VAR_shared_* from aws-shared outputs so the aws destroy has the
-    required variable values (Terraform evaluates the config even on destroy)."""
+    """Set TF_VAR_shared_* so the aws destroy can evaluate its config.
+
+    Placeholders go in first and real aws-shared outputs overwrite them, rather
+    than the reverse. That ordering is the whole point: this function used to
+    return early when aws-shared had no state, which meant a *partial* deployment
+    — an `aws` tier whose shared half was never applied or was torn down first —
+    could never be destroyed at all. It also closes a quieter hole, where an
+    aws-shared output that came back empty left its variable unset even though
+    shared state existed.
+
+    Placeholders use setdefault so an operator who exported a real value keeps it.
+    """
+    for key, value in _SHARED_VAR_PLACEHOLDERS.items():
+        os.environ.setdefault(key, value)
+
     shared_state = root / "terraform" / "aws-shared" / "terraform.tfstate"
     if not shared_state.exists():
         return
