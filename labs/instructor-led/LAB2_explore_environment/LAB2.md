@@ -30,6 +30,11 @@ SHOW TABLES;
 | `race_standings` | Race simulator — all 22 cars, keyed by `car_number` (upsert) | Avro |
 | `driver_race_history` | CDC from the shared Postgres (198 historical rows) | JSON |
 
+> **Self-service track?** If you provisioned with `uv run selfservice up`,
+> `driver_race_history` is **Avro**, not JSON — there is no CDC connector there, so
+> the same 198 rows are seeded by a bounded Flink `INSERT`. The other two tables and
+> every query in this lab are identical.
+
 Look at the telemetry stream (Ctrl-C to stop and return to the prompt):
 
 ```sql
@@ -62,6 +67,10 @@ SELECT COUNT(*) FROM driver_race_history;
 This converges to **198** rows. (It's a streaming count, so you'll see the value
 climb to 198 and settle — Ctrl-C once it stops.) This is historical context the
 agent's reasoning can draw on in LAB 4.
+
+> **Self-service track?** There is no connector and no Postgres to look at:
+> `uv run selfservice up` writes the same 198 rows with a bounded Flink `INSERT`
+> before handing the environment over, so the count is already complete.
 
 ### Step 3: The pre-deployed AI models
 

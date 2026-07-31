@@ -27,10 +27,20 @@ Labs 1–4 happen in that shell; LAB 5 is a no-code agent you build in the IBM
 watsonx Orchestrate web UI. [LAB 1](instructor-led/LAB1_claim_account/LAB1.md)
 walks you through launching the shell.
 
-> **Running solo?** If you provisioned your own environment with
-> `uv run selfservice up` (see [docs/SELF-SERVICE.md](../docs/SELF-SERVICE.md)),
-> these same labs apply — just start your own live feed with `uv run f1-race`
-> instead of relying on an instructor's simulator, and treat LAB 5 as optional.
+> **Running solo?** These same labs apply to an environment you provisioned
+> yourself, with a couple of differences depending on which way you did it:
+>
+> - **`uv run selfservice up`** ([docs/SELF-SERVICE.md](../docs/SELF-SERVICE.md)) —
+>   Confluent Cloud only. Start your own live feed with `uv run f1-race` instead of
+>   relying on an instructor's simulator. There is no CDC connector, so
+>   `driver_race_history` is an **Avro** table seeded by a bounded Flink `INSERT`
+>   rather than JSON arriving from Postgres.
+> - **`uv run deploy`** ([docs/STANDALONE-DEMO.md](../docs/STANDALONE-DEMO.md)) —
+>   the same AWS shape as the workshop below (ECS simulator, Postgres CDC, JSON
+>   `driver_race_history`); you control your own feed with `uv run race start|stop`.
+>
+> LAB 5 is optional either way — it needs an external IBM watsonx Orchestrate
+> account.
 
 ## Architecture
 
@@ -58,6 +68,11 @@ Shared Postgres ─ CDC Debezium ─ driver_race_history (per-attendee connector
                                              │
                                    drafted social posts
 ```
+
+That's the instructor-led (and standalone-demo) shape. On the self-service track the
+top two boxes collapse into one local process — `uv run f1-race` produces both
+topics — and the Postgres/CDC row disappears entirely, with `driver_race_history`
+seeded once by Flink. Labs 3–5 are byte-for-byte the same either way.
 
 ## Labs
 

@@ -9,6 +9,10 @@ car #88 telemetry gauges, and (once you build them in LAB 3 / LAB 4) the anomaly
 and AI pit-decision panels. Reads topics directly with the Kafka + Schema
 Registry keys on your credential card; it only consumes, so it never touches your
 Flink compute pool. Stop with Ctrl-C.
+
+If the board stays empty, the reason is printed here and served at
+``/healthz``. ``--verbose`` additionally shows the errors the consumer suppresses
+on purpose (a missing ``car_state`` before LAB 3 is normal, not a fault).
 """
 
 from __future__ import annotations
@@ -24,7 +28,6 @@ from scripts.common.credentials import load_card
 from scripts.pitwall.server import create_app
 from scripts.pitwall.state import RaceState
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("f1-pitwall")
 
 
@@ -37,7 +40,21 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000, help="Local port (default 8000)")
     parser.add_argument("--no-browser", action="store_true", help="Do not auto-open a browser")
     parser.add_argument("--mock", action="store_true", help="Offline demo feed — no Kafka / no Confluent env needed")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Also log the errors the consumer suppresses (e.g. car_state missing before LAB 3)",
+    )
     args = parser.parse_args()
+
+    # Configure logging from the parsed args, not at import time: the consumer's
+    # deliberate suppressions log at DEBUG, so INFO makes them unreachable — which
+    # is exactly how auth failures used to go unnoticed.
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
 
     state = RaceState()
     stop = threading.Event()

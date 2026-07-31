@@ -16,8 +16,9 @@
 The race simulator runs as an always-on service that replays the race
 back-to-back (`RACE_LOOP=true`). Between races there's a short pause, and laps
 arrive at the configured pace (default 60s/lap). Re-run your `SELECT` after a
-few seconds. If nothing arrives for several minutes, tell your instructor — they
-can check the simulator or restart all feeds with `uv run start-all-races`.
+few seconds. If nothing arrives for several minutes, tell your instructor — only
+they can inspect or restart the simulators (`uv run workshop start-races`, run
+from the organizer's machine with AWS access; you have Confluent API keys only).
 
 > Tip: a streaming `SELECT` keeps running. Press Ctrl-C to stop it and return to
 > the `f1-sql>` prompt.
@@ -75,7 +76,8 @@ per environment, so they only appear when you're connected to yours.
   race is running. Standings-only posts are expected before then.
 - **Agent says the feed is quiet / `live` is false.** No record has arrived
   recently — the race may be between loops or stopped. Re-ask after a few seconds,
-  or ask your instructor to confirm the feed (`uv run start-all-races`).
+  or ask your instructor to confirm the feed is running (that's theirs to restart,
+  not yours).
 - **Agent invents positions or events.** Re-check the instructions tell it to
   *always call `get_race_feed` first* and post only from the returned data (see
   [`demo-reference/orchestrate_social_agent.md`](../../demo-reference/orchestrate_social_agent.md)).

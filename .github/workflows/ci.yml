@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+          # The wrapper replaces the terraform binary with a script that can mask
+          # exit codes, which would let `fmt -check` fail silently.
+          terraform_wrapper: false
+
+      - run: uv run pytest
+
+      - run: uv run ruff check .
+
+      # Read-only: never rewrites files, and never runs plan/apply/validate.
+      # `validate` needs initialized providers — add it once CI can install or
+      # cache them predictably.
+      - run: terraform fmt -check -recursive terraform

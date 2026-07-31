@@ -6,7 +6,18 @@ running a single looping race-simulator service. These helpers enumerate those
 clusters across the shared workshop AWS account and scale their services, so an
 instructor can start, stop, or synchronously restart every attendee's live feed
 at once.
+
+The canonical entry points are `uv run workshop start-races` / `stop-races`
+(organizer namespace). The older top-level `start-all-races` / `stop-all-races`
+scripts still work as deprecated aliases; `run_deprecated_alias` below is what
+they share, so both spellings run byte-identical code with identical flags.
 """
+
+from __future__ import annotations
+
+import argparse
+import sys
+from collections.abc import Callable
 
 import boto3
 
@@ -14,6 +25,36 @@ import boto3
 # `RIVER-RACING-<prefix>` naming from the ecs module).
 DEFAULT_CLUSTER_FILTER = "river-racing"
 DEFAULT_REGION = "us-east-1"
+
+
+def add_fleet_arguments(p: argparse.ArgumentParser) -> None:
+    """The flags every fan-out command shares: which region, which clusters."""
+    p.add_argument("--region", default=DEFAULT_REGION, help=f"AWS region (default: {DEFAULT_REGION})")
+    p.add_argument(
+        "--filter",
+        default=DEFAULT_CLUSTER_FILTER,
+        help=f"Cluster name substring to match (default: {DEFAULT_CLUSTER_FILTER})",
+    )
+
+
+def run_deprecated_alias(
+    prog: str,
+    description: str,
+    replacement: str,
+    add_arguments: Callable[[argparse.ArgumentParser], None],
+    body: Callable[[argparse.Namespace], None],
+) -> None:
+    """Entry point for a legacy `*-all-races` console script.
+
+    Parses the same arguments the `workshop` subcommand takes and calls the
+    same body, so the alias is naming only — no behaviour of its own to drift.
+    The notice goes to stderr so piping stdout is unaffected.
+    """
+    parser = argparse.ArgumentParser(prog=prog, description=description)
+    add_arguments(parser)
+    args = parser.parse_args()
+    print(f"note: `{prog}` is deprecated — use `{replacement}` instead.", file=sys.stderr)
+    body(args)
 
 
 def find_simulator_clusters(ecs, name_filter: str) -> list[str]:

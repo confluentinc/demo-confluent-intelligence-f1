@@ -8,6 +8,13 @@ both, and destroying the shared half alone permanently strands the other (the
 `aws` destroy needs `aws-shared`'s outputs — see _inject_shared_vars). Keeping
 them a unit removes that footgun by construction.
 
+That grouping is also the unit of failure: a tier that fails to destroy aborts the
+rest of *its* group and nothing else. Selected groups are therefore walked
+group-by-group rather than as one flat list of tiers — flattening them would make
+a stop-on-failure either too weak (destroying the shared tier that the surviving
+`aws` resources depend on) or too strong (skipping a `self-service` teardown that
+shares nothing with the AWS tiers).
+
 The multi-attendee workshop is deliberately OUT OF SCOPE. `wsa` clones/stages
 the Terraform into its own run directory (see wsa-spec-aws.yaml), so a
 workshop's state never lands in this working tree and this script cannot reach
@@ -22,7 +29,8 @@ import os
 import sys
 from pathlib import Path
 
-from .credentials import clear_active_card, load_or_create_credentials_file
+from .credentials import load_or_create_credentials_file
+from .deployment_meta import TRACKS, retire_track
 from .terraform import cleanup_terraform_artifacts, get_project_root, run_terraform_output
 from .terraform_runner import run_terraform_destroy
 
@@ -55,13 +63,42 @@ GROUPS = [
     ("self-service", ["self-service"], "solo, Confluent-only (no AWS infra)"),
 ]
 
-# Which runs/ directory each tier's credential card lives in, so destroying a
-# tier can drop a now-dead F1_CARD pointer from credentials.env. `aws-shared`
-# owns no card. Must match RUN_NAME in deploy.py / scripts/selfservice/cli.py.
-TIER_RUN_DIRS = {
-    "aws": "standalone",
-    "self-service": "selfservice",
-}
+# Which deployment track each Terraform tier belongs to, so a successful destroy
+# can clean up everything that track left behind (see _retire_tier). Derived from
+# the Track definitions rather than re-listed here, so the run directory, the tier
+# name, and the prefix suffix can never drift apart. `aws-shared` owns no card and
+# no track — it is shared infrastructure.
+TIER_TRACKS = {track.tier: track for track in TRACKS.values()}
+
+
+def _retire_tier(root: Path, tier: str) -> None:
+    """Clean up what a destroyed tier leaves behind on disk. Success path only.
+
+    Clearing the `F1_CARD` pointer is not enough on its own. The card *files*
+    used to stay put, so on a machine that has used both solo tracks, tearing
+    one down left two cards and no pointer — and `resolve_card()` refuses to
+    guess between them, so **every** attendee tool hard-exited with "Multiple
+    credential cards found" while exactly one live environment existed. Deleting
+    the dead track's cards restores the single-candidate case resolution needs.
+
+    Also removes the self-service `.seeded` marker, which used to survive
+    `uv run destroy` (only `selfservice down` unlinked it). The next
+    `selfservice up` then printed "already seeded" over an empty
+    `driver_race_history`: LAB 2's COUNT(*) returns 0 and LAB 4's history join
+    returns nothing, with no error anywhere.
+
+    Called per tier on that tier's own success, not once per group: if `aws`
+    destroyed cleanly its card is dead no matter what `aws-shared` goes on to do.
+    Never call this after a failure — the stale card is the only record of a
+    deployment that still has live resources.
+    """
+    track = TIER_TRACKS.get(tier)
+    if track is None:  # aws-shared: shared infrastructure, no card, no metadata
+        return
+
+    removed = retire_track(root, track)
+    if removed:
+        print(f"  Removed dead {track.name} files: {', '.join(removed)}")
 
 
 def _looks_like_workshop_shared(root: Path) -> bool:
@@ -166,39 +203,62 @@ def main():
             sys.exit(0)
 
     print("\n=== Starting Destroy ===")
-    failed = []
-    for env in envs_to_destroy:
-        env_path = root / "terraform" / env
-        state_file = env_path / "terraform.tfstate"
+    failed: list[str] = []
+    skipped: list[str] = []
 
-        # Both non-shared tiers have required variables that Terraform evaluates
-        # even on destroy — populate them before running.
-        if env == "aws":
-            # shared_* variables come from the aws-shared outputs.
-            _inject_shared_vars(root)
-        elif env == "self-service":
-            # Reuse the same TF_VAR set `uv run selfservice down` builds.
-            from scripts.selfservice.cli import export_selfservice_tf_env
+    # Groups outer, tiers inner — deliberately, not a flat walk of
+    # `envs_to_destroy`. Within a group the tiers form a dependency chain: `aws`
+    # consumes `aws-shared`'s Postgres, simulator image, and outputs, so tearing
+    # the shared half down after the attendee half failed strands the surviving
+    # ECS service and CDC connector against infrastructure that no longer exists,
+    # and no later `uv run destroy` can clean them up. So a failure aborts the
+    # rest of *that* group.
+    #
+    # Across groups there is no dependency at all — `self-service` is
+    # Confluent-only. Breaking out of a flattened tier list would silently skip
+    # an independently-selected self-service teardown, which is why the group
+    # boundary has to still exist here.
+    for group_name, tiers, _desc in selected:
+        for position, env in enumerate(tiers):
+            env_path = root / "terraform" / env
+            state_file = env_path / "terraform.tfstate"
 
-            export_selfservice_tf_env(creds)
+            # Both non-shared tiers have required variables that Terraform evaluates
+            # even on destroy — populate them before running.
+            if env == "aws":
+                # shared_* variables come from the aws-shared outputs.
+                _inject_shared_vars(root)
+            elif env == "self-service":
+                # Reuse the same TF_VAR set `uv run selfservice down` builds.
+                from scripts.selfservice.cli import export_selfservice_tf_env
 
-        print(f"\n-> Destroying {env}...")
-        if run_terraform_destroy(env_path):
-            # Only wipe artifacts on success. Deleting state after a failed
-            # destroy strands whatever Terraform did not delete.
-            cleanup_terraform_artifacts(env_path)
-            # The environment behind this tier's card is gone — stop pointing
-            # the attendee tools at it. Scoped, so tearing down one deployment
-            # leaves another deployment's pointer alone.
-            if env in TIER_RUN_DIRS:
-                clear_active_card(root, only_if_under=root / "runs" / TIER_RUN_DIRS[env])
-        else:
+                export_selfservice_tf_env(creds)
+
+            print(f"\n-> Destroying {env}...")
+            if run_terraform_destroy(env_path):
+                # Only wipe artifacts on success. Deleting state after a failed
+                # destroy strands whatever Terraform did not delete.
+                cleanup_terraform_artifacts(env_path)
+                _retire_tier(root, env)
+                continue
+
             failed.append(env)
             print(f"\nDestroy failed at {env} — state kept at {state_file}")
-            print("Re-run `uv run destroy` to retry. Continuing with remaining tiers...")
+
+            remaining = tiers[position + 1 :]
+            if remaining:
+                skipped.extend(remaining)
+                print(f"NOT destroying {', '.join(remaining)} — {env} still has live resources that")
+                print(f"depend on it. Tearing down the rest of '{group_name}' now would strand them")
+                print(f"permanently. Fix the {env} failure and re-run `uv run destroy`.")
+            else:
+                print("Re-run `uv run destroy` to retry.")
+            break  # abort this group only; other groups are independent
 
     if failed:
         print(f"\nDestroy incomplete — these tiers still have live resources: {', '.join(failed)}")
+        if skipped:
+            print(f"Not attempted (they back the failed tier): {', '.join(skipped)}")
         sys.exit(1)
 
     print("\nDestroy process completed!")

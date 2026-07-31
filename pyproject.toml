@@ -22,7 +22,16 @@ dependencies = [
     "confluent-kafka[avro]>=2.4.0",  # >=2.4 for AdminClient.delete_records (uv run reset)
     "fastavro>=1.9.0",
     "httpx>=0.27.0",  # required by confluent-kafka's Schema Registry client
-    "mcp>=1.8.0",     # f1-social-feed-rtce: MCP client to the Real-Time Context Engine
+    # f1-social-feed-rtce: MCP client to the Real-Time Context Engine.
+    # Capped below 2.0 deliberately. `scripts/social_feed_rtce/rtce_client.py` is
+    # written against the 1.x streamable-HTTP API: `streamablehttp_client(url,
+    # headers=...)` yielding a 3-tuple. mcp 2.0 renamed it to
+    # `streamable_http_client` AND dropped `headers=` in favour of passing a
+    # pre-built `http_client`, so an uncapped `>=1.8.0` resolved to 2.x and broke
+    # the import outright — `uv run f1-social-feed-rtce` could not start. Lifting
+    # this cap means migrating that client (RTCE's Basic auth has to move into a
+    # custom httpx client) and re-verifying against a live RTCE endpoint.
+    "mcp>=1.8.0,<2.0",
 ]
 
 [project.scripts]
@@ -30,6 +39,11 @@ deploy = "deploy:main"
 destroy = "scripts.common.destroy:main"
 api-keys = "scripts.common.api_keys:main"
 reset = "scripts.reset:main"
+race = "scripts.race_control:main"
+setup-mcp = "scripts.setup_mcp:main"
+# Deprecated aliases for the organizer fan-out. The canonical spelling is
+# `uv run workshop start-races` / `stop-races` — these stay so existing wsa docs
+# and muscle memory keep working.
 start-all-races = "scripts.instructor.start_all_races:main"
 stop-all-races = "scripts.instructor.stop_all_races:main"
 workshop = "scripts.workshop.cli:main"
@@ -66,7 +80,15 @@ exclude = [
 [dependency-groups]
 dev = [
     "ruff>=0.15.11",
+    "pytest>=8.0.0",
 ]
+
+# One command covers the whole suite: `uv run pytest`. The runtime extras
+# datagen/tests/ needs (confluent-kafka[avro], fastavro, httpx) are already
+# project dependencies above, so they need no `--with` flags here.
+[tool.pytest.ini_options]
+testpaths = ["tests", "datagen/tests"]
+addopts = "-q"
 
 [tool.ruff]
 line-length = 120

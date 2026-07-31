@@ -35,6 +35,13 @@ anything related to Flink SQL, Terraform, or serialization.
 13. **ML_DETECT_ANOMALIES default thresholds too loose for noisy synthetic data** — Default `confidencePercentage=99.0` flags ~1% of normal points. Use `99.99` + `minTrainingSize=20` + `maxTrainingSize=50`. Only run it on `tire_temp_fl_c`; other metrics (brake ±25°C, battery) generate too many false positives.
 14. **ML_DETECT_ANOMALIES output struct fields** — `is_anomaly` (BOOLEAN, NULL during warmup), `actual_value`, `forecast_value`, `lower_bound`, `upper_bound`, `timestamp`. Filter to `actual_value > upper_bound` to suppress post-pit cold-drop false positives.
 15. **ML_DETECT_ANOMALIES warmup** — During warmup (rows < `minContextSize`), rows are emitted with NULL `is_anomaly`. This is normal.
+    **Unverified against the current labs:** everything downstream (the lab guides,
+    `docs/STANDALONE-DEMO.md`, the "ready" messages `reset` and `selfservice up`
+    print) describes `car_state` as *empty* for the first ~20 windows rather than
+    populated with NULL anomaly flags — and our SQL passes `minTrainingSize`, not
+    `minContextSize`. If you see NULL-flagged rows arriving immediately, this note is
+    why; if you see nothing until training completes, this note is the stale one.
+    Confirm on a live environment before relying on either.
 
 ## Terraform & Infrastructure
 

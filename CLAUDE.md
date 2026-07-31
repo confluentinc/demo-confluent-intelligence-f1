@@ -19,19 +19,27 @@ shell (`uv run f1-sql`). See "WSA (organizer provisioning)" below.
 ## Commands
 
 ```bash
-# Organizer: full workshop (many attendees) via wsa — run from a SIBLING
-# workshop-setup-accelerator checkout (its ONBOARDING.md "Local layout"),
-# pointed at this repo's wsa-spec-aws.yaml.
-op run --env-file=.env.tpl -- ./bin/wsa validate -w <path-to-this-repo>/wsa-spec-aws.yaml
-op run --env-file=.env.tpl -- ./bin/wsa build -w <path-to-this-repo>/wsa-spec-aws.yaml \
-  --accounts 1-20 --concurrency 4       # applies terraform/aws-shared then N terraform/aws
-./bin/wsa dispenser-upload --sheets-credentials sheets-credentials.json  # self-serve claim (optional)
-op run --env-file=.env.tpl -- ./bin/wsa clean -w <path-to-this-repo>/wsa-spec-aws.yaml
-#   --no-password-reset --no-dispenser-clear   # skip if this workshop doesn't use the dispenser
+# Organizer: full workshop (many attendees). `workshop` wraps the `wsa` CLI (which
+# still owns provisioning) and locates the sibling checkout itself, so these run from
+# THIS repo with -w injected. Secrets are still yours to inject (op / .env / exports).
+op run --env-file=.env.tpl -- uv run workshop spec-validate    # wsa pre-flight: spec + local tooling
+op run --env-file=.env.tpl -- uv run workshop build --accounts 1-20 --concurrency 4
+#   ONE command: applies terraform/aws-shared, then N × terraform/aws, THEN writes every
+#   credential card from that run's build-output.csv — no run-id to copy by hand.
+#   --no-cards to skip the card step, -n/--name for the card directory label.
+op run --env-file=.env.tpl -- uv run workshop clean            # newest non-cleaned run in wsa-output/
+#   --run-id to target another run; --accounts-only / --shared-only;
+#   --no-password-reset --no-dispenser-clear if this run never used the dispenser/Gmail reset.
+<sibling>/bin/wsa dispenser-upload --sheets-credentials sheets-credentials.json  # self-serve claim (optional)
+# Raw wsa stays fully supported for flags the wrapper doesn't expose:
+op run --env-file=.env.tpl -- <sibling>/bin/wsa build -w <path-to-this-repo>/wsa-spec-aws.yaml ...
 
-# Organizer: turn wsa's build-output.csv into the credential cards our tools expect
+# Organizer: cards from an existing wsa run (`workshop build` already does this)
 uv run workshop creds --csv <wsa-repo>/wsa-output/<run-id>/build-output.csv --name <name>
-uv run workshop validate --creds-glob 'runs/*/credentials/*.env'   # API-key health checks, no AWS/login needed
+# TWO different "validate"s — never conflate them:
+#   workshop spec-validate = wsa's pre-flight on the spec + local prerequisites, BEFORE a build
+#   workshop validate      = API-key health checks against provisioned environments, AFTER one
+uv run workshop validate --creds-glob 'runs/*/credentials/*.env'   # no AWS/login needed
 
 # Attendee, self-serve (wsa dispenser claim email -> local credentials.env)
 uv run f1-onboard                # prompts field-by-field, or --paste to parse a pasted email
@@ -52,9 +60,16 @@ uv run f1-social-feed --mock                                    # offline demo/d
 RTCE_API_KEY=... RTCE_API_SECRET=... uv run f1-social-feed-rtce --creds-glob 'runs/*/credentials/*.env'
 RTCE_API_KEY=... RTCE_API_SECRET=... uv run f1-social-feed-rtce --probe --creds <card>.env  # validate RTCE contract
 
-# Organizer: single environment (smoke test / demo) — shared then attendee
+# Standalone demo: single environment (smoke test / presenter) — shared then attendee
 uv run deploy                  # prompts → credentials.env → terraform/aws-shared → terraform/aws
 uv run deploy --automated      # same, no prompts (reads credentials.env)
+uv run deploy --with-labs      # also build LAB 3 + LAB 4 from demo-reference/ and restart the
+                               #   race behind them — ready to demo. Omit for a bare environment
+                               #   (what the workshop hands attendees).
+                               # Prefix is derived from $USER (+ track suffix) and pinned in
+                               #   runs/<track>/deployment.env — see "Deployment identity" below.
+                               # Postgres defaults to t3.small here (aws-shared's own default,
+                               #   which wsa uses, stays t3.large).
 uv run destroy                 # pick which local deployment(s) to tear down, confirm, destroy
                                #   groups: "deploy" (aws + aws-shared) / "self-service"
                                #   A wsa workshop is unreachable (wsa keeps state in its own
@@ -64,36 +79,63 @@ uv run destroy                 # pick which local deployment(s) to tear down, co
 # Self-service (solo): Confluent-only, NO AWS infra (no Postgres/CDC/ECS/ECR/Docker)
 uv run selfservice up          # apply terraform/self-service → credential card → seed driver_race_history
 uv run selfservice up --automated   # no prompts (reads credentials.env)
-uv run selfservice down        # tear down terraform/self-service
-uv run f1-race                 # local simulator (ECS stand-in)
+uv run selfservice up --with-labs   # also prebuild LAB 3 + LAB 4 from demo-reference/
+uv run selfservice down        # tear down terraform/self-service (--yes to skip the prompt)
+uv run f1-race                 # local simulator (ECS stand-in); --once, --seconds-per-lap N, --20
+                               #   Pacing: flag > runs/<track>/deployment.env > 20. Minimum 10s/lap.
+                               #   Sets PRE_RACE_WARMUP_LAPS=0 (the ECS path keeps the default 4).
 
-# Control all attendee race feeds (ECS services)
-uv run start-all-races         # scale every attendee simulator to 1
-uv run stop-all-races          # scale every attendee simulator to 0
+# Optional: register the Confluent MCP server with a local coding agent, from a card
+uv run setup-mcp               # Claude Code, project-local scope (default)
+uv run setup-mcp --client codex     # Codex CLI — user-global ~/.codex/config.toml
+uv run setup-mcp --client both --dry-run   # write confluent-mcp.env (0600) + print, change nothing
+                               #   Needs Node >= 20 (v24 LTS has the prebuilt native binaries).
+
+# Control ALL attendee race feeds (organizer fan-out over every matching ECS service)
+uv run workshop start-races    # scale every attendee simulator to 1
+uv run workshop stop-races     # scale every attendee simulator to 0
+                               #   `start-all-races` / `stop-all-races` still work — deprecated
+                               #   aliases for the same code. Prefer the workshop spelling.
+
+# Control just THIS deployment's race feed (standalone track — one ECS service)
+uv run race status             # desired vs running task count, plus the aws-logs-tail command
+uv run race start / stop / restart   # scale and wait for the transition
+                               #   Those four actions are the whole surface: no `logs` action
+                               #   (status prints the command) and no pacing flag (pacing is
+                               #   TF_VAR_seconds_per_lap + redeploy, or f1-race's own flag).
+
 uv run reset                   # blank slate for a new race: drops lab objects (car_state,
                                #   pit_decisions, agent) AND truncates car_telemetry so LAB 3
                                #   doesn't replay finished races. race_standings is compacted,
                                #   so it can't be truncated (harmless — see scripts/reset.py).
-                               #   --keep-source skips the truncation.
+                               #   Stops the feed FIRST (scales this deployment's ECS service to
+                               #   0, or refuses when a local `f1-race` is producing — --force
+                               #   overrides) and leaves it stopped, so LAB 3 can be submitted
+                               #   before standings resume. Prints `=== Reset INCOMPLETE ===`
+                               #   and exits nonzero if any step failed.
+                               #   --keep-source skips the truncation AND leaves the feed
+                               #   running (unless --with-labs needs it stopped).
+                               #   --track standalone|selfservice — required only when both
+                               #   tracks have Terraform state in this checkout.
 uv run reset --with-labs       # same, then REBUILDS the lab objects from demo-reference/
-                               #   and restarts this deployment's simulator — one command to
-                               #   a ready-to-demo environment. For standalone demos only:
+                               #   and restarts this deployment's race — one command to a
+                               #   ready-to-demo environment. Standalone/solo demos only:
                                #   plain `reset` leaves the labs dropped because building
                                #   them is LAB 3/LAB 4. Scales only THIS deployment's ECS
                                #   service (not the instructor fan-out), and submits the labs
-                               #   BEFORE restarting the race since car_state reads `latest`.
+                               #   BEFORE restarting the race since race_standings reads `latest`.
 
 uv run api-keys create         # Create AWS IAM user + keys for Bedrock access
 
 # Read attendee Terraform outputs
 cd terraform/aws && terraform output -json attendee_credentials
 
-# Logs for one attendee simulator
+# Logs for one attendee simulator (`uv run race status` prints this line for you)
 aws logs tail /ecs/<prefix>-<hex>-simulator --follow
 
 # Tests / lint
-uv run --with "confluent-kafka[avro]" --with httpx --with pytest --with fastavro python -m pytest datagen/tests/
-uv run --with ruff ruff check datagen/ scripts/ deploy.py
+uv run pytest                  # testpaths + the runtime extras are declared in pyproject.toml
+uv run ruff check datagen/ scripts/ deploy.py
 ```
 
 ---
@@ -128,9 +170,10 @@ HTTP service (an OpenAPI tool) — everything upstream is Confluent-only.
 
 ## Terraform Layout
 
-Two tiers. `aws-shared` is applied once; `aws` is applied per attendee (by `wsa`,
-or once by `deploy.py`). The `aws` tier consumes `aws-shared` outputs as variables
-(injected by wsa, or by `deploy.py` reading the shared state).
+Two AWS tiers plus a Confluent-only one. `aws-shared` is applied once; `aws` is
+applied per attendee (by `wsa`, or once by `deploy.py`). The `aws` tier consumes
+`aws-shared` outputs as variables (injected by wsa, or by `deploy.py` reading the
+shared state). `self-service` stands alone.
 
 | Tier | Path | What it creates |
 |------|------|-----------------|
@@ -223,9 +266,21 @@ rowtime attribute and the join silently returns zero rows.
 telemetry producer writes a string message key; do not add a PK that would
 register an Avro int key schema.
 
-**ML_DETECT_ANOMALIES warmup:** withholds output for the first `minTrainingSize`
-(20) windows. The simulator produces 4 warmup telemetry windows (lap=0) to prime
-it; Job 1 filters `lap > 0`.
+**ML_DETECT_ANOMALIES warmup — the lap-0 warmup laps do NOT prime it:** the function
+withholds output for its first `minTrainingSize` (20) windows, i.e. 20 × 10s ≈ 3.3
+minutes of live data, whatever the lap pacing. The simulator's `PRE_RACE_WARMUP_LAPS`
+(`datagen/config.py`, default 4) cannot shorten that, and **not** because of the
+count — 4 laps is `4 × SECONDS_PER_LAP/10` windows' worth of telemetry (8 at 20s/lap,
+24 at 60s/lap), which would clear 20 at the slower pacing. They contribute nothing
+because they carry telemetry but **no `race_standings`**: with no version to match at
+those timestamps, LAB 3's *inner* temporal join drops every warmup row before it ever
+reaches TUMBLE or the OVER window, so zero of them become training points at any
+pacing (the closing `lap > 0` filter is then redundant for them). Their real value is
+a producer/schema smoke test before lap 1. Actual training comes from race data —
+`SECONDS_PER_LAP / 10` windows per lap, so 2/lap at 20s and 6/lap at 60s, reaching 20
+windows well before the lap-32 anomaly either way.
+`f1-race` therefore sets `PRE_RACE_WARMUP_LAPS=0` (`scripts/selfservice/race.py`,
+overridable via the env var); the ECS path keeps the default 4.
 
 **SR hard-delete after DROP TABLE:** dropping a Flink table leaves `<topic>-key`
 and `<topic>-value` subjects. `scripts/reset.py` deletes them with `--permanent`.
@@ -254,7 +309,27 @@ Full technical discoveries: `docs/technical-discoveries.md`.
 | File | Purpose | Created by |
 |------|---------|------------|
 | `credentials.env` | Deploy secrets (`TF_VAR_*`) + the `F1_CARD` pointer | `deploy.py` |
+| `runs/<track>/deployment.env` | Per-track deployment inputs: resolved prefix, pacing, region, card path | `deploy.py`, `selfservice up` |
 | `runs/<name>/credentials/<prefix>.env` | Credential card (`F1_*`) — what the attendee tools authenticate with | `workshop creds`, `deploy.py`, `selfservice up` |
+| `confluent-mcp.env` | MCP server env (mode `0600`), rewritten whole each run | `setup-mcp` |
+
+### Deployment identity (`scripts/common/deployment_meta.py`)
+
+Two tracks, `standalone` (`terraform/aws`) and `selfservice`
+(`terraform/self-service`, suffix `s`), each with its own `runs/<track>/deployment.env`
+so one checkout can hold both without either clobbering the other's Terraform inputs.
+The prefix is **derived**, not prompted-with-a-shared-example: `$USER` (or a short
+hash of the owner email when `$USER` is generic/shared), truncated to 8, plus the
+track suffix, max 12 alphanumerics. Deterministic on purpose — `race`, `reset`,
+`destroy` and screen-shares all resolve the same names on every rerun. `resolve_prefix`
+refuses a value that contradicts live state, so **a deployed prefix can't be renamed
+in place**; tear down first.
+
+The shared tier's name is `f1-<prefix>` unless `F1_SHARED_PREFIX` overrides it. It is
+not cosmetic: the ECR repo is `force_delete`d and recreated, the image rebuilt, and the
+attendee task definition revised (restarting a running race). `deploy.py` detects the
+mismatch from `aws-shared`'s `ecr_image_uri`, warns, and under `--automated` **refuses**
+— pin the existing name with `export F1_SHARED_PREFIX=<deployed>`.
 
 ### Credential card resolution
 
@@ -286,10 +361,19 @@ smoke-test flow (`terraform output -json attendee_credentials`, `deploy.py`).
 ## WSA (organizer provisioning)
 
 Provisioning and teardown are owned by `wsa` (confluentinc/workshop-setup-accelerator),
-not a repo-local orchestrator. Run it from a **sibling checkout**
-(`workshop-setup-accelerator/`, per that repo's `ONBOARDING.md` "Local
-layout"), pointed at this repo's `wsa-spec-aws.yaml` with `-w`.
+not a repo-local orchestrator. It still lives in a **sibling checkout**
+(`workshop-setup-accelerator/`, per that repo's `ONBOARDING.md` "Local layout"), but
+you no longer invoke it from there: `uv run workshop spec-validate|build|clean`
+(`scripts/workshop/wsa.py`) finds the binary and injects `-w <this-repo>/wsa-spec-aws.yaml`.
 
+- **Binary discovery:** four candidates in order — `$WSA_HOME/bin/wsa`, a sibling
+  `../workshop-setup-accelerator/bin/wsa`, one on `$PATH`, and (because this repo is
+  often worked on inside `.claude/worktrees/<name>/`) a sibling of the **main**
+  checkout rather than of the worktree. Set `$WSA_HOME` if yours is elsewhere.
+- **One command, not two:** `workshop build` runs `wsa build` and then feeds that
+  run's `build-output.csv` into `workshop creds` in-process, so the run-id is never
+  copied by hand. `workshop clean` resolves the newest non-cleaned run from
+  `wsa-output/` instead of taking a `--run-id`.
 - **Spec:** `wsa-spec-aws.yaml` (repo root) — `account_count: 20` by default;
   bump `terraform/aws-shared`'s `attendee_count` Terraform default to match if
   you need more (`wsa` does not forward `account_count` to the shared apply).
@@ -324,8 +408,13 @@ same applies to `demo-reference/orchestrate_social_agent.md` ↔ the LAB 5 guide
 
 | File | Purpose |
 |------|---------|
-| `deploy.py` | Standalone two-tier deploy (shared + one attendee) |
-| `scripts/reset.py` | Clear an attendee's lab objects + truncate source topics |
+| `deploy.py` | Standalone two-tier deploy (shared + one attendee); `--with-labs`, `F1_SHARED_PREFIX` |
+| `scripts/reset.py` | Clear a deployment's lab objects + truncate source topics; stops the feed first, `--track`, `--with-labs` |
+| `scripts/race_control.py` | `uv run race status\|start\|stop\|restart` — scoped to THIS deployment's one ECS service |
+| `scripts/setup_mcp.py` | `uv run setup-mcp` — register `@confluentinc/mcp-confluent` with Claude Code (project-local) or Codex (user-global) from a credential card |
+| `scripts/common/deployment_meta.py` | Track definitions, derived prefixes, `runs/<track>/deployment.env`, pacing validation, `retire_track` |
+| `scripts/common/simulator_control.py` | Shared `--with-labs` machinery: submits the `demo-reference/` SQL and waits for RUNNING/COMPLETED |
+| `scripts/workshop/wsa.py` | `workshop spec-validate\|build\|clean` — wsa binary discovery, `-w` injection, run-id resolution, in-process card writing |
 | `scripts/pitwall/` | `f1-pitwall` live web dashboard — Kafka consumer → FastAPI/websocket → animated browser view; progressive reveal of LAB 3/4 panels; `--mock` offline feed |
 | `scripts/social_feed/` | `f1-social-feed` shared HTTP service for LAB 5 — tails each attendee's Kafka topics, serves `GET /race-feed/{prefix}` + auto OpenAPI spec for the watsonx Orchestrate tool; reuses pitwall consumer; `--mock` offline feed |
 | `scripts/social_feed_rtce/` | `f1-social-feed-rtce` — same OpenAPI tool, but an MCP client to the Real-Time Context Engine (RTCE) instead of Kafka. Reuses `social_feed`'s `FeedState`+`create_app`; new bits are the RTCE MCP client + poller. Global API key via `RTCE_API_KEY/SECRET`; per-attendee endpoint from card `F1_RTCE_MCP_ENDPOINT`; `--probe` validates the live contract |

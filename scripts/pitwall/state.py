@@ -9,6 +9,11 @@ Progressive reveal: ``seen_car_state`` / ``seen_pit_decisions`` flip ``True`` on
 the first record from those topics. The frontend keeps the Anomaly (LAB 3) and
 Agent (LAB 4) panels locked until then, so the dashboard visibly activates as the
 attendee builds each stream.
+
+``connection_error`` carries the reason the feed isn't flowing. Without it a
+stale credential card produces a dashboard that loads, renders an empty grid,
+reports ``live: false`` and never says why — the whole point of the field is that
+``live: false`` should always be accompanied by a cause the user can read.
 """
 
 from __future__ import annotations
@@ -31,6 +36,27 @@ class RaceState:
         self.seen_car_state = False
         self.seen_pit_decisions = False
         self._last_msg_ts = 0.0
+        self._connection_error: dict | None = None
+
+    def record_error(self, code: str, detail: str) -> None:
+        """Publish the reason the feed isn't flowing, for ``snapshot()``/``/healthz``.
+
+        Called by the consumer's error classifier, not by the routing methods.
+        """
+        with self._lock:
+            self._connection_error = {"code": code, "detail": detail, "ts": time.time()}
+
+    def clear_error(self) -> None:
+        """Drop the published error — records are arriving again.
+
+        Deliberately cleared by data rather than kept with its timestamp: a
+        transient broker blip at startup would otherwise sit on the dashboard for
+        the rest of the race. A genuine auth failure is re-reported on every
+        reconnect attempt, so it reappears within seconds. The warn-once terminal
+        log survives either way, so nothing is actually lost.
+        """
+        with self._lock:
+            self._connection_error = None
 
     def update_telemetry(self, record: dict) -> None:
         with self._lock:
@@ -80,5 +106,6 @@ class RaceState:
                     "pit_decisions": self.seen_pit_decisions,
                 },
                 "live": (time.time() - self._last_msg_ts) < 10 if self._last_msg_ts else False,
+                "connection_error": self._connection_error,
                 "ts": time.time(),
             }

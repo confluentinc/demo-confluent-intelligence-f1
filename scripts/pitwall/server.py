@@ -4,6 +4,10 @@ Serves the static frontend and pushes ``RaceState.snapshot()`` over a websocket
 at ~4 Hz. Standings only change once per lap (60s live), so the browser animates
 car motion between snapshots — pacing one track orbit per lap from the observed
 lap cadence — while the server just streams state.
+
+``GET /healthz`` answers the one question an empty dashboard raises: is the feed
+flowing, and if not, why. The same ``connection_error`` rides along in every
+websocket snapshot, so it is available to the page as well.
 """
 
 from __future__ import annotations
@@ -47,6 +51,17 @@ def create_app(state: RaceState) -> FastAPI:
     @app.get("/")
     async def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html", headers=NO_CACHE)
+
+    @app.get("/healthz")
+    async def healthz() -> dict:
+        snap = state.snapshot()
+        return {
+            "status": "ok",
+            "live": snap["live"],
+            "lap": snap["lap"],
+            "connection_error": snap["connection_error"],
+            "reveal": snap["reveal"],
+        }
 
     @app.websocket("/ws")
     async def ws(socket: WebSocket) -> None:
