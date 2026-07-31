@@ -29,7 +29,10 @@ import argparse
 
 from scripts.instructor import start_all_races as start_mod
 from scripts.instructor import stop_all_races as stop_mod
+from scripts.workshop import create as create_mod
 from scripts.workshop import creds as creds_mod
+from scripts.workshop import reset as reset_mod
+from scripts.workshop import teardown as teardown_mod
 from scripts.workshop import validate as validate_mod
 from scripts.workshop import wsa as wsa_mod
 
@@ -68,6 +71,20 @@ def main() -> None:
     p_stop = sub.add_parser("stop-races", help="Scale every attendee race simulator to zero")
     stop_mod.add_arguments(p_stop)
     p_stop.set_defaults(func=stop_mod.stop_races)
+
+    p_create = sub.add_parser(
+        "create", help="One-command workshop setup (preflight + secrets + validate + build + cards)"
+    )
+    create_mod.add_arguments(p_create)
+    p_create.set_defaults(func=create_mod.create)
+
+    p_teardown = sub.add_parser("teardown", help="Tear down the workshop (secrets + clean + card cleanup)")
+    teardown_mod.add_arguments(p_teardown)
+    p_teardown.set_defaults(func=teardown_mod.teardown)
+
+    p_reset = sub.add_parser("reset-races", help="Reset all attendee environments for a new race")
+    reset_mod.add_arguments(p_reset)
+    p_reset.set_defaults(func=reset_mod.reset_races)
 
     args = parser.parse_args()
     args.func(args)

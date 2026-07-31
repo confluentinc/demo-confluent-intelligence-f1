@@ -30,14 +30,12 @@ cloud: AWS
 account_count: 5
 
 # {N} is replaced with the account number (1..account_count).
-email_pattern: "dmarsh+f1wp{N}@confluent.io"
+email_pattern: "bheintz+f1wp{N}@confluent.io"
 
-# Terraform source. Omit terraform_repo/terraform_ref for local-copy mode
-# (build straight from a local checkout — useful while iterating on
+# Terraform source. terraform_repo/terraform_ref omitted for local-copy mode
+# (build straight from this local checkout — useful while iterating on
 # terraform/ before pushing).
-terraform_repo: https://github.com/confluentinc/demo-confluent-intelligence-f1
 terraform_path: terraform/aws/
-terraform_ref: workshop-transform # branch holding the workshop code; update if this changes
 shared_infra_path: terraform/aws-shared/
 
 # Files the shared Terraform reads from OUTSIDE the terraform/ tree via relative

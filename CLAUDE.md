@@ -19,9 +19,19 @@ shell (`uv run f1-sql`). See "WSA (organizer provisioning)" below.
 ## Commands
 
 ```bash
-# Organizer: full workshop (many attendees). `workshop` wraps the `wsa` CLI (which
-# still owns provisioning) and locates the sibling checkout itself, so these run from
-# THIS repo with -w injected. Secrets are still yours to inject (op / .env / exports).
+# Organizer: one-command workshop creation and teardown.
+# Prompts for any missing secrets (or use `op run` / env vars to inject them).
+uv run create-workshop --attendees 5               # preflight + secrets + build + cards
+uv run create-workshop --attendees 20 --concurrency 4  # larger workshop
+uv run teardown-workshop                            # tears down the newest run
+uv run workshop reset-races                         # stop feeds + reset all attendee envs
+#   Lifecycle: create-workshop → attendees write LAB 3 → start-races → ... →
+#   reset-races → attendees write LAB 3 → start-races → ... → teardown-workshop
+
+# Organizer: full workshop (many attendees) — power-user subcommands.
+# `workshop` wraps the `wsa` CLI (which still owns provisioning) and locates the
+# sibling checkout itself, so these run from THIS repo with -w injected.
+# Secrets: either prompted by create-workshop, or injected with op / .env / exports.
 op run --env-file=.env.tpl -- uv run workshop spec-validate    # wsa pre-flight: spec + local tooling
 op run --env-file=.env.tpl -- uv run workshop build --accounts 1-20 --concurrency 4
 #   ONE command: applies terraform/aws-shared, then N × terraform/aws, THEN writes every
@@ -414,6 +424,10 @@ same applies to `demo-reference/orchestrate_social_agent.md` ↔ the LAB 5 guide
 | `scripts/setup_mcp.py` | `uv run setup-mcp` — register `@confluentinc/mcp-confluent` with Claude Code (project-local) or Codex (user-global) from a credential card |
 | `scripts/common/deployment_meta.py` | Track definitions, derived prefixes, `runs/<track>/deployment.env`, pacing validation, `retire_track` |
 | `scripts/common/simulator_control.py` | Shared `--with-labs` machinery: submits the `demo-reference/` SQL and waits for RUNNING/COMPLETED |
+| `scripts/workshop/create.py` | `create-workshop` / `workshop create` — one-command workshop provisioning: preflight, secrets, validate, build, cards, next-steps |
+| `scripts/workshop/teardown.py` | `teardown-workshop` / `workshop teardown` — one-command teardown: secrets, confirm, clean, card cleanup |
+| `scripts/workshop/reset.py` | `workshop reset-races` — fleet-level reset: stop all feeds, fan out per-card reset, leave feeds stopped |
+| `scripts/workshop/secrets.py` | Shared secret collection for organizer commands (env → credentials.env → interactive prompt) |
 | `scripts/workshop/wsa.py` | `workshop spec-validate\|build\|clean` — wsa binary discovery, `-w` injection, run-id resolution, in-process card writing |
 | `scripts/pitwall/` | `f1-pitwall` live web dashboard — Kafka consumer → FastAPI/websocket → animated browser view; progressive reveal of LAB 3/4 panels; `--mock` offline feed |
 | `scripts/social_feed/` | `f1-social-feed` shared HTTP service for LAB 5 — tails each attendee's Kafka topics, serves `GET /race-feed/{prefix}` + auto OpenAPI spec for the watsonx Orchestrate tool; reuses pitwall consumer; `--mock` offline feed |
