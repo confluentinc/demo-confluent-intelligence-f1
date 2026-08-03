@@ -65,6 +65,11 @@ def teardown(args: argparse.Namespace) -> None:
         concurrency=args.concurrency,
         no_password_reset=False,
         no_dispenser_clear=False,
+        # Both post-teardown steps need Google OAuth credentials, which `clean`
+        # resolves itself (and skips loudly when there are none) — see
+        # `wsa_mod.find_google_credentials`. `--google-credentials` is a
+        # `workshop clean` flag; teardown always takes the default search.
+        google_credentials="",
         accounts_only=False,
         shared_only=False,
     )

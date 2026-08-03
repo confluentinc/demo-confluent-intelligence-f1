@@ -483,6 +483,17 @@ you no longer invoke it from there: `uv run workshop spec-validate|build|clean`
   tools either way.
 - **Clean:** `wsa clean -w wsa-spec-aws.yaml` — pass `--no-password-reset
   --no-dispenser-clear` if this run never used the dispenser/Gmail reset.
+  `workshop clean` decides that for you, and the reason matters: **wsa only warns
+  when the Google OAuth client is missing** (`main.go:1432,1507`), so a teardown
+  that reports success can leave every attendee's password live and their
+  credentials sitting in the dispenser sheet. `find_google_credentials` resolves
+  one JSON for both flags (`--google-credentials`, `$WSA_GOOGLE_CREDENTIALS`,
+  `~/.wsa/gmail-credentials.json`, wsa checkout root — an explicit path that
+  doesn't exist is fatal, never a fallback), and `dispenser_configured` treats a
+  missing or `<placeholder>` `WSA_DISPENSER_SPREADSHEET_ID` as "no dispenser".
+  Whatever can't run is skipped *explicitly*, with the consequence named on
+  stderr. That env var belongs in **this** repo's gitignored `wsa.env`: wsa reads
+  `wsa.env` from its CWD, which the wrapper pins here.
 
 ---
 

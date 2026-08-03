@@ -491,6 +491,12 @@ class CleanTests(unittest.TestCase):
         patcher = patch.object(wsa_mod, "find_wsa", return_value=Path("/fake/bin/wsa"))
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Default to "no OAuth client on this machine" so the assertions below do
+        # not depend on whether the developer running them happens to have one at
+        # ~/.wsa/. Tests that care patch it themselves.
+        patcher = patch.object(wsa_mod, "find_google_credentials", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def clean_args(self, **overrides) -> argparse.Namespace:
         defaults = dict(
@@ -501,6 +507,7 @@ class CleanTests(unittest.TestCase):
             no_dispenser_clear=False,
             accounts_only=False,
             shared_only=False,
+            google_credentials="",
         )
         defaults.update(overrides)
         return argparse.Namespace(**defaults)
@@ -532,14 +539,122 @@ class CleanTests(unittest.TestCase):
 
         with patch.object(wsa_mod, "_stream_wsa", side_effect=_run):
             with contextlib.redirect_stdout(io.StringIO()):
-                wsa_mod.clean(self.clean_args(run_id="old99"))
+                with contextlib.redirect_stderr(io.StringIO()):
+                    wsa_mod.clean(self.clean_args(run_id="old99"))
 
-        self.assertEqual(recorded["extra"], ["--run-id", "old99"])
+        # The two skips are appended by clean itself: with no OAuth client there is
+        # no way to run either post-teardown step.
+        self.assertEqual(
+            recorded["extra"],
+            ["--run-id", "old99", "--no-password-reset", "--no-dispenser-clear"],
+        )
 
     def test_no_run_to_clean_is_an_actionable_error(self):
         with self.assertRaises(SystemExit) as caught:
             wsa_mod.clean(self.clean_args())
         self.assertIn("workshop build", str(caught.exception))
+
+    # --- Google OAuth credentials for the two post-teardown steps ---------------
+    #
+    # wsa only *warns* when they are missing (main.go:1432,1507), so a teardown can
+    # report success while leaving attendee passwords live and their credentials in
+    # a shared sheet. These pin down that we either pass the file or say we didn't.
+
+    def _clean_extra(self, **overrides) -> list[str]:
+        write_report(self.root / wsa_mod.OUTPUT_DIR / "ab12", "ab12", "2026-07-30T17:00:00Z")
+        recorded: dict[str, list[str]] = {}
+
+        def _run(binary, root, subcommand, extra):
+            recorded["extra"] = extra
+            return 0
+
+        with patch.object(wsa_mod, "_stream_wsa", side_effect=_run):
+            with contextlib.redirect_stdout(io.StringIO()):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    wsa_mod.clean(self.clean_args(**overrides))
+        return recorded["extra"]
+
+    def test_both_steps_get_the_credentials_when_a_dispenser_exists(self):
+        (self.root / "wsa.env").write_text("WSA_DISPENSER_SPREADSHEET_ID=1AbC_real-sheet-id\n")
+        with patch.object(wsa_mod, "find_google_credentials", return_value=Path("/creds.json")):
+            extra = self._clean_extra()
+        self.assertIn("--gmail-credentials", extra)
+        self.assertIn("--sheets-credentials", extra)
+        self.assertEqual(extra[extra.index("--sheets-credentials") + 1], "/creds.json")
+        self.assertNotIn("--no-password-reset", extra)
+        self.assertNotIn("--no-dispenser-clear", extra)
+
+    def test_no_dispenser_configured_skips_only_the_dispenser_clear(self):
+        # The common case before a dispenser is set up: rotating passwords still
+        # matters, and asking wsa to clear a sheet that doesn't exist only earns a
+        # "cannot resolve spreadsheet" warning at every teardown.
+        with patch.object(wsa_mod, "find_google_credentials", return_value=Path("/creds.json")):
+            extra = self._clean_extra()
+        self.assertIn("--gmail-credentials", extra)
+        self.assertIn("--no-dispenser-clear", extra)
+        self.assertNotIn("--sheets-credentials", extra)
+
+    def test_missing_credentials_skip_both_and_name_the_consequence(self):
+        (self.root / "wsa.env").write_text("WSA_DISPENSER_SPREADSHEET_ID=1AbC_real-sheet-id\n")
+        write_report(self.root / wsa_mod.OUTPUT_DIR / "ab12", "ab12", "2026-07-30T17:00:00Z")
+        err = io.StringIO()
+        with patch.object(wsa_mod, "_stream_wsa", return_value=0):
+            with contextlib.redirect_stdout(io.StringIO()):
+                with contextlib.redirect_stderr(err):
+                    wsa_mod.clean(self.clean_args())
+        warning = err.getvalue()
+        # A silent skip is the failure mode this guards against: the operator has to
+        # learn that old cards still work and the sheet still holds credentials.
+        self.assertIn("stays valid", warning)
+        self.assertIn("dispenser sheet", warning)
+
+    def test_an_explicit_skip_never_passes_credentials(self):
+        with patch.object(wsa_mod, "find_google_credentials", return_value=Path("/creds.json")):
+            extra = self._clean_extra(no_password_reset=True, no_dispenser_clear=True)
+        self.assertNotIn("--gmail-credentials", extra)
+        self.assertNotIn("--sheets-credentials", extra)
+
+
+class GoogleCredentialsTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_explicit_path_wins_and_a_bad_one_is_fatal(self):
+        real = self.root / "creds.json"
+        real.write_text("{}")
+        self.assertEqual(wsa_mod.find_google_credentials(str(real)), real)
+        with self.assertRaises(SystemExit) as caught:
+            wsa_mod.find_google_credentials(str(self.root / "nope.json"))
+        self.assertIn("no such file", str(caught.exception))
+
+    def test_falls_back_to_the_wsa_checkout_root(self):
+        checkout = self.root / "workshop-setup-accelerator"
+        (checkout / "bin").mkdir(parents=True)
+        creds = checkout / wsa_mod.GOOGLE_CREDS_NAME
+        creds.write_text("{}")
+        with patch.dict(os.environ, {wsa_mod.GOOGLE_CREDS_ENV: ""}, clear=False):
+            with patch.object(wsa_mod.Path, "home", return_value=self.root / "nohome"):
+                found = wsa_mod.find_google_credentials(wsa_binary=checkout / "bin" / "wsa")
+        self.assertEqual(found, creds)
+
+    def test_placeholder_spreadsheet_id_is_not_a_dispenser(self):
+        # wsa.env.example ships `<YOUR_SPREADSHEET_ID>`; a copied-but-unedited file
+        # must not make teardown try to clear a sheet.
+        (self.root / "wsa.env").write_text("WSA_DISPENSER_SPREADSHEET_ID=<YOUR_SPREADSHEET_ID>\n")
+        with patch.dict(os.environ, {wsa_mod.DISPENSER_ID_ENV: ""}, clear=False):
+            self.assertFalse(wsa_mod.dispenser_configured(self.root))
+
+    def test_a_real_id_in_wsa_env_counts(self):
+        (self.root / "wsa.env").write_text("# comment\nWSA_DISPENSER_SPREADSHEET_ID=1AbC-real\n")
+        with patch.dict(os.environ, {wsa_mod.DISPENSER_ID_ENV: ""}, clear=False):
+            self.assertTrue(wsa_mod.dispenser_configured(self.root))
+
+    def test_the_shell_environment_wins_over_wsa_env(self):
+        (self.root / "wsa.env").write_text("WSA_DISPENSER_SPREADSHEET_ID=<YOUR_SPREADSHEET_ID>\n")
+        with patch.dict(os.environ, {wsa_mod.DISPENSER_ID_ENV: "1AbC-real"}, clear=False):
+            self.assertTrue(wsa_mod.dispenser_configured(self.root))
 
 
 class SpecHeaderContractTests(unittest.TestCase):

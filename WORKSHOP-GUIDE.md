@@ -174,6 +174,43 @@ the same passwords from 1Password and mails them to the claimant).
 > `--no-dispenser-column` to skip the rewrite. (wsa re-adds its own `Claimed By`
 > and `Timestamp` columns on every upload, so the extra column is safe.)
 
+### Optional: set up the dispenser (one-time)
+
+Skip this entirely if you hand out `.md` cards — everything else in this guide
+works without a dispenser. Set it up once if you'd rather attendees self-serve:
+they submit a Google Form and the Apps Script emails them one unclaimed account.
+
+The Form + Sheet + Apps Script steps are documented in the repo that owns
+`Code.gs` — follow **`<wsa>/account-dispenser/SETUP.md`** and don't copy it here.
+Four things that guide gets wrong or doesn't cover for this workshop:
+
+1. **Skip its Step 2** (adding headers and pasting data). `wsa dispenser-upload`
+   creates the `AccountInventory` tab if it's missing and overwrites the header row
+   from `build-output.csv` on every upload, including the `Claimed By` / `Timestamp`
+   columns. You only need a blank spreadsheet, so you have an ID to paste.
+2. **The spreadsheet ID goes in *this* repo's `wsa.env`**, not the wsa checkout's:
+   `wsa` reads `wsa.env` from its working directory, and `uv run workshop …` always
+   runs it here. Add `WSA_DISPENSER_SPREADSHEET_ID=<id-from-the-sheet-URL>` (the file
+   is gitignored). Leaving the `<YOUR_SPREADSHEET_ID>` placeholder counts as "no
+   dispenser" and is handled gracefully everywhere.
+3. **`--sheets-credentials` is the same OAuth client JSON as `--gmail-credentials`** —
+   `~/.wsa/gmail-credentials.json` if you already ran `accept-account-invitation`.
+   The `spreadsheets` scope isn't covered by the cached Gmail token, so the first
+   upload opens a fresh consent flow and caches to `~/.wsa/sheets-token.json`. Enable
+   the **Google Sheets API** in the same GCP project as that OAuth client first, or
+   consent fails with an API-disabled error.
+4. **Upload after the cards, never instead of them.** `workshop creds` is what adds
+   the RTCE `MCP Setup Command` column to `build-output.csv`, so uploading a CSV from
+   a raw `wsa build` (rather than `create-workshop` / `workshop build`, which write
+   cards automatically) emails attendees everything except their RTCE key.
+
+```bash
+# One-time, after the Sheet/Form/script exist and wsa.env has the ID:
+<wsa>/bin/wsa dispenser-upload --sheets-credentials ~/.wsa/gmail-credentials.json
+
+# Then share the FORM link with attendees — never the Sheet.
+```
+
 > **Order matters.** Cards are only valid for the password that was current when
 > they were written. Running `wsa reset-account-password` afterward silently
 > invalidates every card — regenerate them with
@@ -246,12 +283,21 @@ This command:
 1. Finds the most recent live workshop run
 2. Asks for confirmation
 3. Destroys all attendee environments (Terraform destroy)
-4. Rotates every attendee's Console password and clears the dispenser sheet, so
-   nobody can sign back in with an old card
+4. Rotates every attendee's Console password, and clears the dispenser sheet if
+   one is configured, so nobody can sign back in with an old card
 5. Offers to delete the credential card directory
 
 The CC user accounts themselves survive teardown — that's why the one-time prep
 is one-time.
+
+> **Step 4 needs the Google OAuth client.** Both halves of it talk to Google —
+> Gmail to confirm each password reset, Sheets to clear the dispenser rows — using
+> `~/.wsa/gmail-credentials.json` (override with `workshop clean
+> --google-credentials <path>`). Without it teardown **skips them and says so on
+> stderr**: attendee passwords stay valid, so every card handed out still works,
+> and any dispenser rows stay readable. Destroying the infrastructure succeeds
+> either way. The dispenser clear is skipped silently when
+> `WSA_DISPENSER_SPREADSHEET_ID` isn't set, since there's nothing to clear.
 
 Use `--yes` to skip the confirmation prompt. Use `--run-id <id>` to target a
 specific run instead of the newest one.

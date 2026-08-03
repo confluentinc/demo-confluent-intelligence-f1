@@ -483,6 +483,78 @@ def spec_validate(args: argparse.Namespace) -> None:
         raise SystemExit(code)
 
 
+# `wsa clean`'s two post-teardown steps talk to Google APIs with the *same* OAuth
+# desktop-client JSON — `--gmail-credentials` to rotate each attendee's Console
+# password, `--sheets-credentials` to clear their row from the dispenser sheet
+# (wsa's RUNBOOK.md:99). Passing neither does not fail the teardown: wsa prints one
+# warning per step and carries on (`main.go:1432,1507`), so a run that reports
+# success can leave every attendee's password still working and their credentials
+# still sitting in a shared Google Sheet. Resolve the file here, and when it is
+# genuinely absent skip both steps *explicitly* — one loud line beats two warnings
+# buried in a teardown log.
+GOOGLE_CREDS_ENV = "WSA_GOOGLE_CREDENTIALS"
+GOOGLE_CREDS_NAME = "gmail-credentials.json"
+
+# Set by the operator once the dispenser Google Sheet exists. wsa reads it from the
+# `wsa.env` in its **CWD**, which this module pins to *this* repo — so it lives in
+# this repo's gitignored `wsa.env`, not the sibling checkout's.
+DISPENSER_ID_ENV = "WSA_DISPENSER_SPREADSHEET_ID"
+
+
+def find_google_credentials(explicit: str = "", wsa_binary: Path | None = None) -> Path | None:
+    """The OAuth client JSON for password reset and dispenser clearing.
+
+    One file serves both flags. First hit wins: an explicit path,
+    ``$WSA_GOOGLE_CREDENTIALS``, ``~/.wsa/``, then the wsa checkout root (where
+    wsa's own runbook tells you to keep it). Returns None when there is none —
+    the caller decides what to skip.
+    """
+    # An explicit path is a decision, not a hint: falling back to a *different*
+    # file after it turns out to be missing is how you rotate the wrong account's
+    # password without noticing.
+    if explicit:
+        chosen = Path(explicit).expanduser()
+        if not chosen.is_file():
+            raise SystemExit(f"--google-credentials: no such file: {explicit}")
+        return chosen
+
+    candidates: list[Path] = []
+    if from_env := os.environ.get(GOOGLE_CREDS_ENV):
+        candidates.append(Path(from_env).expanduser())
+    candidates.append(Path.home() / ".wsa" / GOOGLE_CREDS_NAME)
+    if wsa_binary is not None:
+        candidates.append(wsa_binary.parent.parent / GOOGLE_CREDS_NAME)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def dispenser_configured(root: Path) -> bool:
+    """Whether a dispenser spreadsheet is configured at all.
+
+    Mirrors wsa's own precedence (shell env over `wsa.env`, `main.go:102-109`) so
+    that a workshop which never used the dispenser skips the clear deliberately
+    instead of collecting a "cannot resolve spreadsheet" warning at every teardown.
+    """
+    value = os.environ.get(DISPENSER_ID_ENV, "")
+    if not value:
+        for name in ("wsa.env", ".env"):
+            path = root / name
+            if not path.is_file():
+                continue
+            for line in path.read_text().splitlines():
+                key, sep, raw = line.partition("=")
+                if sep and key.strip() == DISPENSER_ID_ENV:
+                    value = raw.strip().strip("'\"")
+                    break
+            if value:
+                break
+    # wsa.env.example ships the literal placeholder, and a copied-but-unedited
+    # file is the common case — treat it as "no dispenser".
+    return bool(value) and not value.startswith("<")
+
+
 def clean(args: argparse.Namespace) -> None:
     """`wsa clean` for a run, resolving `--run-id` from the newest build report.
 
@@ -505,10 +577,36 @@ def clean(args: argparse.Namespace) -> None:
         extra += ["--accounts", args.accounts]
     if args.concurrency is not None:
         extra += ["--concurrency", str(args.concurrency)]
-    if args.no_password_reset:
+
+    google_creds = find_google_credentials(getattr(args, "google_credentials", ""), binary)
+    skip_password = args.no_password_reset
+    skip_dispenser = args.no_dispenser_clear or not dispenser_configured(root)
+    if google_creds is None and not skip_password:
+        print(
+            f"\nwarning: no {GOOGLE_CREDS_NAME} found — skipping the password reset. Every "
+            "attendee's\n  Console password stays valid after teardown, so old credential cards "
+            "keep working.\n  Fix: --google-credentials <path>, or put the OAuth client JSON at "
+            f"~/.wsa/{GOOGLE_CREDS_NAME}.",
+            file=sys.stderr,
+        )
+        skip_password = True
+    if google_creds is None and not skip_dispenser:
+        print(
+            f"\nwarning: no {GOOGLE_CREDS_NAME} found — skipping the dispenser clear. Attendee\n"
+            "  credentials stay visible in the dispenser sheet after teardown; clear it by hand.",
+            file=sys.stderr,
+        )
+        skip_dispenser = True
+
+    if skip_password:
         extra.append("--no-password-reset")
-    if args.no_dispenser_clear:
+    else:
+        extra += ["--gmail-credentials", str(google_creds)]
+    if skip_dispenser:
         extra.append("--no-dispenser-clear")
+    else:
+        extra += ["--sheets-credentials", str(google_creds)]
+
     if args.accounts_only:
         extra.append("--accounts-only")
     if args.shared_only:
@@ -613,3 +711,10 @@ def add_clean_arguments(p: argparse.ArgumentParser) -> None:
         help="Destroy per-account infra only; keep shared infra for reuse",
     )
     p.add_argument("--shared-only", action="store_true", help="Destroy shared infra only (no build report required)")
+    p.add_argument(
+        "--google-credentials",
+        default="",
+        help="OAuth client JSON for the password reset and the dispenser clear (one file does both). "
+        f"Default: ${GOOGLE_CREDS_ENV}, then ~/.wsa/{GOOGLE_CREDS_NAME}, then the wsa checkout root. "
+        "Without it both steps are skipped and teardown says so.",
+    )
