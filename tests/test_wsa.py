@@ -651,6 +651,18 @@ class GoogleCredentialsTests(unittest.TestCase):
         with patch.dict(os.environ, {wsa_mod.DISPENSER_ID_ENV: ""}, clear=False):
             self.assertTrue(wsa_mod.dispenser_configured(self.root))
 
+    def test_an_export_prefix_is_stripped_like_wsa_does(self):
+        # wsa's loader strips `export ` (`internal/envfile/envfile.go`), so failing
+        # to strip it here would skip a clear wsa would have run.
+        (self.root / "wsa.env").write_text("export WSA_DISPENSER_SPREADSHEET_ID=1AbC-real\n")
+        with patch.dict(os.environ, {wsa_mod.DISPENSER_ID_ENV: ""}, clear=False):
+            self.assertTrue(wsa_mod.dispenser_configured(self.root))
+
+    def test_a_commented_out_id_is_not_a_dispenser(self):
+        (self.root / "wsa.env").write_text("#WSA_DISPENSER_SPREADSHEET_ID=1AbC-real\n")
+        with patch.dict(os.environ, {wsa_mod.DISPENSER_ID_ENV: ""}, clear=False):
+            self.assertFalse(wsa_mod.dispenser_configured(self.root))
+
     def test_the_shell_environment_wins_over_wsa_env(self):
         (self.root / "wsa.env").write_text("WSA_DISPENSER_SPREADSHEET_ID=<YOUR_SPREADSHEET_ID>\n")
         with patch.dict(os.environ, {wsa_mod.DISPENSER_ID_ENV: "1AbC-real"}, clear=False):

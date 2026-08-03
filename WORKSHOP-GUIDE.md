@@ -184,7 +184,7 @@ The Form + Sheet + Apps Script steps are documented in the repo that owns
 `Code.gs` — follow **`<wsa>/account-dispenser/SETUP.md`** and don't copy it here.
 Four things that guide gets wrong or doesn't cover for this workshop:
 
-1. **Skip its Step 2** (adding headers and pasting data). `wsa dispenser-upload`
+1. **Skip the step that has you add headers and paste account data.** `wsa dispenser-upload`
    creates the `AccountInventory` tab if it's missing and overwrites the header row
    from `build-output.csv` on every upload, including the `Claimed By` / `Timestamp`
    columns. You only need a blank spreadsheet, so you have an ID to paste.

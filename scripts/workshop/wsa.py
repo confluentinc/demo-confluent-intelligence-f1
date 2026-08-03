@@ -544,7 +544,11 @@ def dispenser_configured(root: Path) -> bool:
             if not path.is_file():
                 continue
             for line in path.read_text().splitlines():
-                key, sep, raw = line.partition("=")
+                # wsa's own loader strips an optional `export ` prefix
+                # (`internal/envfile/envfile.go`), and a file people think of as
+                # shell config collects them. Not matching it here would skip a
+                # dispenser clear that wsa itself would have performed.
+                key, sep, raw = line.strip().removeprefix("export ").partition("=")
                 if sep and key.strip() == DISPENSER_ID_ENV:
                     value = raw.strip().strip("'\"")
                     break
