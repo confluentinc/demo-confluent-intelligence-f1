@@ -73,6 +73,13 @@ confluent-mcp.env
 *.pem
 *.key
 credentials.json
+# Google OAuth client + cached token for `wsa accept-account-invitation` /
+# `dispenser-upload`. Prefer keeping these in ~/.wsa/ (where wsa already caches
+# gmail-token.json) — these patterns are the backstop if one lands here.
+gmail-credentials.json
+gmail-token.json
+sheets-credentials.json
+client_secret_*.json
 
 # Generated configs (contain secrets)
 generated/
@@ -165,3 +172,6 @@ node_modules/
 package.json
 package-lock.json
 /docs/superpowers/
+# Confluent CLI `api-key create --output-file` drops these in the CWD, named for
+# the key id. Pattern, not one exact filename, so the next one is covered too.
+api-key-*.txt

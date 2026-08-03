@@ -28,6 +28,16 @@ variable "region" {
   default     = "us-east-1"
 }
 
+variable "enable_rtce" {
+  description = <<-EOT
+    Enable the Real-Time Context Engine on car_telemetry + race_standings so they
+    can be queried from an MCP client. Set TF_VAR_enable_rtce=false for an org or
+    region where RTCE isn't available — see modules/topics/variables.tf.
+  EOT
+  type        = bool
+  default     = true
+}
+
 # --- Confluent Cloud ---
 
 variable "confluent_cloud_api_key" {

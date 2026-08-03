@@ -299,6 +299,7 @@ class BuildHandoffTests(unittest.TestCase):
             region="us-east-1",
             no_cards=False,
             prefix="",
+            account_count=None,
         )
         defaults.update(overrides)
         return argparse.Namespace(**defaults)
@@ -366,6 +367,39 @@ class BuildHandoffTests(unittest.TestCase):
                 wsa_mod.build(self.build_args(prefix="f1ws"))
         derived = yaml.safe_load((self.root / wsa_mod.GENERATED_SPEC).read_text())
         self.assertEqual(derived["terraform_vars"]["prefix"], "f1ws{NNN}")
+
+    def test_account_count_override_writes_a_derived_spec(self):
+        # --attendees is authoritative: N lands in the derived spec so wsa's
+        # "(N accounts)" banner can't contradict what --accounts builds.
+        (self.root / wsa_mod.SPEC_FILE).write_text("name: test\naccount_count: 5\n")
+        with self.fake_build(), patch.object(creds_mod, "creds"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                wsa_mod.build(self.build_args(accounts="1-40", account_count=40))
+        self.assertEqual(self.recorded_spec_path, self.root / wsa_mod.GENERATED_SPEC)
+        derived = yaml.safe_load((self.root / wsa_mod.GENERATED_SPEC).read_text())
+        self.assertEqual(derived["account_count"], 40)
+
+    def test_account_count_matching_the_spec_is_not_an_override(self):
+        (self.root / wsa_mod.SPEC_FILE).write_text("name: test\naccount_count: 5\n")
+        with self.fake_build(), patch.object(creds_mod, "creds"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                wsa_mod.build(self.build_args(account_count=5))
+        self.assertIsNone(self.recorded_spec_path)
+        self.assertFalse((self.root / wsa_mod.GENERATED_SPEC).exists())
+
+    def test_prefix_and_account_count_land_in_one_derived_spec(self):
+        # Both overrides go through a single read-modify-write. Two separate
+        # deriving functions would each clobber the other's field — this is the
+        # test that catches that, since neither single-override test can.
+        (self.root / wsa_mod.SPEC_FILE).write_text(
+            "name: test\naccount_count: 5\nterraform_vars:\n  prefix: f1wp{NNN}\n"
+        )
+        with self.fake_build(), patch.object(creds_mod, "creds"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                wsa_mod.build(self.build_args(prefix="f1ws", account_count=40))
+        derived = yaml.safe_load((self.root / wsa_mod.GENERATED_SPEC).read_text())
+        self.assertEqual(derived["terraform_vars"]["prefix"], "f1ws{NNN}")
+        self.assertEqual(derived["account_count"], 40)
 
     def test_prefix_matching_the_spec_is_not_an_override(self):
         # --prefix equal to the committed value uses the committed spec, no file.

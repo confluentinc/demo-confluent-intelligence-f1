@@ -56,6 +56,7 @@ module "topics" {
   organization_id     = data.confluent_organization.main.id
   environment_id      = module.environment.environment_id
   environment_name    = module.environment.environment_name
+  cluster_id          = module.cluster.cluster_id
   cluster_name        = module.cluster.cluster_name
   compute_pool_id     = module.flink.compute_pool_id
   service_account_id  = module.cluster.service_account_id
@@ -63,6 +64,8 @@ module "topics" {
   flink_api_key       = module.flink.flink_api_key
   flink_api_secret    = module.flink.flink_api_secret
   owner_email         = var.owner_email
+  region              = var.region
+  enable_rtce         = var.enable_rtce
 
   # The value edges above reach only confluent_service_account.app, NOT the role
   # bindings that give it authority. On destroy those edges reverse, so without

@@ -12,10 +12,17 @@ How to deploy, run, and reset a multi-participant F1 Pit Wall AI workshop.
 - **AWS Bedrock access key + secret** (IAM user with `bedrock:InvokeModel`)
 - **Owner email** (for AWS resource tagging)
 - **1Password CLI (`op`)**, signed in — this is where the attendee Confluent Cloud
-  passwords live (see the next section)
+  passwords live (see the next section). Turn on 1Password desktop app → Settings →
+  Developer → **"Integrate with 1Password CLI"**. A shell `OP_SESSION_*` token is not
+  enough: `wsa` shells out to `op` from child processes, and those fail with "not
+  currently signed in" the moment a session expires mid-run.
 
-You'll be prompted for any missing secrets on first run. If you use 1Password,
-prefix any command with `op run --env-file=.env.tpl --` to inject them automatically.
+You'll be prompted for any missing secrets on first run and they're saved to
+`credentials.env` for the next one, so there's nothing to inject by hand. If you'd
+rather keep them in 1Password, write your own `.env.tpl` and use `op run --env-file`.
+There is no `.env.tpl` in this repo — the one in the `wsa` checkout resolves against
+the TMM-owned `Workshop Setup Accelerator` vault, which most people can't read, so
+copying that command is a dead end.
 
 ---
 
@@ -28,30 +35,69 @@ and refuses to build without them.
 Do this **once, ever** — not per workshop. `wsa clean` rotates the passwords at
 teardown but never deletes the users, so the next workshop reuses them.
 
+> **Already done for accounts 1-40** (`bheintz+f1wp1..40@confluent.io`, prepped
+> 2026-08-03). Skip this section unless you're adding account 41 or higher, or a
+> different organizer is running the workshop from a different `email_pattern`.
+
 ```bash
 # 1. Invite one user per account number, matching wsa-spec-aws.yaml's email_pattern.
-for i in $(seq 1 20); do
+for i in $(seq 1 40); do
   confluent iam user invitation create "bheintz+f1wp${i}@confluent.io"
 done
 
-# 2. Accept every invite and set a first password, stored in 1Password.
-op run --env-file=.env.tpl -- <wsa>/bin/wsa accept-account-invitation \
-  -w wsa-spec-aws.yaml --gmail-credentials gmail-credentials.json
+# 2. Smoke-test ONE account first — this drives a headless browser, and finding out
+#    it works on account 1 beats finding out it doesn't on account 40.
+<wsa>/bin/wsa accept-account-invitation -w wsa-spec-aws.yaml \
+  --accounts 1 --gmail-credentials ~/.wsa/gmail-credentials.json
+
+# 3. Then the rest. --accounts is REQUIRED here: its default is the spec's
+#    account_count (5), NOT everyone you just invited, so omitting it silently
+#    leaves accounts 6+ as pending invitations.
+<wsa>/bin/wsa accept-account-invitation -w wsa-spec-aws.yaml \
+  --accounts 2-40 --gmail-credentials ~/.wsa/gmail-credentials.json
+
+# 4. Verify before you ever run a build. An unaccepted user fails
+#    terraform/modules/environment's confluent_user lookup at PLAN time.
+confluent iam user list -o json | grep -c 'f1wp'   # expect your account count
+op read "op://Workshop Setup Accelerator Users/Account 040/confluent-cloud/password" >/dev/null && echo ok
 ```
 
-Step 2 drives a headless browser and reads the invitation emails over the Gmail
-API, so it needs a Google Cloud OAuth client — see the wsa repo's
-`user-accounts/user-accounts.md`. All `+f1wpN` addresses land in your own inbox
-via plus-aliasing.
+No `op run` wrapper on steps 2-3: `accept-account-invitation` needs no `TF_VAR_*`
+at all. It talks to Gmail and 1Password directly, and it writes to your **own**
+`Workshop Setup Accelerator Users` vault (created by wsa on first use) — not the
+shared TMM vault.
+
+It reads the invitation emails over the Gmail API, so it needs a Google Cloud OAuth
+client of type **Desktop app** (wsa hardcodes the `http://localhost:8085/callback`
+loopback redirect). See the wsa repo's `user-accounts/user-accounts.md`. Consent must
+be given as the mailbox owner — all `+f1wpN` addresses land in that one inbox via
+plus-aliasing. Invitation emails are matched with `newer_than:3d`, so accept within
+three days of inviting.
+
+> **When acceptance fails partway.** A half-failed account ("login verification
+> failed", "setInputValue: element not found") has spent its invite ticket: the
+> invitation sits at `INVITE_STATUS_SENT` forever, retrying the accept fails again,
+> and it can't be cleaned up — `confluent iam user delete` doesn't work on a pending
+> user and there's no `invitation delete`. The repair is to just re-issue the invite
+> and accept again:
+>
+> ```bash
+> confluent iam user invitation create "bheintz+f1wp7@confluent.io"
+> <wsa>/bin/wsa accept-account-invitation -w wsa-spec-aws.yaml --accounts 7 \
+>   --gmail-credentials ~/.wsa/gmail-credentials.json
+> ```
 
 Passwords end up in the 1Password vault **`Workshop Setup Accelerator Users`**,
 item `Account NNN`, field `confluent-cloud/password`. That vault is the only
 place they exist — Terraform never sees them, and wsa writes the placeholder
 `(from 1Password)` into `build-output.csv`.
 
-> **Growing the workshop.** Raising `account_count` past what you've already
-> invited means running both steps again for the new numbers. `create-workshop`
-> will stop and tell you which accounts are missing.
+> **Growing the workshop.** `--attendees N` needs no file edits — it sets the
+> spec's `account_count` and the shared Postgres slot capacity itself. What it
+> can't do is invent logins: going past the account numbers you've already
+> invited means running both steps above for the new numbers.
+> `create-workshop` stops and names the missing accounts before it builds
+> anything.
 
 ---
 
@@ -85,6 +131,22 @@ Options:
 Once complete, each attendee has a Confluent Cloud login and a credential card.
 Races start automatically (ECS services launch at desired count 1).
 
+> **Real-Time Context Engine.** The build enables RTCE on `car_telemetry` and
+> `race_standings` (Terraform, `modules/topics`) and mints each attendee a Global
+> API key owned by their own service account, so their card carries a ready-to-paste
+> `claude mcp add` line. Two things to know:
+>
+> - It needs the `confluent` CLI logged in as **OrganizationAdmin** — only OrgAdmin
+>   or ResourceOwner-on-that-SA can create a Global key for a service account. If
+>   it isn't, cards are written without the RTCE section and the run warns; every
+>   other lab is unaffected. `--no-rtce-keys` skips it deliberately.
+> - **Regenerating cards replaces the key.** Global keys are capped at 2 per
+>   principal and a secret can't be re-read, so a second `workshop creds --rtce-keys`
+>   deletes the first key. Previously handed-out cards stop working for RTCE.
+>
+> Set `TF_VAR_enable_rtce=false` if RTCE isn't enabled on your org or you're
+> building outside its 11 supported AWS regions (`confluent rtce region list`).
+
 ---
 
 ## Step 2: Hand Out Credentials
@@ -102,6 +164,15 @@ details, then the environment/compute-pool IDs they need in the SQL workspace.
 The `.env` holds the Kafka, Schema Registry, and Flink API keys. Hand out both,
 or use the wsa dispenser for self-serve claim (`wsa dispenser-upload` resolves
 the same passwords from 1Password and mails them to the claimant).
+
+> **Dispenser attendees and the RTCE command.** A dispenser claimant never sees
+> the `.md` card, so `workshop creds` appends a
+> `Real-Time Context Engine / MCP Setup Command` column to that run's
+> `build-output.csv`. `wsa dispenser-upload` carries it through to the claim
+> email like any other credential — the dispenser's Apps Script groups columns by
+> their `Provider / Field` header, so no dispenser change is needed. Pass
+> `--no-dispenser-column` to skip the rewrite. (wsa re-adds its own `Claimed By`
+> and `Timestamp` columns on every upload, so the extra column is safe.)
 
 > **Order matters.** Cards are only valid for the password that was current when
 > they were written. Running `wsa reset-account-password` afterward silently

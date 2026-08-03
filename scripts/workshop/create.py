@@ -205,25 +205,42 @@ def _check_console_accounts(root: Path, attendees: int) -> None:
     — see WORKSHOP-GUIDE.md.
 
     Skipped entirely when the spec doesn't grant Console access.
+
+    Stops at the first few misses instead of sweeping every account: each lookup is
+    an ``op read`` with a 30s timeout, so a fat-fingered ``--attendees 400`` would
+    otherwise sit through hundreds of sequential probes before saying anything.
+    This is now the only guard on an over-large count — it replaces the old
+    account_count ceiling, and unlike that ceiling it checks something real.
     """
     spec = yaml.safe_load((root / wsa_mod.SPEC_FILE).read_text())
     if str(spec.get("terraform_vars", {}).get("grant_console_access", "")).lower() != "true":
         return
 
-    missing = [n for n in range(1, attendees + 1) if not creds_mod._resolve_op_password(str(n))]
+    missing: list[int] = []
+    for n in range(1, attendees + 1):
+        if not creds_mod._resolve_op_password(str(n)):
+            missing.append(n)
+            if len(missing) == 3:
+                break
     if not missing:
         print(f"  console pw:  ok ({attendees} account{'s' if attendees != 1 else ''})")
         return
 
+    listed = ", ".join(str(n) for n in missing)
+    if len(missing) == 3:
+        listed += " (stopped after 3 — there may be more)"
     raise SystemExit(
-        f"\nNo Confluent Cloud password in 1Password for account(s): "
-        f"{', '.join(str(n) for n in missing)}\n"
+        f"\nNo Confluent Cloud password in 1Password for account(s): {listed}\n"
         f"  Vault '{creds_mod.OP_VAULT}', items 'Account NNN', field "
         f"'{creds_mod.OP_PLATFORM}/password'.\n\n"
-        "  Signed in?               op signin\n"
-        "  Accounts never set up?   invite them, then run:\n"
-        "      <wsa>/bin/wsa accept-account-invitation -w wsa-spec-aws.yaml \\\n"
-        "        --gmail-credentials gmail-credentials.json\n"
+        "  Signed in?               op signin (better: 1Password app -> Developer ->\n"
+        "                           'Integrate with 1Password CLI', so wsa's child\n"
+        "                           processes can read the vault too)\n"
+        "  Accounts never set up?   invite them, then run (--accounts is required —\n"
+        "                           its default is the spec's account_count, not\n"
+        "                           everyone you invited):\n"
+        f"      <wsa>/bin/wsa accept-account-invitation -w {wsa_mod.SPEC_FILE} \\\n"
+        f"        --accounts 1-{attendees} --gmail-credentials ~/.wsa/gmail-credentials.json\n"
         "  See WORKSHOP-GUIDE.md, 'One-time org prep'. Attendees can't log in without this."
     )
 
@@ -275,6 +292,28 @@ def _check_env_name_collisions(prefix_pattern: str, attendees: int) -> None:
     )
 
 
+def _export_attendee_count(attendees: int) -> None:
+    """Pin ``terraform/aws-shared``'s Postgres replication-slot capacity to the real count.
+
+    One CDC slot per attendee, and ``max_replication_slots = attendee_count + 10``
+    (``terraform/aws-shared/main.tf``). wsa's shared-infra apply forwards only a
+    fixed set of variables, but its Terraform runner inherits this process's
+    environment and Terraform reads ``TF_VAR_*`` natively — the same route
+    ``deploy.py`` uses to pass ``TF_VAR_attendee_count=1``. Without this the value
+    fell back to the Terraform default, which a large workshop could silently
+    outgrow: the build succeeds and the CDC connectors then fail to start.
+
+    Deliberately an assignment, not ``setdefault``: --attendees is authoritative,
+    so a stale export must not quietly cap the slot count. A conflicting value is
+    reported rather than swallowed.
+    """
+    var = "TF_VAR_attendee_count"
+    existing = os.environ.get(var, "").strip()
+    if existing and existing != str(attendees):
+        print(f"  note: overriding exported {var}={existing} with --attendees {attendees}")
+    os.environ[var] = str(attendees)
+
+
 def _build_namespace(attendees: int, args: argparse.Namespace) -> argparse.Namespace:
     """Construct the namespace ``wsa_mod.build`` expects.
 
@@ -288,6 +327,7 @@ def _build_namespace(attendees: int, args: argparse.Namespace) -> argparse.Names
     ns = p.parse_args([])
 
     ns.accounts = f"1-{attendees}"
+    ns.account_count = attendees
     ns.concurrency = args.concurrency
     ns.name = args.name
     ns.region = args.region
@@ -380,6 +420,11 @@ def create(args: argparse.Namespace) -> None:
         )
 
     # --- 3. Validate --attendees ---
+    # --attendees is authoritative: it drives the accounts wsa builds, the spec's
+    # account_count (via a derived spec) and TF_VAR_attendee_count below, so no
+    # committed file needs editing to grow a workshop. The spec value survives only
+    # as the interactive default. Over-reaching is caught by _check_console_accounts,
+    # which verifies the Console password of every account actually exists.
     spec_count = _read_spec_account_count(root)
 
     if args.attendees is None:
@@ -393,14 +438,6 @@ def create(args: argparse.Namespace) -> None:
 
     if attendees < 1:
         raise SystemExit("--attendees must be at least 1.")
-    if attendees > spec_count:
-        raise SystemExit(
-            f"--attendees {attendees} exceeds account_count ({spec_count}) "
-            f"in {wsa_mod.SPEC_FILE}.\n"
-            f"Edit that file's account_count field to provision more attendees.\n"
-            f"Also check terraform/aws-shared/variables.tf's attendee_count "
-            f"(Postgres replication slots) — it must be >= account_count."
-        )
 
     print(f"\n  Attendees:   {attendees}")
 
@@ -424,6 +461,7 @@ def create(args: argparse.Namespace) -> None:
     wsa_mod.spec_validate(argparse.Namespace())
 
     # --- 6. Build ---
+    _export_attendee_count(attendees)
     print("\n=== Building workshop ({} attendee{}) ===\n".format(attendees, "s" if attendees != 1 else ""))
     ns = _build_namespace(attendees, args)
     ns.prefix = prefix
@@ -440,7 +478,9 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
         "--attendees",
         type=int,
         default=None,
-        help="Number of attendee environments (default: prompted, or spec's account_count)",
+        help="Number of attendee environments. Authoritative — also sets the spec's "
+        "account_count and the shared Postgres slot capacity, so no file needs editing "
+        "to grow a workshop (default: prompted, or the spec's account_count)",
     )
     p.add_argument("-c", "--concurrency", type=int, default=4, help="Parallel Terraform runs (default: 4)")
     p.add_argument(

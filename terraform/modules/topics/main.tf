@@ -138,3 +138,64 @@ resource "confluent_flink_statement" "create_race_standings_table" {
   depends_on = [confluent_flink_statement.create_car_telemetry_table]
 }
 
+# --- Real-Time Context Engine -------------------------------------------------
+#
+# RTCE materializes a topic into a lookup-optimized table and serves it to AI
+# agents over MCP, so an attendee's coding agent can ask questions about the live
+# race without a Kafka client or a consumer group. Enablement is PER TOPIC.
+#
+# Three constraints worth knowing before editing:
+#
+#  1. A registered schema is mandatory, which is why both resources depend on the
+#     CREATE TABLE statements above — those are what register the Avro subjects.
+#     Enabling RTCE on a topic with no schema fails.
+#  2. It's regional and per-org (see var.enable_rtce). `confluent rtce region
+#     list` is the authority on where it exists.
+#  3. `description` is REQUIRED and is *model-readable* — the agent sees it when
+#     choosing a topic. Treat it as prompt text, not a code comment.
+#
+# car_state is deliberately absent: attendees create it in LAB 3, so it doesn't
+# exist at apply time. They toggle it on in the Console themselves (LAB 3), which
+# is also the cheapest way to show what enablement actually does.
+
+resource "confluent_rtce_topic" "car_telemetry" {
+  count = var.enable_rtce ? 1 : 0
+
+  # Uppercase to match every other Confluent provider resource in this repo
+  # (modules/cluster, modules/flink both pass "AWS"). Note the CLI spells the
+  # same argument lowercase — `confluent rtce rtce-topic create --cloud aws`.
+  cloud       = "AWS"
+  region      = var.region
+  topic_name  = "car_telemetry"
+  description = "Live per-lap sensor telemetry for River Racing car #88 at Silverstone: tire temperatures and pressures for all four corners, engine and brake temperatures, hybrid battery charge, fuel remaining, DRS state, speed, throttle and brake position, timestamped per reading. One row per sensor sample, many per lap. Use for questions about the car's physical condition, tire wear or overheating, and whether it should pit."
+
+  environment {
+    id = var.environment_id
+  }
+
+  kafka_cluster {
+    id = var.cluster_id
+  }
+
+  depends_on = [confluent_flink_statement.create_car_telemetry_table]
+}
+
+resource "confluent_rtce_topic" "race_standings" {
+  count = var.enable_rtce ? 1 : 0
+
+  cloud       = "AWS"
+  region      = var.region
+  topic_name  = "race_standings"
+  description = "Live race standings for all 22 cars at Silverstone, keyed by car number so each row is that car's current state: driver and team name, track position, gap to the leader and to the car ahead, last lap time, pit stops completed, tire compound and age in laps, and whether the car is in the pit lane. Use for questions about who is where, race gaps, and rivals' tire strategy."
+
+  environment {
+    id = var.environment_id
+  }
+
+  kafka_cluster {
+    id = var.cluster_id
+  }
+
+  depends_on = [confluent_flink_statement.create_race_standings_table]
+}
+

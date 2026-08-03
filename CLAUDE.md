@@ -224,13 +224,37 @@ since `wsa` injects them by that naming convention as `TF_VAR_shared_X`.
 
 | Topic | Created by | Notes |
 |-------|-----------|-------|
-| `car_telemetry` | Terraform (Flink CREATE TABLE) | AVRO, no PRIMARY KEY, string message key |
-| `race_standings` | Terraform (Flink CREATE TABLE) | AVRO, PRIMARY KEY(car_number), upsert — produced directly by the simulator |
+| `car_telemetry` | Terraform (Flink CREATE TABLE) | AVRO, no PRIMARY KEY, string message key. **RTCE-enabled** |
+| `race_standings` | Terraform (Flink CREATE TABLE) | AVRO, PRIMARY KEY(car_number), upsert — produced directly by the simulator. **RTCE-enabled** |
 | `driver_race_history` | per-attendee CDC connector | 198 historical rows |
-| `car_state` | LAB 3 Flink statement | one record per 10s window |
+| `car_state` | LAB 3 Flink statement | one record per 10s window. RTCE is the attendee's optional Console toggle (LAB 3 Step 3) |
 | `pit_decisions` | LAB 4 Flink statement | agent output |
 
 Topic schemas (CREATE TABLE SQL): `terraform/modules/topics/main.tf`.
+
+**Real-Time Context Engine (attendee-facing).** `confluent_rtce_topic` in
+`modules/topics` enables RTCE on the two source topics at build time, so an
+attendee's MCP client can query the live race with no Kafka client and no consumer
+group. Four things that are easy to get wrong:
+
+- **Enablement is per topic and needs a registered schema** — hence the
+  `depends_on` the CREATE TABLE statements. `car_state` can't be in Terraform at
+  all: it doesn't exist until LAB 3, so it's an attendee Console toggle.
+- **`description` is required and is model-readable.** The agent reads it to pick a
+  topic. Treat it as prompt text.
+- **Querying needs a *Global* API key** (HTTP Basic) — a Cloud or Kafka key is
+  refused. The Terraform provider can't create Global keys, so
+  `workshop creds --rtce-keys` mints one per attendee via the CLI, which requires
+  the `confluent` CLI logged in as **OrganizationAdmin**.
+- **Mint against the attendee's service account, never their user account.** Global
+  keys cap at 2 per principal. The SA is recreated per build and destroyed at
+  teardown so the cap resets for free; the `bheintz+f1wpN` pool users are permanent,
+  so user-owned keys would accumulate until a build fails. `_mint_rtce_key` deletes
+  the SA's existing Global keys before creating, because a secret can't be re-read —
+  so regenerating cards invalidates RTCE on any already handed out.
+
+`TF_VAR_enable_rtce=false` skips both resources for an org or region without RTCE
+(`confluent rtce region list` — 11 AWS regions as of 2026-08).
 
 ---
 
@@ -434,9 +458,15 @@ you no longer invoke it from there: `uv run workshop spec-validate|build|clean`
   run's `build-output.csv` into `workshop creds` in-process, so the run-id is never
   copied by hand. `workshop clean` resolves the newest non-cleaned run from
   `wsa-output/` instead of taking a `--run-id`.
-- **Spec:** `wsa-spec-aws.yaml` (repo root) — `account_count: 20` by default;
-  bump `terraform/aws-shared`'s `attendee_count` Terraform default to match if
-  you need more (`wsa` does not forward `account_count` to the shared apply).
+- **Spec:** `wsa-spec-aws.yaml` (repo root) — `account_count: 5`, but only as the
+  interactive default. `create-workshop --attendees N` is authoritative: it writes
+  `account_count: N` into the derived spec and exports `TF_VAR_attendee_count=N` for
+  the shared apply (`wsa` forwards a fixed variable list, but its Terraform runner
+  inherits the environment), so no file needs editing to grow a workshop. The old
+  ceiling that refused `--attendees > account_count` is gone; the real guard is
+  `_check_console_accounts`, which verifies each Console password exists in 1Password
+  and now bails after 3 misses. `account_count` reaches wsa only as its `>= 1` check,
+  the "(N accounts)" banner, and the default account list `--accounts` supersedes.
 - **Terraform contract:** `shared_infra_path: terraform/aws-shared/`,
   `terraform_path: terraform/aws/`. Every `credentials:` field with
   `source: terraform` must match a flat root `output` in
@@ -501,7 +531,7 @@ in `demo-reference/enrichment_anomaly_ai.sql` and the collapsed `<details>` bloc
 | `terraform/aws/` | Per-attendee CC env + ECS simulator service |
 | `terraform/modules/topics/main.tf` | `car_telemetry` + `race_standings` CREATE TABLE |
 | `wsa-spec-aws.yaml` | wsa orchestration spec — read by `wsa build`/`clean`/`validate` |
-| `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md`; `--resolve-op` pulls Console passwords from 1Password |
+| `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md`; `--resolve-op` pulls Console passwords from 1Password; `--rtce-keys` mints each attendee's RTCE Global API key (`_mint_rtce_key`, replace-not-accumulate) and prints the `claude mcp add` line. Also appends `Real-Time Context Engine / MCP Setup Command` back into build-output.csv so dispenser claim emails carry it (`_add_dispenser_column`, `--no-dispenser-column`) — the `" / "` in that header is what makes the dispenser's Apps Script email it |
 | `terraform/modules/environment/main.tf` | The environment, plus the `grant_console_access`-gated `confluent_user` lookup + EnvironmentAdmin binding that makes an attendee login useful |
 | `scripts/workshop/onboard.py` | `f1-onboard` — self-serve: wsa claim-email values → local `credentials.env` |
 | `scripts/workshop/validate.py` | `workshop validate` — API-key health checks against one or many cards |

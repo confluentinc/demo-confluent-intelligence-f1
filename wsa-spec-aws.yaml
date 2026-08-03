@@ -28,11 +28,13 @@ name: confluent-intelligence-f1
 description: F1 Pit Wall AI Workshop — Confluent Cloud + Flink Streaming Agents
 cloud: AWS
 
-# Adjust to the expected attendee count. terraform/aws-shared's attendee_count
-# variable (Postgres replication-slot capacity) is NOT driven by this value —
-# wsa's shared-infra apply only forwards cloud_region/owner_email/data-gen/
-# alert_email/run_id, so keep that Terraform default comfortably above this
-# number by hand if you run a larger workshop.
+# The default attendee count, and nothing more: `uv run create-workshop
+# --attendees N` is authoritative and overrides this value (via a derived spec) as
+# well as terraform/aws-shared's attendee_count (via TF_VAR_attendee_count), so
+# growing a workshop needs no edit here. This number is what the interactive prompt
+# offers, and what a raw `wsa build` with no --accounts would build.
+# wsa itself only uses account_count for its `>= 1` check, its "(N accounts)"
+# banner, and that default account list — --accounts decides what gets built.
 account_count: 5
 
 # {N} is replaced with the account number (1..account_count).
@@ -191,3 +193,9 @@ credentials:
       - label: Organization ID
         source: terraform
         output: organization_id
+      # Not handed to the attendee — `workshop creds --rtce-keys` needs it to mint
+      # each attendee a Global API key owned by their own service account, which
+      # is what authenticates their MCP client to the Real-Time Context Engine.
+      - label: Service Account ID
+        source: terraform
+        output: service_account_id

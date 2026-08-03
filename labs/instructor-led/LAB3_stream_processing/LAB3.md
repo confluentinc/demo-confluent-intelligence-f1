@@ -190,6 +190,34 @@ spikes to ~145°C. (Ctrl-C to stop the query.)
 > `car_state` stays empty, see
 > [troubleshooting](../../shared/troubleshooting.md).
 
+### Step 3 (optional): Publish `car_state` to the Real-Time Context Engine
+
+Your two **source** topics — `car_telemetry` and `race_standings` — are already
+published to Confluent's Real-Time Context Engine, so an AI agent can query them
+over MCP without a Kafka client or a consumer group. `car_state` isn't, for a
+simple reason: you just created it, so it didn't exist when your environment was
+built.
+
+Turning it on is one toggle:
+
+1. In the Console, go to your cluster → **Topics** → `car_state`.
+2. Open the **Real-Time Context Engine** panel and switch it from **Off** to
+   **On**.
+3. Give it a description. This one matters: the agent *reads* the description to
+   decide whether the topic answers a question. Something like:
+
+   > Per-10-second enriched state for River Racing car #88: track position, tire
+   > compound and age, front-left tire temperature, and an anomaly flag that fires
+   > when the front-left tire is running abnormally hot.
+
+Confluent materializes the topic into a lookup-optimized table, and the three MCP
+tools (`list_topics`, `get_metadata`, `query_data`) pick it up automatically.
+
+> Enablement is **per topic**, and a topic needs a registered schema — which the
+> `CREATE TABLE` above gave you. If your credential card has an "Ask an AI agent
+> about the live race" section, it holds a one-line `claude mcp add` command with
+> your endpoint and credentials already filled in.
+
 ## Conclusion
 
 `car_state` is the live, enriched, anomaly-aware view of the car. Feed it to the

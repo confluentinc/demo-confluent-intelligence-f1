@@ -117,9 +117,10 @@ op run --env-file=.env.tpl -- uv run workshop clean               # newest run, 
 ```
 
 `workshop build` provisions **and** writes every attendee's credential card from the
-run's `build-output.csv`, so there is no run-id to copy. Set `account_count` in
-[`wsa-spec-aws.yaml`](wsa-spec-aws.yaml) to your attendee count and export the shared
-Confluent/Bedrock secrets as `TF_VAR_*` (see the spec's `env_vars:`). Each attendee
+run's `build-output.csv`, so there is no run-id to copy. Pass the attendee count on the
+command line — `create-workshop --attendees N`, or `workshop build --accounts 1-N` — and
+export the shared Confluent/Bedrock secrets as `TF_VAR_*` (see the spec's `env_vars:`).
+`account_count` in [`wsa-spec-aws.yaml`](wsa-spec-aws.yaml) is only the default. Each attendee
 gets an isolated Confluent environment, a CDC connector with its own replication slot,
 the LLM models, and an always-on race feed.
 

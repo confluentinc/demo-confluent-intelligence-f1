@@ -59,12 +59,13 @@ from scripts.workshop import creds as creds_mod
 # subcommand that reads it (cmd/wsa/main.go), and the answer is always this.
 SPEC_FILE = "wsa-spec-aws.yaml"
 
-# A prefix override (create-workshop's interactive prompt, or `build --prefix`)
-# can't be passed to `wsa` on the command line — `wsa` reads terraform_vars.prefix
-# from the spec and has no --var flag. So we write a derived spec next to the
-# committed one, with only that one field changed, and point `-w` at it. It lives
-# at the repo root (same directory as SPEC_FILE) so every relative path in the
-# spec — terraform_path, shared_infra_path, stage_paths — resolves identically.
+# Spec overrides (create-workshop's attendee count and interactive prefix prompt,
+# or `build --prefix` / `--account-count`) can't be passed to `wsa` on the command
+# line — `wsa` reads terraform_vars.prefix and account_count from the spec and has
+# no --var flag. So we write a derived spec next to the committed one, with only
+# those fields changed, and point `-w` at it. It lives at the repo root (same
+# directory as SPEC_FILE) so every relative path in the spec — terraform_path,
+# shared_infra_path, stage_paths — resolves identically.
 # Gitignored; `wsa clean` uses the copy staged inside the run dir, not this file.
 GENERATED_SPEC = ".wsa-spec-generated.yaml"
 
@@ -185,15 +186,27 @@ def _spec_terraform_prefix(root: Path) -> str:
     return str((spec.get("terraform_vars") or {}).get("prefix", ""))
 
 
-def _derive_spec_with_prefix(root: Path, prefix: str) -> Path:
-    """Write a copy of the committed spec with ``terraform_vars.prefix`` overridden.
+def _spec_account_count(root: Path) -> int | None:
+    """The committed spec's ``account_count``, or None when it isn't set."""
+    spec = yaml.safe_load(_spec_path(root).read_text()) or {}
+    raw = spec.get("account_count")
+    return None if raw is None else int(raw)
 
-    Only that one field changes; the file is dumped with keys in their original
-    order (comments are dropped — harmless, wsa parses it as data). Returned path
-    is what the build's ``-w`` points at.
+
+def _derive_spec(root: Path, prefix: str = "", account_count: int | None = None) -> Path:
+    """Write a copy of the committed spec with the given fields overridden.
+
+    ONE function for every override, deliberately: it reads the committed spec and
+    writes the whole file, so two separate deriving functions would each clobber
+    the other's field. Only the fields passed here change; the file is dumped with
+    keys in their original order (comments are dropped — harmless, wsa parses it as
+    data). Returned path is what the build's ``-w`` points at.
     """
     spec = yaml.safe_load(_spec_path(root).read_text()) or {}
-    spec.setdefault("terraform_vars", {})["prefix"] = prefix
+    if prefix:
+        spec.setdefault("terraform_vars", {})["prefix"] = prefix
+    if account_count is not None:
+        spec["account_count"] = account_count
     out = root / GENERATED_SPEC
     out.write_text(yaml.safe_dump(spec, sort_keys=False))
     return out
@@ -326,8 +339,13 @@ def _stream_wsa(
 
 
 def _creds_command(run: Run, name: str) -> str:
-    """The literal `workshop creds` line for this run — for failure hints."""
-    return f"uv run workshop creds --csv {run.csv} --name {name}"
+    """The literal `workshop creds` line for this run — for failure hints.
+
+    Carries the two flags `_write_cards` always passes. Without them the
+    copy-pasted fallback would quietly produce weaker cards than the automatic
+    path: no Console passwords and no RTCE key.
+    """
+    return f"uv run workshop creds --csv {run.csv} --name {name} --resolve-op --rtce-keys"
 
 
 def _write_cards(root: Path, run: Run, args: argparse.Namespace) -> None:
@@ -353,6 +371,15 @@ def _write_cards(root: Path, run: Run, args: argparse.Namespace) -> None:
             resolve_op=True,
             social_feed_url=args.social_feed_url,
             region=args.region,
+            # Same reasoning as resolve_op: the key is useless to hand out later
+            # (the secret can't be re-read), so mint it while we're writing the
+            # card. Degrades to a card without the RTCE section if the CLI isn't
+            # logged in as OrganizationAdmin — creds.py warns and carries on.
+            rtce_keys=getattr(args, "rtce_keys", True),
+            # Appends the RTCE setup command to this run's build-output.csv, so a
+            # later `wsa dispenser-upload` carries it into the claim email. Safe
+            # when the dispenser isn't used: it's one extra ignored column.
+            dispenser_column=True,
         )
     )
     print(f"\nCards: {root / 'runs' / name / 'credentials'}")
@@ -380,19 +407,37 @@ def build(args: argparse.Namespace) -> None:
     if args.stream_terraform_logs:
         extra.append("--stream-terraform-logs")
 
-    # A prefix override goes through a derived spec (wsa has no --var flag). When
-    # the requested prefix equals the committed spec's, use the committed spec
-    # unchanged — no generated file, current behavior. A bare base (`f1ws`, no
-    # placeholder) gets `{NNN}` appended so a direct `workshop build --prefix f1ws`
-    # can't silently give every account the same name; create-workshop already
-    # normalizes and fully validates before it reaches here.
-    spec_path = None
+    # Overrides go through a derived spec (wsa has no --var flag). When a requested
+    # value equals the committed spec's, leave it alone — no generated file, current
+    # behavior. A bare prefix base (`f1ws`, no placeholder) gets `{NNN}` appended so
+    # a direct `workshop build --prefix f1ws` can't silently give every account the
+    # same name; create-workshop already normalizes and fully validates first.
     prefix = getattr(args, "prefix", "").strip()
     if prefix and "{" not in prefix:
         prefix += "{NNN}"
-    if prefix and prefix != _spec_terraform_prefix(root):
-        spec_path = _derive_spec_with_prefix(root, prefix)
-        print(f"Prefix override: {prefix}  (generated spec: {spec_path.name})\n", flush=True)
+    if prefix and prefix == _spec_terraform_prefix(root):
+        prefix = ""
+
+    # account_count doesn't gate anything in wsa — it only feeds the spec's `>= 1`
+    # validation, the "(N accounts)" banner, and the default account list we never
+    # use (we always pass --accounts). Overriding it keeps that banner from
+    # contradicting the build, which is exactly the confusion it caused before.
+    account_count = getattr(args, "account_count", None)
+    if account_count is not None and account_count == _spec_account_count(root):
+        account_count = None
+
+    spec_path = None
+    if prefix or account_count is not None:
+        spec_path = _derive_spec(root, prefix=prefix, account_count=account_count)
+        changed = ", ".join(
+            part
+            for part in (
+                f"prefix={prefix}" if prefix else "",
+                f"account_count={account_count}" if account_count is not None else "",
+            )
+            if part
+        )
+        print(f"Spec override: {changed}  (generated spec: {spec_path.name})\n", flush=True)
 
     code = _stream_wsa(binary, root, "build", extra, spec_path=spec_path)
 
@@ -500,6 +545,14 @@ def add_build_arguments(p: argparse.ArgumentParser) -> None:
         "if omitted; f1ws{NNN} also accepted). Must be 1-12 alphanumerics per account. "
         "Default: the spec value.",
     )
+    p.add_argument(
+        "--account-count",
+        type=int,
+        default=None,
+        help="Override the spec's account_count. Cosmetic — it only fixes wsa's "
+        "\"(N accounts)\" banner, since --accounts decides what actually gets built. "
+        "create-workshop sets this from --attendees.",
+    )
     p.add_argument("--force", action="store_true", help="Re-run even if this run-id already built successfully")
     p.add_argument(
         "--no-dispenser-check",
@@ -523,6 +576,14 @@ def add_build_arguments(p: argparse.ArgumentParser) -> None:
         "--no-cards",
         action="store_true",
         help="Build only; print the `workshop creds` command instead of running it",
+    )
+    p.add_argument(
+        "--no-rtce-keys",
+        dest="rtce_keys",
+        action="store_false",
+        default=True,
+        help="Skip minting each attendee's Real-Time Context Engine Global API key "
+        "(needs the `confluent` CLI logged in as OrganizationAdmin)",
     )
 
 

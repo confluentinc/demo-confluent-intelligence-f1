@@ -16,7 +16,7 @@ variable "prefix" {
 }
 
 variable "attendee_count" {
-  description = "Expected number of attendees. Drives Postgres replication-slot capacity (one CDC slot per attendee). NOTE: wsa's shared-infra apply does not forward wsa-spec-aws.yaml's account_count here (it only injects cloud_region/owner_email/data-gen/alert_email/run_id) — bump this default by hand if a workshop needs more capacity than it provides."
+  description = "Expected number of attendees. Drives Postgres replication-slot capacity (one CDC slot per attendee). `create-workshop` exports TF_VAR_attendee_count from its --attendees value (and deploy.py sets 1), so this default applies only to a hand-run apply — no need to bump it by hand for a larger workshop."
   type        = number
   default     = 50
 }

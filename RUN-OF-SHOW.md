@@ -201,6 +201,24 @@ FROM `car_state`;
 > not yet a demo. Statement kept at `demo-reference/enrichment_anomaly_ai.sql`
 > (`F1_ANOMALY_FN=ai uv run reset --with-labs`); see docs/technical-discoveries.md 13b-13d.
 
+### Optional: publish `car_state` to the Real-Time Context Engine
+
+Console → cluster → **Topics** → `car_state` → **Real-Time Context Engine** panel →
+**Off** → **On**, plus a description. Skippable — the labs don't depend on it.
+
+> [!NOTE]
+> **Talk track:** "`car_telemetry` and `race_standings` were RTCE-enabled when we
+> built your environment, so your coding agent can already query the live race over
+> MCP — no Kafka client, no consumer group. `car_state` isn't, because you created
+> it thirty seconds ago. One toggle fixes that." The description field is the point
+> worth landing: the *agent* reads it to decide whether the topic answers a
+> question, so it's prompt text, not a comment.
+>
+> Attendees who want to try it have a one-line `claude mcp add` on their credential
+> card, endpoint and Basic token pre-filled (`workshop creds --rtce-keys`). It needs
+> a local MCP client — Claude Code, Claude Desktop, or Cursor — so treat it as
+> opt-in rather than a step you wait for the room on.
+
 ---
 
 ## LAB 4 — Streaming agent: pit decisions
