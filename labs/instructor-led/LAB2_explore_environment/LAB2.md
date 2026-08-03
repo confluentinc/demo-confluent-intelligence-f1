@@ -4,7 +4,7 @@
 
 Everything that feeds the pipeline is already running. Before you build anything,
 explore the pre-provisioned pieces and confirm live data is flowing — all from
-the `f1-sql` shell you opened in LAB 1.
+the SQL workspace you opened in LAB 1.
 
 ### What you'll accomplish
 
@@ -14,7 +14,7 @@ the `f1-sql` shell you opened in LAB 1.
 
 ### Prerequisites
 
-[LAB 1](../LAB1_claim_account/LAB1.md) — your `f1-sql` shell is connected.
+[LAB 1](../LAB1_claim_account/LAB1.md) — you're signed in with a SQL workspace open.
 
 ## Steps
 

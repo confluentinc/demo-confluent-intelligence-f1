@@ -91,9 +91,14 @@ overrides) — and leaves it stopped so LAB 3 is running before standings resume
 Provisioning is owned by **[`wsa`](https://github.com/confluentinc/workshop-setup-accelerator)**
 (Confluent's shared workshop CLI). It applies the shared layer once, then the
 per-attendee layer N times, injecting the shared outputs into each. Attendees never
-run Terraform and **never log in to the Confluent Console** — they claim scoped API
-keys (via the wsa dispenser or an instructor-distributed card) and run Flink SQL
-through the bundled shell.
+run Terraform — they get a credential card (via the wsa dispenser or handed out by
+the instructor) carrying a **Confluent Cloud login** plus scoped API keys, sign in to
+the Console, and write their Flink SQL in the browser SQL workspace. The API keys are
+what the local `f1-pitwall` dashboard uses.
+
+The logins are **not** created by a build: each account's user must be invited and
+accepted once, up front, with the password stored in 1Password. See
+[WORKSHOP-GUIDE.md](WORKSHOP-GUIDE.md) — `create-workshop` refuses to build without it.
 
 Organizer prerequisites are the standalone demo's, plus a `wsa` checkout: `uv`,
 Terraform ≥ 1.3, Docker (the shared layer builds the simulator image and pushes it to

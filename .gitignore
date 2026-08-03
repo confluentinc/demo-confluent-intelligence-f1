@@ -89,6 +89,10 @@ runs/
 # dispenser build-output.csv. Without this rule one `git add -A` commits all of it.
 wsa-output/
 
+# Derived wsa spec written by create-workshop / `workshop build --prefix` when a
+# prefix override is requested (wsa has no --var flag; see scripts/workshop/wsa.py).
+.wsa-spec-generated.yaml
+
 # Sensitive credential files
 confluent_api_keys.md
 mongodb_commands.txt

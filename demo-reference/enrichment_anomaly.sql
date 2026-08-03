@@ -25,7 +25,25 @@
 --
 -- 4. The CASE filter restricts anomalies to `actual_value > upper_bound`.
 --    Otherwise the post-pit drop at lap 33 (145°C → 95°C) flags a second
---    anomaly that's semantically a recovery, not a problem.
+--    anomaly that's semantically a recovery, not a problem. It also handles the
+--    warmup rows for free: `is_anomaly` is NULL until the training window fills,
+--    and NULL fails the WHEN, so those rows fall through to `false`.
+--
+-- 5. Why ARIMA and not the foundation-model AI_DETECT_ANOMALIES: the newer
+--    `AI_DETECT_ANOMALIES` (IBM Granite / Google TimesFM) accepts this same call
+--    shape and populates `actual_value`, `forecast_value`, and `rmse` — but on the
+--    build measured here it never populates `is_anomaly`, `upper_bound`, or
+--    `lower_bound`. They stay NULL, the CASE below can never be true, and nothing
+--    errors: `car_state` fills with `anomaly_tire_temp_fl = false` for the whole
+--    race and the demo silently has no anomaly. Verified on a real race through
+--    lap 38 with the spike present (123→145°C against forecasts of 108→116°C) and
+--    ~150 windows of context, invariant across confidence, model, context size,
+--    and input shape. ML_DETECT_ANOMALIES on that identical data flags lap 32 and
+--    only lap 32. See docs/technical-discoveries.md items 13b-13d.
+--    The Granite version is kept working as an opt-in — it is the better demo the
+--    day the bounds land:
+--      F1_ANOMALY_FN=ai uv run reset --with-labs
+--      uv run f1-sql --file demo-reference/enrichment_anomaly_ai.sql
 
 CREATE TABLE `car_state`
 WITH ('changelog.mode' = 'append')

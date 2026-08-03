@@ -22,6 +22,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+import yaml
+
 from scripts.workshop import creds as creds_mod
 from scripts.workshop import wsa as wsa_mod
 
@@ -296,6 +298,7 @@ class BuildHandoffTests(unittest.TestCase):
             social_feed_url="",
             region="us-east-1",
             no_cards=False,
+            prefix="",
         )
         defaults.update(overrides)
         return argparse.Namespace(**defaults)
@@ -309,10 +312,11 @@ class BuildHandoffTests(unittest.TestCase):
         """Stand in for `wsa build`: leave the artifacts, return an exit code."""
         run_dir = self.root / wsa_mod.OUTPUT_DIR / run_id
 
-        def _run(binary, root, subcommand, extra):
+        def _run(binary, root, subcommand, extra, spec_path=None):
             write_report(run_dir, run_id, "2026-07-30T17:00:00Z", with_csv=False)
             sample_csv(run_dir / wsa_mod.BUILD_CSV, list(prefixes))
             self.recorded_extra = extra
+            self.recorded_spec_path = spec_path
             return code
 
         return patch.object(wsa_mod, "_stream_wsa", side_effect=_run)
@@ -327,6 +331,52 @@ class BuildHandoffTests(unittest.TestCase):
         )
         # An explicit run-id also names the cards, so build and clean agree.
         self.assertEqual(fake_creds.call_args.args[0].name, "xy99")
+
+    def test_no_prefix_override_uses_the_committed_spec(self):
+        # No --prefix: _stream_wsa gets spec_path=None (the committed spec) and no
+        # generated file is written.
+        with self.fake_build(), patch.object(creds_mod, "creds"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                wsa_mod.build(self.build_args())
+        self.assertIsNone(self.recorded_spec_path)
+        self.assertFalse((self.root / wsa_mod.GENERATED_SPEC).exists())
+
+    def test_prefix_override_writes_a_derived_spec(self):
+        # --prefix that differs from the spec derives a spec with only that field
+        # changed and points the build at it.
+        (self.root / wsa_mod.SPEC_FILE).write_text(
+            "name: test\nterraform_vars:\n  prefix: f1wp{NNN}\n  region: us-east-1\n"
+        )
+        with self.fake_build(), patch.object(creds_mod, "creds"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                wsa_mod.build(self.build_args(prefix="f1ws{NNN}"))
+        self.assertEqual(self.recorded_spec_path, self.root / wsa_mod.GENERATED_SPEC)
+        derived = yaml.safe_load((self.root / wsa_mod.GENERATED_SPEC).read_text())
+        self.assertEqual(derived["terraform_vars"]["prefix"], "f1ws{NNN}")
+        self.assertEqual(derived["terraform_vars"]["region"], "us-east-1")  # untouched
+
+    def test_bare_base_prefix_gets_the_account_placeholder(self):
+        # `--prefix f1ws` (no placeholder) must not name every account the same —
+        # build appends {NNN} before deriving the spec.
+        (self.root / wsa_mod.SPEC_FILE).write_text(
+            "name: test\nterraform_vars:\n  prefix: f1wp{NNN}\n"
+        )
+        with self.fake_build(), patch.object(creds_mod, "creds"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                wsa_mod.build(self.build_args(prefix="f1ws"))
+        derived = yaml.safe_load((self.root / wsa_mod.GENERATED_SPEC).read_text())
+        self.assertEqual(derived["terraform_vars"]["prefix"], "f1ws{NNN}")
+
+    def test_prefix_matching_the_spec_is_not_an_override(self):
+        # --prefix equal to the committed value uses the committed spec, no file.
+        (self.root / wsa_mod.SPEC_FILE).write_text(
+            "name: test\nterraform_vars:\n  prefix: f1wp{NNN}\n"
+        )
+        with self.fake_build(), patch.object(creds_mod, "creds"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                wsa_mod.build(self.build_args(prefix="f1wp{NNN}"))
+        self.assertIsNone(self.recorded_spec_path)
+        self.assertFalse((self.root / wsa_mod.GENERATED_SPEC).exists())
 
     def test_creds_namespace_is_complete(self):
         # creds() reads four attributes but only marks two required, so a

@@ -19,8 +19,14 @@ variable "prefix" {
 }
 
 variable "owner_email" {
-  description = "Attendee/owner email, tagged on AWS resources"
+  description = "Attendee/owner email, tagged on AWS resources. Doubles as the attendee's Confluent Cloud login when grant_console_access is on."
   type        = string
+}
+
+variable "grant_console_access" {
+  description = "Give the attendee EnvironmentAdmin on their own environment so they can log in to the Confluent Cloud Console and use the Flink SQL workspace. Requires owner_email to already exist as an accepted CC user — see WORKSHOP-GUIDE.md's one-time org prep."
+  type        = bool
+  default     = false
 }
 
 variable "region" {

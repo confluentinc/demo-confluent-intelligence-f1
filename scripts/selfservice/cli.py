@@ -349,8 +349,8 @@ def up(args: argparse.Namespace) -> None:
     print("\n=== Ready ===\n")
     if args.with_labs and labs_ok:
         print("LAB 3 and LAB 4 are already running — they start filling as soon as the race does.")
-        print("  `car_state` stays empty for ~3.5 min while ML_DETECT_ANOMALIES trains on its")
-        print("  first 20 windows. The anomaly fires around lap 32.\n")
+        print("  `car_state` stays empty for ~3.5 min while anomaly detection fills its")
+        print("  first 20 windows of context. The anomaly fires around lap 32.\n")
     print("1. Start the live race feed (leave running in its own terminal):")
     print(f"     uv run f1-race          # {cfg['seconds_per_lap']}s/lap, from this deployment's config")
     print("2. Open the SQL shell for the labs:")

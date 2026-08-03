@@ -28,8 +28,11 @@ RACE_LOOP = os.environ.get("RACE_LOOP", "false").lower() == "true"
 RESTART_DELAY_SEC = int(os.environ.get("RESTART_DELAY_SEC", "30"))
 
 # Pre-race warm-up: number of dummy windows (lap=0) to produce before lap 1.
-# ML_DETECT_ANOMALIES withholds output until ~5 data points are available, so
-# 4 warm-up windows ensure the function emits starting at real lap 1.
+# These do NOT prime the anomaly function — it withholds output for its first 20
+# windows, and warmup rows never reach it: they carry telemetry but no
+# race_standings, so LAB 3's inner temporal join drops every one of them before
+# the window aggregation. Their real value is a producer/schema smoke test
+# before lap 1. See "Anomaly warmup" in CLAUDE.md.
 PRE_RACE_WARMUP_LAPS = int(os.environ.get("PRE_RACE_WARMUP_LAPS", "4"))
 # Sleep between warm-up windows (seconds) to allow pipeline propagation.
 PRE_RACE_LAP_DELAY_SEC = int(os.environ.get("PRE_RACE_LAP_DELAY_SEC", "15"))

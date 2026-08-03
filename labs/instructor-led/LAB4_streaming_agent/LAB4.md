@@ -25,8 +25,8 @@ lap-32 anomaly.
 
 The agent's full prompt lives in
 [`demo-reference/streaming_agent_create_agent.sql`](../../../demo-reference/streaming_agent_create_agent.sql).
-Open it and paste the whole file into your `f1-sql` shell — comment header and
-all — as one statement, ending with `;`.
+Open it and paste the whole file into a workspace cell — comment header and
+all — as one statement, then run it.
 
 The prompt pins the agent to a strict decision algorithm:
 

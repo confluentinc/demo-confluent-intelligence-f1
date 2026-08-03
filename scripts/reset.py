@@ -156,7 +156,10 @@ LOCAL_RACE_TOKENS = ("f1-race", "scripts.selfservice.race")
 # and create_lab_objects live in scripts/common/simulator_control.py — `uv run
 # race`, `uv run deploy --with-labs` and `uv run selfservice up --with-labs` need
 # the same behavior. They are re-exported above so existing importers of
-# `scripts.reset` keep working.
+# `scripts.reset` keep working. That module also owns the `F1_ANOMALY_FN` switch
+# choosing which LAB 3 implementation `--with-labs` submits (ARIMA by default,
+# Granite/AI_DETECT_ANOMALIES as an opt-in that currently never flags — see
+# docs/technical-discoveries.md 13b).
 
 
 def run_cli(cmd: list[str], confirm: bool = False) -> tuple[int, str, str]:
@@ -812,14 +815,14 @@ def main() -> None:
 
     if labs_ok and ecs_track:
         print("Environment is ready — race running from lap 0, all lab objects rebuilt.")
-        print("  `car_state` stays empty for ~3.5 min while ML_DETECT_ANOMALIES trains")
-        print("  on its first 20 windows. The anomaly fires around lap 32.")
+        print("  `car_state` stays empty for ~3.5 min while anomaly detection fills")
+        print("  its first 20 windows of context. The anomaly fires around lap 32.")
         print("  Watch it: `uv run f1-pitwall`")
     elif labs_ok:
         print("Lab objects rebuilt. Start the race feed to fill them:")
         print(f"  {f1_race_command(root, creds)}")
-        print("  `car_state` then stays empty for ~20 windows while ML_DETECT_ANOMALIES")
-        print("  trains. The anomaly fires around lap 32. Watch it: `uv run f1-pitwall`")
+        print("  `car_state` then stays empty for ~20 windows while anomaly detection")
+        print("  warms up. The anomaly fires around lap 32. Watch it: `uv run f1-pitwall`")
     elif args.keep_source and not stop_feed:
         # The feed was never stopped, so it is still producing wherever it runs.
         print("Next steps:")

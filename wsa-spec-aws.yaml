@@ -13,9 +13,15 @@
 #     --accounts 1-2 --concurrency 2
 #
 # Run from a sibling `workshop-setup-accelerator` checkout (see that repo's
-# ONBOARDING.md "Local layout"). Attendees never log in to the Confluent
-# Console or run Terraform — they claim an account via the wsa dispenser and
-# get scoped API keys, then run Flink SQL through `uv run f1-sql`.
+# ONBOARDING.md "Local layout"). Attendees don't run Terraform: they claim an
+# account via the wsa dispenser, log in to the Confluent Cloud Console with the
+# email/password on their card, and write their Flink SQL in the browser SQL
+# workspace. The card's API keys are what `uv run f1-pitwall` authenticates with.
+#
+# PREREQUISITE — the logins are NOT created by this spec. Each email_pattern
+# address must already be an accepted Confluent Cloud user with a password in
+# 1Password before `wsa build` runs, or terraform/aws's confluent_user lookup
+# fails at plan time. One-time per account number; see WORKSHOP-GUIDE.md.
 # =============================================================================
 
 name: confluent-intelligence-f1
@@ -60,6 +66,10 @@ terraform_vars:
   flink_max_cfu: "5"
   seconds_per_lap: "60" # 60s/lap -> 60-minute race
   race_loop: "true"
+  # Bind {email} to their environment as EnvironmentAdmin so the Console login
+  # actually shows them something. Requires the user to exist — see the
+  # PREREQUISITE note in the header.
+  grant_console_access: "true"
 
 # Environment variables that must be set at runtime (checked by `wsa
 # validate`; passed through to Terraform as TF_VAR_* since Terraform reads
@@ -83,12 +93,16 @@ providers:
     version: ">= 5.0"
 
 # CLI tools required on the operator's machine (for `wsa validate`).
-# `op` is intentionally omitted — this workshop's secrets flow via a plain
-# .env file or shell exports, not the TMM 1Password vault.
+# Terraform/Bedrock secrets still flow via a plain .env file or shell exports,
+# not the TMM 1Password vault — but `op` is required for the attendee Console
+# passwords, which wsa stores in the "Workshop Setup Accelerator Users" vault
+# and resolves at dispenser-upload / card-generation time.
 tools_required:
   - name: terraform
     version: ">= 1.7"
   - name: git
+    version: ">= 2.0"
+  - name: op
     version: ">= 2.0"
 
 # No data_generation: block — the race simulator is a per-attendee ECS
@@ -102,16 +116,30 @@ tools_required:
 # phase.
 
 # Credential groups — columns in the wsa build CSV and fields in the
-# dispenser claim email. No password: attendees authenticate to Flink with
-# the API keys below, never a Confluent Cloud login. `uv run workshop creds`
-# turns this CSV into the runs/<name>/credentials/*.env cards our own tools
-# (f1-sql, f1-pitwall, f1-social-feed) expect; `uv run f1-onboard` lets a
-# self-serve attendee rebuild that file from their claim-email values.
+# dispenser claim email. The Console Password field is `source: op`: wsa writes
+# the literal "(from 1Password)" into build-output.csv and only substitutes the
+# real value in memory at `wsa dispenser-upload` time. `uv run workshop creds
+# --resolve-op` does the same substitution for instructor-distributed cards.
+# `uv run workshop creds` turns this CSV into the runs/<name>/credentials/*.env
+# cards our own tools (f1-sql, f1-pitwall, f1-social-feed) expect; `uv run
+# f1-onboard` lets a self-serve attendee rebuild that file from their
+# claim-email values.
 credentials:
   # wsa's CSV always leads with built-in "Account"/"Email" columns before
   # these, so no separate spec-sourced email field is declared here.
   - name: Confluent Cloud
     fields:
+      # --- Console login. The group name "Confluent Cloud" is what maps this
+      # group to the `confluent-cloud` 1Password platform key (wsa's
+      # internal/spec/spec.go PlatformKey) — don't rename it.
+      - label: Console URL
+        source: terraform
+        output: environment_url
+      - label: Console Username
+        source: terraform
+        output: console_username
+      - label: Console Password
+        source: op
       - label: Prefix
         source: terraform
         output: prefix

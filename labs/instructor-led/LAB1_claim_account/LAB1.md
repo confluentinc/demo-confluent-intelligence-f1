@@ -3,14 +3,14 @@
 ## Overview
 
 Your instructor has pre-provisioned a dedicated Confluent Cloud environment for
-you and a **live race feed** already streaming into it. You won't log in to the
-Confluent Console — instead you'll connect to your environment with the workshop
-SQL shell, using a credential card your instructor gives you.
+you and a **live race feed** already streaming into it. You'll sign in to
+Confluent Cloud with a workshop account and write all of your Flink SQL in the
+browser's SQL workspace.
 
 ### What you'll accomplish
 
 1. Get your credential card
-2. Launch the `f1-sql` shell
+2. Sign in to Confluent Cloud and open a SQL workspace
 3. Confirm your environment is live
 4. Open your live **Pit Wall** dashboard
 
@@ -22,15 +22,17 @@ SQL shell, using a credential card your instructor gives you.
 
 ### Step 1: Get your credential card
 
-There are two ways to get connected, depending on how this session is run:
+There are two ways to get it, depending on how this session is run:
 
 **A — Instructor-distributed card.** Your instructor hands out (via email or a
-shared link) a small file named for your prefix, e.g. **`f1wp###.env`**. Save
-it and skip to Step 2.
+shared link) a card named for your prefix, e.g. **`f1wp###.md`**, plus a
+companion **`f1wp###.env`**. The card has your sign-in details; the `.env` is
+for the dashboard in Step 4.
 
 **B — Self-serve claim.** If you claimed your account yourself (a Google Form
 link from your instructor), you'll receive an email listing your environment's
-values by name (Prefix, Environment ID, Kafka API Key, ...). Run the onboarding
+values by name (Console Username, Console Password, Prefix, Kafka API Key, ...).
+Your sign-in details are in that email. For the dashboard, run the onboarding
 wizard and either answer its prompts one at a time or paste the whole email in
 with `--paste`:
 
@@ -40,11 +42,10 @@ uv run f1-onboard --paste     # paste your claim email, then a blank line
 ```
 
 This writes a local `credentials.env` in the same shape as an
-instructor-distributed card — use it exactly the same way in the steps below
-(just swap `f1wp###.env` for `credentials.env`).
+instructor-distributed `.env`.
 
-Either way, the file contains the API keys that connect you to *your*
-environment — keep it private. It looks like this:
+Either way you end up with two things: **a Confluent Cloud username and
+password**, and **a file of API keys** that looks like this:
 
 ```
 F1_PREFIX=f1wp###
@@ -56,39 +57,34 @@ F1_FLINK_API_SECRET=...
 ... (Kafka + Schema Registry keys too)
 ```
 
+Keep both private — between them they grant full access to your environment.
+
 > **LAB 5** also needs a **race-feed base URL**, but that's *not* on your card —
 > it's one shared service your instructor gives you the URL for. See
 > [LAB 5](../LAB5_orchestrate_integration/LAB5.md).
 
-> Your prefix (`f1wp###` above) is unique to you. You never sign in with an
-> email and password — the keys in this file are your access.
+> Your prefix (`f1wp###` above) is unique to you.
 
-### Step 2: Launch the SQL shell
+### Step 2: Sign in and open a SQL workspace
 
-From the workshop materials directory (your instructor will tell you where, or
-you'll be in a prepared environment already), run:
+Your username is a **workshop account we created for you** — something like
+`...+f1wp###@confluent.io`. It is *not* your own work email, and signing in with
+your own address won't find your environment.
 
-```bash
-uv run f1-sql
-```
+1. Open the sign-in link on your card (**confluent.cloud**) and log in with the
+   username and password you were given.
+2. You'll land in your environment, **`RIVER-RACING-f1wp###-ENV`**. It's the only
+   one you can see.
+3. Open the **Flink** tab and click **Open SQL workspace**.
+4. Set the workspace's **catalog** to your environment and **database** to your
+   cluster (`RIVER-RACING-f1wp###-CLUSTER`), using the dropdowns above the editor.
 
-The shell finds your card on its own — `f1-onboard` saves it as `credentials.env`,
-and a card file you were handed is picked up as long as it sits in the workshop
-directory. If you keep it somewhere else, name it: `uv run f1-sql --creds <path>`.
-
-You should see:
-
-```
-Connected to RIVER-RACING-f1wp001-ENV / RIVER-RACING-f1wp001-CLUSTER
-f1-sql>
-```
-
-The shell runs Flink SQL against your environment. End every statement with `;`.
-Type `\help` for help, `\q` to quit.
+You'll write every SQL statement in the rest of this workshop here. Type a
+statement into a cell and press **Run** (or Shift-Enter).
 
 ### Step 3: Confirm your environment is live
 
-At the `f1-sql>` prompt:
+In your workspace:
 
 ```sql
 SHOW TABLES;
@@ -101,17 +97,17 @@ You should see three tables — `car_telemetry`, `race_standings`, and
 SELECT * FROM race_standings;
 ```
 
-You'll see 22 cars with live positions. (Press Ctrl-C to stop a streaming query
-and return to the prompt.)
+You'll see 22 cars with live positions. It's a streaming query, so it keeps
+running — use **Stop** when you've seen enough.
 
-> If `SHOW TABLES` errors or returns nothing, your card may be wrong or your
-> environment not ready — see [troubleshooting](../../shared/troubleshooting.md)
-> or ask your instructor.
+> If `SHOW TABLES` errors or returns nothing, check the catalog/database
+> dropdowns first — see [troubleshooting](../../shared/troubleshooting.md) or ask
+> your instructor.
 
 ### Step 4: Open your Pit Wall dashboard
 
-Open a **second terminal** (keep `f1-sql` running in the first) and launch the
-live race dashboard — it uses the same credential card:
+In a terminal (keep the browser workspace open), launch the live race dashboard
+— it uses the `.env` file from Step 1:
 
 ```bash
 uv run f1-pitwall

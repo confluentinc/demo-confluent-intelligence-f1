@@ -1,13 +1,14 @@
-"""Attendee Flink SQL shell — the no-login access surface.
+"""Flink SQL shell driven by a credential card — no Console login needed.
 
   uv run f1-sql                      # card resolved from credentials.env
   uv run f1-sql --creds <prefix>.env
   uv run f1-sql --exec 'SHOW TABLES'         # one statement, then exit
   uv run f1-sql --file demo-reference/x.sql  # every statement in a file, in order
 
-Authenticates to the attendee's Flink compute pool with their API keys (from the
-credential card) and runs SQL against the Statements REST API. This replaces the
-Confluent Cloud Console SQL Workspace for the workshop: attendees never log in.
+Authenticates to a Flink compute pool with the API keys on a credential card and
+runs SQL against the Statements REST API. The instructor-led workshop teaches the
+Console SQL workspace instead (LAB 1-6); this shell is what the standalone and
+self-service tracks use, and stays available as a fallback in the room.
 
 Submit a statement by ending it with ';'. SELECT/SHOW results stream into a
 table (Ctrl-C stops a long-running query); CREATE/DROP/INSERT statements are

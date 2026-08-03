@@ -131,10 +131,10 @@ def main() -> None:
     # Skip the pre-race warmup laps (~140s at 20s/lap). They produce four
     # telemetry windows at lap=0 and **no** race_standings, and LAB 3's first CTE
     # is an *inner* temporal join against race_standings — so on a cold start
-    # those rows have no version to join against and never reach
-    # ML_DETECT_ANOMALIES at all. Even if they did, 4 windows against
-    # minTrainingSize=20 changes nothing: real race data supplies 20 windows
-    # (2/lap) by lap 10, long before the lap-32 anomaly.
+    # those rows have no version to join against and never reach the anomaly
+    # function at all. Even if they did, 4 windows against a context size of 20
+    # changes nothing: real race data supplies 20 windows (2/lap) by lap 10, long
+    # before the lap-32 anomaly.
     #
     # setdefault, so `PRE_RACE_WARMUP_LAPS=4 uv run f1-race` still works. The
     # standalone ECS path keeps the warmup — its value comes from the task

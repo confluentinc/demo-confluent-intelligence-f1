@@ -11,22 +11,47 @@ exactly that service. It is emphatically not
 ``river-racing*`` cluster in the AWS account — using the fan-out here would stop
 and restart all twenty attendees' feeds when an instructor resets one
 environment mid-workshop.
+
+``F1_ANOMALY_FN=ai`` switches LAB 3 from the default GA ARIMA implementation to the
+foundation-model Granite/``AI_DETECT_ANOMALIES`` one — see ``anomaly_sql_filename``.
 """
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
+
+# LAB 3 has two implementations emitting the identical `car_state` schema, so
+# everything downstream is indifferent to which one ran. The default is the GA
+# `ML_DETECT_ANOMALIES` (ARIMA), which is the only one that actually flags the
+# lap-32 anomaly today: the foundation-model `AI_DETECT_ANOMALIES` variant runs
+# without error but leaves `is_anomaly` and both bounds NULL, so it never fires
+# (docs/technical-discoveries.md items 13b-13d). It is kept as an opt-in for the
+# day that changes.
+ANOMALY_SQL = "enrichment_anomaly.sql"
+ANOMALY_SQL_AI = "enrichment_anomaly_ai.sql"
 
 # The canonical lab SQL, rebuilt by --with-labs. Dependency-ordered:
 # pit_decisions validates against both `car_state` and `pit_strategy_agent`, so a
 # failure part-way through stops the rest (there is nothing useful to submit
 # after a broken link).
 LAB_BUILDS = [
-    ("enrichment_anomaly.sql", "car_state"),
+    (ANOMALY_SQL, "car_state"),
     ("streaming_agent_create_agent.sql", "pit_strategy_agent"),
     ("streaming_agent_pit_decisions.sql", "pit_decisions"),
 ]
+
+
+def anomaly_sql_filename() -> str:
+    """Which LAB 3 implementation `--with-labs` should submit.
+
+    ``F1_ANOMALY_FN=ai`` selects the foundation-model Granite variant; unset (or
+    ``ml``) keeps the ARIMA default. Deliberately an explicit switch rather than
+    anything automatic: the ``ai`` path currently produces a `car_state` that never
+    flags an anomaly, and it must be opted into knowingly rather than fallen into.
+    """
+    return ANOMALY_SQL_AI if os.environ.get("F1_ANOMALY_FN") == "ai" else ANOMALY_SQL
 
 
 def _ecs_service(tf: dict, region: str):
@@ -172,6 +197,21 @@ def flink_session(tf: dict):
     )
 
 
+def _hint_anomaly_fallback(filename: str) -> None:
+    """Point back at the default when the opted-in Granite statement is what failed.
+
+    Only reachable when someone set ``F1_ANOMALY_FN=ai``. `AI_DETECT_ANOMALIES`
+    needs an Early Access Program that a fresh org does not have, and the API's own
+    message ("Function ... does not exist or you do not have permission to access
+    it") does not say what to do about it.
+    """
+    if filename != ANOMALY_SQL_AI:
+        return
+    print("    F1_ANOMALY_FN=ai selected AI_DETECT_ANOMALIES (Granite), which needs the")
+    print("    AI-functions Early Access Program. Unset it to use the GA ARIMA default:")
+    print("      unset F1_ANOMALY_FN && <the command you just ran>")
+
+
 def create_lab_objects(tf: dict, root: Path) -> bool:
     """Submit the canonical lab SQL and wait for each statement to come up.
 
@@ -182,6 +222,9 @@ def create_lab_objects(tf: dict, root: Path) -> bool:
     session = flink_session(tf)
 
     for filename, creates in LAB_BUILDS:
+        if filename == ANOMALY_SQL:
+            filename = anomaly_sql_filename()
+
         path = root / "demo-reference" / filename
         if not path.exists():
             print(f"  {creates}: missing {path}")
@@ -195,6 +238,7 @@ def create_lab_objects(tf: dict, root: Path) -> bool:
             name = session.submit(sql)
         except Exception as e:
             print(f"  {creates}: submit failed — {e}")
+            _hint_anomaly_fallback(filename)
             return False
 
         status = session.wait(name, timeout=180)
@@ -205,6 +249,7 @@ def create_lab_objects(tf: dict, root: Path) -> bool:
 
         detail = (status.get("status") or {}).get("detail", "").strip()
         print(f"  {creates}: {phase} — {detail or 'no detail returned'}")
+        _hint_anomaly_fallback(filename)
         return False
 
     return True

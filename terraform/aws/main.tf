@@ -19,6 +19,10 @@ module "environment" {
   source           = "../modules/environment"
   environment_name = "${local.name_prefix}-ENV"
   owner_email      = var.owner_email
+  # The attendee's Confluent Cloud login is their wsa pool account — the same
+  # plus-aliased address wsa builds this environment for.
+  attendee_email       = var.owner_email
+  grant_console_access = var.grant_console_access
 }
 
 module "cluster" {

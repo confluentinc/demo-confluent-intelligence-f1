@@ -11,8 +11,11 @@ specific to this one. This wizard takes those labeled values and writes a
 local credentials.env in the exact shape `uv run f1-sql --creds`,
 `uv run f1-pitwall --creds`, etc. already expect — reusing
 scripts.workshop.creds's card-building logic so the instructor-distributed
-and self-serve paths never drift apart. No Confluent Cloud login involved:
-this only ever touches the API keys your claim email already gave you.
+and self-serve paths never drift apart.
+
+Your Confluent Cloud login isn't needed for any of this — you type that
+straight into the browser. The three Console fields are carried anyway so the
+written file matches an instructor-issued card exactly.
 """
 
 from __future__ import annotations
@@ -23,6 +26,17 @@ import sys
 from pathlib import Path
 
 from scripts.workshop import creds as creds_mod
+
+# Console login fields. Optional, and parsed differently from the rest: a
+# generated password draws from "!@#$%^&*-_=+", so the tolerant "-" separator
+# used below would eat part of the value. These require a ":" and capture to
+# end-of-line. Kept out of the required check so a parse miss prompts instead
+# of aborting — none of the local tools authenticate with them.
+CONSOLE_FIELDS = [
+    ("console_url", "Console URL"),
+    ("console_username", "Console Username"),
+    ("console_password", "Console Password"),
+]
 
 # (internal key, label as it appears in the claim email / CSV column)
 FIELDS = [
@@ -57,6 +71,12 @@ def _parse_pasted_email(text: str) -> dict[str, str]:
         m = pattern.search(text)
         if m:
             found[key] = m.group(1).strip()
+    for key, label in CONSOLE_FIELDS:
+        # ":" only, and capture the rest of the line — see CONSOLE_FIELDS.
+        pattern = re.compile(rf"{re.escape(label)}\s*:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
+        m = pattern.search(text)
+        if m:
+            found[key] = m.group(1).strip()
     # Email is a top-level dispenser column, not a "Confluent Cloud" field.
     m = re.search(r"\bEmail\s*[:\-]\s*(\S+@\S+)", text, re.IGNORECASE)
     if m:
@@ -83,10 +103,11 @@ def _prompt_fields(prefill: dict[str, str]) -> dict[str, str]:
     email = values.get("email", "")
     answer = input(f"Email [{email}]: ").strip()
     values["email"] = answer or email
-    for key, label in FIELDS:
+    for key, label in FIELDS + CONSOLE_FIELDS:
         current = values.get(key, "")
         suffix = f" [{current}]" if current else ""
-        answer = input(f"{label}{suffix}: ").strip()
+        optional = " (optional)" if (key, label) in CONSOLE_FIELDS else ""
+        answer = input(f"{label}{optional}{suffix}: ").strip()
         values[key] = answer or current
     return values
 
@@ -95,6 +116,9 @@ def _to_terraform_shaped_outputs(values: dict[str, str]) -> dict:
     """Same shape scripts.workshop.creds._card_fields expects: flat identity
     keys plus a nested attendee_credentials dict for the Kafka/SR secrets."""
     return {
+        "console_url": values.get("console_url", ""),
+        "console_username": values.get("console_username", ""),
+        "console_password": values.get("console_password", ""),
         "organization_id": values["organization_id"],
         "environment_id": values["environment_id"],
         "environment_name": values["environment_name"],

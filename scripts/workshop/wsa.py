@@ -50,12 +50,23 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 from scripts.common.terraform import get_project_root
 from scripts.workshop import creds as creds_mod
 
 # This repo's wsa spec — `-w/--workshop-spec` is required by every wsa
 # subcommand that reads it (cmd/wsa/main.go), and the answer is always this.
 SPEC_FILE = "wsa-spec-aws.yaml"
+
+# A prefix override (create-workshop's interactive prompt, or `build --prefix`)
+# can't be passed to `wsa` on the command line — `wsa` reads terraform_vars.prefix
+# from the spec and has no --var flag. So we write a derived spec next to the
+# committed one, with only that one field changed, and point `-w` at it. It lives
+# at the repo root (same directory as SPEC_FILE) so every relative path in the
+# spec — terraform_path, shared_infra_path, stage_paths — resolves identically.
+# Gitignored; `wsa clean` uses the copy staged inside the run dir, not this file.
+GENERATED_SPEC = ".wsa-spec-generated.yaml"
 
 # Sibling checkout layout, per workshop-setup-accelerator's ONBOARDING.md.
 SIBLING_DIR = "workshop-setup-accelerator"
@@ -168,6 +179,26 @@ def _spec_path(root: Path) -> Path:
     return spec
 
 
+def _spec_terraform_prefix(root: Path) -> str:
+    """The committed spec's ``terraform_vars.prefix`` template (e.g. ``f1wp{NNN}``)."""
+    spec = yaml.safe_load(_spec_path(root).read_text()) or {}
+    return str((spec.get("terraform_vars") or {}).get("prefix", ""))
+
+
+def _derive_spec_with_prefix(root: Path, prefix: str) -> Path:
+    """Write a copy of the committed spec with ``terraform_vars.prefix`` overridden.
+
+    Only that one field changes; the file is dumped with keys in their original
+    order (comments are dropped — harmless, wsa parses it as data). Returned path
+    is what the build's ``-w`` points at.
+    """
+    spec = yaml.safe_load(_spec_path(root).read_text()) or {}
+    spec.setdefault("terraform_vars", {})["prefix"] = prefix
+    out = root / GENERATED_SPEC
+    out.write_text(yaml.safe_dump(spec, sort_keys=False))
+    return out
+
+
 def _parse_timestamp(value: object) -> datetime | None:
     """Parse one of wsa's RFC 3339 report timestamps, tolerantly.
 
@@ -273,14 +304,19 @@ def _require_run(root: Path, action: str) -> Run:
     return run
 
 
-def _stream_wsa(binary: Path, root: Path, subcommand: str, extra: list[str]) -> int:
+def _stream_wsa(
+    binary: Path, root: Path, subcommand: str, extra: list[str], spec_path: Path | None = None
+) -> int:
     """Run `wsa <subcommand>` from `root`, streaming its output live.
 
     Builds take tens of minutes, so the child inherits this process's stdout
     and stderr rather than being captured — that streams by construction and
     leaves wsa's own TTY detection and progress rendering intact.
+
+    `spec_path` overrides the `-w` target (a derived spec with a prefix override);
+    defaults to the committed spec.
     """
-    cmd = [str(binary), subcommand, "-w", str(_spec_path(root)), *extra]
+    cmd = [str(binary), subcommand, "-w", str(spec_path or _spec_path(root)), *extra]
     print(f"$ {' '.join(cmd)}\n", flush=True)
     try:
         return subprocess.run(cmd, cwd=root).returncode
@@ -311,6 +347,10 @@ def _write_cards(root: Path, run: Run, args: argparse.Namespace) -> None:
         argparse.Namespace(
             csv=str(run.csv),
             name=name,
+            # Always resolve: an unusable Console password is the single most
+            # likely way a card reaches an attendee broken, and `op` is already
+            # a required tool for this spec.
+            resolve_op=True,
             social_feed_url=args.social_feed_url,
             region=args.region,
         )
@@ -340,7 +380,21 @@ def build(args: argparse.Namespace) -> None:
     if args.stream_terraform_logs:
         extra.append("--stream-terraform-logs")
 
-    code = _stream_wsa(binary, root, "build", extra)
+    # A prefix override goes through a derived spec (wsa has no --var flag). When
+    # the requested prefix equals the committed spec's, use the committed spec
+    # unchanged — no generated file, current behavior. A bare base (`f1ws`, no
+    # placeholder) gets `{NNN}` appended so a direct `workshop build --prefix f1ws`
+    # can't silently give every account the same name; create-workshop already
+    # normalizes and fully validates before it reaches here.
+    spec_path = None
+    prefix = getattr(args, "prefix", "").strip()
+    if prefix and "{" not in prefix:
+        prefix += "{NNN}"
+    if prefix and prefix != _spec_terraform_prefix(root):
+        spec_path = _derive_spec_with_prefix(root, prefix)
+        print(f"Prefix override: {prefix}  (generated spec: {spec_path.name})\n", flush=True)
+
+    code = _stream_wsa(binary, root, "build", extra, spec_path=spec_path)
 
     # wsa writes build-report.json AND build-output.csv before it reports
     # per-account failures (cmd/wsa/main.go:1019-1053), so a partial build
@@ -439,6 +493,13 @@ def add_build_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("-c", "--concurrency", type=int, help="Parallel Terraform runs (wsa default: 10)")
     p.add_argument("-r", "--retries", type=int, help="Retries per account on failure (wsa default: 2)")
     p.add_argument("--run-id", default="", help="Group build/clean under this run-id (default: wsa picks a random one)")
+    p.add_argument(
+        "--prefix",
+        default="",
+        help="Override the spec's prefix, e.g. f1ws (the {NNN} account number is appended "
+        "if omitted; f1ws{NNN} also accepted). Must be 1-12 alphanumerics per account. "
+        "Default: the spec value.",
+    )
     p.add_argument("--force", action="store_true", help="Re-run even if this run-id already built successfully")
     p.add_argument(
         "--no-dispenser-check",

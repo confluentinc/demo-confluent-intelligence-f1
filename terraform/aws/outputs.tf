@@ -21,6 +21,13 @@ output "environment_url" {
   value = "https://confluent.cloud/environments/${module.environment.environment_id}"
 }
 
+# The attendee's Confluent Cloud Console login. The matching password lives only
+# in 1Password (wsa vault "Workshop Setup Accelerator Users") — Terraform never
+# sees it. Empty unless grant_console_access is on.
+output "console_username" {
+  value = var.grant_console_access ? var.owner_email : ""
+}
+
 output "cluster_id" {
   value = module.cluster.cluster_id
 }

@@ -4,7 +4,8 @@
 
 Build the intelligence layer. You'll combine the live telemetry and standings
 into a single `car_state` stream and detect the front-left tire-temperature
-anomaly that signals a failing tire — using Flink's built-in `ML_DETECT_ANOMALIES`.
+anomaly that signals a failing tire — using Flink's built-in
+`ML_DETECT_ANOMALIES`.
 
 ### What you'll accomplish
 
@@ -21,7 +22,7 @@ anomaly that signals a failing tire — using Flink's built-in `ML_DETECT_ANOMAL
 
 ### Step 1: Create the `car_state` table
 
-In your `f1-sql` shell, paste the whole statement below and end it with `;`:
+In your SQL workspace, paste the whole statement below into a cell and run it:
 
 ```sql
 CREATE TABLE `car_state`
@@ -116,6 +117,60 @@ continuous job, so leave it running for the next step.
 - **`actual_value > upper_bound` filter.** This keeps only the *overheating*
   spike as an anomaly, not the cold drop after the pit stop (which is a recovery,
   not a problem).
+- **`minTrainingSize` / `enableStl` tune the ARIMA model.** `ML_DETECT_ANOMALIES`
+  fits a statistical model per partition, so it needs 20 windows of history before
+  it will judge anything, and `maxTrainingSize` keeps that history a *rolling* 50
+  windows rather than the whole race. STL seasonal-trend decomposition is off: the
+  synthetic data has no seasonality for it to find, only added variance.
+
+> **Bonus — the same job with a foundation model.** Flink also ships
+> `AI_DETECT_ANOMALIES`, which swaps ARIMA for a pretrained time-series model you
+> pick by name: IBM Granite `ttm` (TinyTimeMixer — small enough to run on CPUs),
+> `flowstate`, `patchtstfm`, or Google `timesfm-2.5` (the default if you omit the
+> parameter). Nothing else in the statement changes when you swap models — that is
+> the point of the feature. It is gated behind an Early Access Program, so on most
+> orgs you will see *"Function AI_DETECT_ANOMALIES does not exist or you do not have
+> permission to access it."*
+>
+> **On the build we tested, this variant does not flag the anomaly.** It runs, and
+> it forecasts well, but it leaves `is_anomaly` and both bounds NULL — so the `CASE`
+> never becomes true and `anomaly_tire_temp_fl` stays `false` all race.
+>
+> **Read this one; don't run it during the lab.** `car_state` already exists by now,
+> so swapping the CTE means dropping and recreating the table — which also strands
+> its Schema Registry subjects and takes LAB 4 down with it. If you want to see it
+> for yourself, do it after LAB 6, and ask your instructor to reset the environment
+> afterwards.
+>
+> <details>
+> <summary>Foundation-model variant — the <code>anomaly</code> CTE to use instead</summary>
+>
+> ```sql
+> anomaly AS (
+>   SELECT
+>     *,
+>     AI_DETECT_ANOMALIES(tire_temp_fl_c, window_time,
+>       -- Swap this one line to compare model backends: 'ttm' (IBM Granite
+>       -- TinyTimeMixer), 'flowstate', 'patchtstfm', or 'timesfm-2.5' (the default
+>       -- when 'model' is omitted). Same function, same output — the point of
+>       -- foundation-model support is that this is a one-word change.
+>       JSON_OBJECT('model' VALUE 'ttm',
+>                   'minContextSize' VALUE 20,
+>                   'maxContextSize' VALUE 50,
+>                   'confidencePercentage' VALUE 99.99))
+>       OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+>       AS anomaly_tire_temp_fl_result
+>   FROM windowed
+> )
+> ```
+>
+> Note the different config keys: `minContextSize`/`maxContextSize` rather than
+> `minTrainingSize`/`maxTrainingSize`, and no `enableStl` — that option is
+> ARIMA-specific and does not exist here. (`ttm` is pretrained, so there is no
+> training phase at all; `minContextSize` is just an emission gate.) Everything
+> above and below the CTE stays exactly as written. The full statement is in
+> `demo-reference/enrichment_anomaly_ai.sql`.
+> </details>
 
 ### Step 2: Verify
 
@@ -129,8 +184,9 @@ You should see a row every 10 seconds — six per lap at the default 60s/lap pac
 Around **lap 32**, `anomaly_tire_temp_fl` flips to `true` and `tire_temp_fl_c`
 spikes to ~145°C. (Ctrl-C to stop the query.)
 
-> `ML_DETECT_ANOMALIES` needs 20 windows before it fires — 20 × 10 seconds, so
-> about 3½ minutes of live data — and it won't flag anything before then. If
+> `ML_DETECT_ANOMALIES` needs 20 windows of history before it fires
+> (`minTrainingSize`) — 20 × 10 seconds, so about 3½ minutes of live data — and it
+> won't flag anything before then. If
 > `car_state` stays empty, see
 > [troubleshooting](../../shared/troubleshooting.md).
 

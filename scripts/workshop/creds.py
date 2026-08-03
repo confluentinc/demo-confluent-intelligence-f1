@@ -1,21 +1,31 @@
 """Generate attendee credential cards.
 
   workshop creds --csv wsa-output/<run-id>/build-output.csv --name <name>
-    [--social-feed-url URL] [--region us-east-1]
+    [--resolve-op] [--social-feed-url URL] [--region us-east-1]
 
 Reads `wsa`'s ``build-output.csv`` (one row per attendee: built-in "Account"/
 "Email" columns, then one column per ``wsa-spec-aws.yaml`` `credentials:`
 field, headered ``"<Group> / <Label>"``) and writes, under
 ``runs/<name>/credentials/``:
 
-  <prefix>.env     machine-readable, consumed by `uv run f1-sql --creds <file>`
-  <prefix>.md      human handout (instructor-distributed runs)
+  <prefix>.env     machine-readable, consumed by `uv run f1-pitwall --creds <file>`
+  <prefix>.md      human handout (instructor-distributed runs) — the card
   credentials.csv  one row per attendee (organizer's master sheet)
 
-No passwords: attendees authenticate to Flink with the API keys below, not a
-Confluent Cloud login. Attendees claiming through the wsa self-serve dispenser
-instead reconstruct this file themselves with `uv run f1-onboard` from their
-claim email — this command is for instructor-distributed or self-hosted runs.
+Attendees log in to the Confluent Cloud Console with the email/password on the
+card and write their Flink SQL in the browser workspace; the API keys are what
+`f1-pitwall` (and `f1-sql`, if they want a shell) authenticate with.
+
+The Console password is NOT in wsa's CSV — a ``source: op`` field is written as
+the literal ``(from 1Password)`` placeholder and only resolved in memory at
+``wsa dispenser-upload`` time. Pass ``--resolve-op`` to do the same resolution
+here for instructor-distributed cards; see ``_resolve_op_password``. Resolved
+passwords are then stored in plaintext under ``runs/<name>/credentials/``
+(gitignored) — the ``.md`` card is the intended human carrier.
+
+Attendees claiming through the wsa self-serve dispenser instead reconstruct
+the .env themselves with `uv run f1-onboard` from their claim email — this
+command is for instructor-distributed or self-hosted runs.
 
 ``_card_fields`` also backs ``scripts/selfservice/cli.py``, which calls it
 directly against a plain ``terraform output -json`` dict (no wsa CSV
@@ -27,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import subprocess
 from pathlib import Path
 
 from scripts.common.terraform import get_project_root
@@ -34,8 +45,15 @@ from scripts.common.terraform import get_project_root
 # Must match the credential group `name:` in wsa-spec-aws.yaml.
 GROUP = "Confluent Cloud"
 
+# What wsa writes into build-output.csv for a `source: op` field — the real
+# value never touches disk (wsa's cmd/wsa/main.go opPlaceholder).
+OP_PLACEHOLDER = "(from 1Password)"
+
 # internal field name -> wsa CSV column header ("<group> / <label>")
 COLUMNS = {
+    "console_url": f"{GROUP} / Console URL",
+    "console_username": f"{GROUP} / Console Username",
+    "console_password": f"{GROUP} / Console Password",
     "prefix": f"{GROUP} / Prefix",
     "environment_id": f"{GROUP} / Environment ID",
     "environment_url": f"{GROUP} / Environment URL",
@@ -59,6 +77,9 @@ COLUMNS = {
 CSV_HEADERS = [
     "prefix",
     "email",
+    "console_url",
+    "console_username",
+    "console_password",
     "environment_id",
     "environment_url",
     "flink_rest_endpoint",
@@ -108,6 +129,11 @@ def _card_fields(prefix: str, email: str, out: dict, social_feed_url: str = "", 
     return {
         "prefix": prefix,
         "email": email,
+        # Console login. Empty on the standalone/self-service tracks, which
+        # don't set grant_console_access — those cards stay API-key-only.
+        "console_url": out.get("console_url", "") or ac.get("environment_url", ""),
+        "console_username": out.get("console_username", ""),
+        "console_password": out.get("console_password", ""),
         "social_feed_url": social_feed_url,
         "cluster_id": cluster_id,
         "rtce_mcp_endpoint": _rtce_endpoint(
@@ -131,6 +157,38 @@ def _card_fields(prefix: str, email: str, out: dict, social_feed_url: str = "", 
     }
 
 
+# wsa's 1Password layout, reconstructed here so we can resolve passwords for
+# instructor-distributed cards the same way `wsa dispenser-upload` does for the
+# claim email. Mirrors workshop-setup-accelerator's
+# internal/onepassword/onepassword.go (DefaultVault, the "Account %03d" item
+# name, the op://vault/item/section/field ref) and internal/spec/spec.go's
+# PlatformKey ("Confluent Cloud" -> "confluent-cloud"). If wsa changes that
+# convention this breaks silently — the symptom is every password unresolved.
+OP_VAULT = "Workshop Setup Accelerator Users"
+OP_PLATFORM = "confluent-cloud"
+
+
+def _resolve_op_password(account: str) -> str:
+    """Read one account's Confluent Cloud password out of 1Password.
+
+    ``account`` is wsa's built-in CSV "Account" column (1, 2, 3...). Returns ""
+    on any failure — a missing password degrades the card, it shouldn't abort
+    the whole run.
+    """
+    try:
+        n = int(account)
+    except (TypeError, ValueError):
+        return ""
+    ref = f"op://{OP_VAULT}/Account {n:03d}/{OP_PLATFORM}/password"
+    try:
+        result = subprocess.run(["op", "read", ref], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
 def _row_to_outputs(row: dict[str, str]) -> dict:
     """Adapt one wsa build-output.csv row into the terraform-output shape
     ``_card_fields`` expects (see its docstring)."""
@@ -139,6 +197,9 @@ def _row_to_outputs(row: dict[str, str]) -> dict:
         return row.get(COLUMNS[key], "")
 
     return {
+        "console_url": get("console_url"),
+        "console_username": get("console_username"),
+        "console_password": get("console_password"),
         "organization_id": get("organization_id"),
         "environment_id": get("environment_id"),
         "environment_name": get("environment_name"),
@@ -176,14 +237,39 @@ def _write_md(creds_dir: Path, f: dict[str, str]) -> None:
             f"then set the tool's `prefix` to `{f['prefix']}`:\n\n"
             f"```\n{f['social_feed_url']}/openapi.json\n```\n"
         )
-    md = f"""# F1 Pit Wall Workshop — Your Environment
+    # The standalone and self-service tracks don't grant Console access (see
+    # modules/environment's grant_console_access) — those cards keep the
+    # API-key-and-shell story instead of printing an empty login table.
+    if f.get("console_username"):
+        pw = f.get("console_password")
+        # Backticks only around a real value — they'd render literally around
+        # the italicised fallback.
+        password = f"`{pw}`" if pw else "_ask your instructor_"
+        access = f"""## Your Confluent Cloud login
 
-**Attendee:** `{f["prefix"]}`  ·  **Driver:** John Doe (#88)  ·  **Circuit:** Silverstone
+Sign in with the username below — **not** your own work email. It's a workshop
+account we created for you.
 
-You do **not** log into Confluent Cloud. You run Flink SQL through the workshop
-shell using the API keys below.
+| | |
+|--|--|
+| Sign in at | {f["console_url"]} |
+| Username | `{f["console_username"]}` |
+| Password | {password} |
 
 ## Getting started
+
+1. Open the sign-in link above and log in.
+2. Go to your environment's **Flink** tab and open a SQL workspace, then pick
+   the compute pool below.
+3. Confirm your environment is live:
+
+   ```sql
+   SHOW TABLES;            -- car_telemetry, race_standings, driver_race_history
+   SELECT * FROM race_standings;   -- 22 cars, updating live
+   ```
+"""
+    else:
+        access = f"""## Getting started
 
 1. Save the companion file `{f["prefix"]}.env` somewhere safe.
 2. Launch the SQL shell:
@@ -198,7 +284,12 @@ shell using the API keys below.
    SHOW TABLES;            -- car_telemetry, race_standings, driver_race_history
    SELECT * FROM race_standings;   -- 22 cars, updating live
    ```
+"""
+    md = f"""# F1 Pit Wall Workshop — Your Environment
 
+**Attendee:** `{f["prefix"]}`  ·  **Driver:** John Doe (#88)  ·  **Circuit:** Silverstone
+
+{access}
 ## Your environment
 
 | | |
@@ -208,9 +299,17 @@ shell using the API keys below.
 | Catalog / Database | `{f["catalog"]}` / `{f["database"]}` |
 | Flink endpoint | `{f["flink_rest_endpoint"]}` |
 
-Your Kafka and Schema Registry API keys are in the `.env` file if you want to
-connect other tools. Keep them private — they grant full access to your
-environment.
+## The live dashboard
+
+Save the companion file `{f["prefix"]}.env` somewhere safe and run:
+
+```bash
+uv run f1-pitwall --creds {f["prefix"]}.env
+```
+
+That file also holds your Kafka and Schema Registry API keys if you want to
+connect other tools. Keep it — and this card — private; between them they grant
+full access to your environment.
 {lab5}"""
     (creds_dir / f"{f['prefix']}.md").write_text(md)
 
@@ -226,6 +325,7 @@ def creds(args: argparse.Namespace) -> None:
     creds_dir.mkdir(parents=True, exist_ok=True)
 
     rows: list[dict[str, str]] = []
+    unresolved: list[str] = []
     with csv_in.open(newline="") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
@@ -234,6 +334,13 @@ def creds(args: argparse.Namespace) -> None:
                 print(f"  skip row for {row.get('Email', '?')} (no prefix — attendee not applied)")
                 continue
             out = _row_to_outputs(row)
+            # wsa leaves "(from 1Password)" in the CSV; swap in the real value
+            # so the printed card is usable, or blank it so the card renders the
+            # "ask your instructor" line instead of the placeholder.
+            if out["console_password"] == OP_PLACEHOLDER:
+                out["console_password"] = _resolve_op_password(row.get("Account", "")) if args.resolve_op else ""
+                if not out["console_password"]:
+                    unresolved.append(prefix)
             fields = _card_fields(prefix, row.get("Email", ""), out, args.social_feed_url, args.region)
             _write_env(creds_dir, fields)
             _write_md(creds_dir, fields)
@@ -250,9 +357,24 @@ def creds(args: argparse.Namespace) -> None:
     else:
         print("\nNo attendee rows with a resolved prefix found in the CSV.")
 
+    if unresolved:
+        how = (
+            "`op read` failed — check you're signed in (`op signin`) and that "
+            "`wsa accept-account-invitation` has run for these accounts"
+            if args.resolve_op
+            else "re-run with --resolve-op to pull them from 1Password"
+        )
+        print(f"\nWARNING: no Console password on {len(unresolved)} card(s): {', '.join(unresolved)}\n  {how}")
+
 
 def add_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--csv", required=True, help="Path to wsa's build-output.csv (wsa-output/<run-id>/build-output.csv)")
     p.add_argument("-n", "--name", required=True, help="Workshop run name — cards go under runs/<name>/credentials/")
+    p.add_argument(
+        "--resolve-op",
+        action="store_true",
+        help="Resolve each attendee's Console password from 1Password (requires `op`, signed in). "
+        "Without it the cards tell attendees to ask the instructor.",
+    )
     p.add_argument("--social-feed-url", default="", help="LAB 5 race-feed base URL, stamped onto every card")
     p.add_argument("--region", default="us-east-1", help="AWS region (used to derive the RTCE MCP endpoint)")

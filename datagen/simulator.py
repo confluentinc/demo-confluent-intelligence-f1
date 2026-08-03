@@ -138,13 +138,15 @@ def _produce_standings(producer, avro_serializer, key_fn, standings):
 
 
 def _run_warmup_laps(producer, avro_serializer):
-    """Produce pre-race telemetry windows (lap=0) to prime ML_DETECT_ANOMALIES.
+    """Produce pre-race telemetry windows (lap=0) as a producer/schema smoke test.
 
-    ML_DETECT_ANOMALIES withholds output until ~5 data points are available.
-    These warmup windows supply the first 4 so real lap 1 is the 5th point
-    and triggers the first car_state emission. Only telemetry is produced here
-    — race_standings is materialized by Terraform (CREATE TABLE) and only needs
-    real lap data (Job 1 filters lap > 0).
+    These do **not** prime the anomaly function, despite the name. It withholds
+    output for its first 20 windows, and none of these rows ever reach it: only
+    telemetry is produced here, so there is no `race_standings` version to match
+    at these timestamps and LAB 3's *inner* temporal join drops every warmup row
+    before the window aggregation (the closing `lap > 0` filter is redundant for
+    them). What they do buy is confirmation that the producer and its Avro
+    schemas work before lap 1. See "Anomaly warmup" in CLAUDE.md.
     """
     for i in range(config.PRE_RACE_WARMUP_LAPS):
         readings_per_lap = config.SECONDS_PER_LAP // config.TELEMETRY_INTERVAL_SEC

@@ -13,19 +13,16 @@ reasoning in natural language.
 Your instructor has pre-provisioned all infrastructure — a dedicated Confluent
 Cloud environment per attendee, a CDC connector, the LLM models, and a **live
 race simulator already feeding your cluster**. You do **not** install Terraform
-or manage cloud accounts, and you do **not** log in to the Confluent Cloud
-Console.
+or manage cloud accounts.
 
-Instead you get a **credential card** (a small `.env` file) and run Flink SQL
-through the workshop's command-line shell:
+You get a **credential card** with a Confluent Cloud username and password, and
+you write your Flink SQL in the browser's **SQL workspace** — no local tooling
+needed for the SQL itself. The card's companion `.env` (API keys) is only for
+the live Pit Wall dashboard.
 
-```bash
-uv run f1-sql
-```
-
-Labs 1–4 happen in that shell; LAB 5 is a no-code agent you build in the IBM
+Labs 1–4 happen in that workspace; LAB 5 is a no-code agent you build in the IBM
 watsonx Orchestrate web UI. [LAB 1](instructor-led/LAB1_claim_account/LAB1.md)
-walks you through launching the shell.
+walks you through signing in.
 
 > **Running solo?** These same labs apply to an environment you provisioned
 > yourself, with a couple of differences depending on which way you did it:
@@ -78,7 +75,7 @@ seeded once by Flink. Labs 3–5 are byte-for-byte the same either way.
 
 | Lab | Time | What you do |
 |-----|------|-------------|
-| [LAB 1 — Open your environment](instructor-led/LAB1_claim_account/LAB1.md) | 5 min | Launch the `f1-sql` shell with your credential card |
+| [LAB 1 — Open your environment](instructor-led/LAB1_claim_account/LAB1.md) | 5 min | Sign in to Confluent Cloud and open a SQL workspace |
 | [LAB 2 — Explore the environment](instructor-led/LAB2_explore_environment/LAB2.md) | 10 min | Inspect the tables, the live feed, and the pre-deployed models — all in SQL |
 | [LAB 3 — Stream processing](instructor-led/LAB3_stream_processing/LAB3.md) | 15 min | Window + temporal join + `ML_DETECT_ANOMALIES` → `car_state` |
 | [LAB 4 — Streaming agent](instructor-led/LAB4_streaming_agent/LAB4.md) | 20 min | `CREATE AGENT` + `AI_RUN_AGENT` → `pit_decisions` |

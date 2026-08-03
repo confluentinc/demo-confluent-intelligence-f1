@@ -57,8 +57,8 @@ SHOW TABLES;        -- car_state and pit_decisions now sit alongside the sources
 SHOW AGENTS;        -- pit_strategy_agent
 ```
 
-> Your instructor can also show the same graph visually in the Confluent Cloud
-> **Stream Lineage** view, which they have Console access to.
+> For the same graph visually, open the **Stream Lineage** view in your
+> environment — every table you built shows up as a node.
 
 ## What you built
 
@@ -73,7 +73,7 @@ SHOW AGENTS;        -- pit_strategy_agent
 
 Your race feed loops continuously, so you can re-run the labs anytime. To clear
 your lab objects (`car_state`, `pit_decisions`, `pit_strategy_agent`) and start
-fresh, drop them in your `f1-sql` shell:
+fresh, drop them in your SQL workspace:
 
 ```sql
 DROP TABLE IF EXISTS `pit_decisions`;
@@ -85,5 +85,6 @@ DROP AGENT IF EXISTS `pit_strategy_agent`;
 
 ## Done 🏁
 
-Thanks for racing with River Racing. Close your `f1-sql` shell (`\q`) when you're
-finished — your instructor will tear down the shared infrastructure afterward.
+Thanks for racing with River Racing. Sign out when you're finished — your
+instructor will tear down the environments afterward, and your workshop account's
+password is rotated at teardown.

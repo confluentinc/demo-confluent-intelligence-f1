@@ -81,8 +81,8 @@ DEFAULT_POSTGRES_INSTANCE_TYPE = "t3.small"
 # Race pacing. terraform/aws defaults to 60 (a 60-lap race takes an hour, with
 # the lap-32 anomaly ~32 minutes in) because that's the right pace for an
 # instructor-led workshop. A standalone demo wants to reach the payoff sooner,
-# so prompt for it and default lower. Below ~10s/lap ML_DETECT_ANOMALIES can't
-# accumulate its 20 training windows before lap 32 and the anomaly never fires.
+# so prompt for it and default lower. Below ~10s/lap anomaly detection can't
+# accumulate its 20 windows before lap 32 and the anomaly never fires.
 DEFAULT_SECONDS_PER_LAP = "20"
 MIN_SECONDS_PER_LAP = meta.MIN_SECONDS_PER_LAP
 
@@ -578,8 +578,8 @@ def main():
     print("It's recorded as F1_CARD in credentials.env, so the tools below need no flags.\n")
     if args.with_labs and labs_ok:
         print("LAB 3 and LAB 4 are already running — `car_state` and `pit_decisions` are filling.")
-        print("  `car_state` stays empty for ~3.5 min while ML_DETECT_ANOMALIES trains on its")
-        print("  first 20 windows. The anomaly fires around lap 32.\n")
+        print("  `car_state` stays empty for ~3.5 min while anomaly detection fills its")
+        print("  first 20 windows of context. The anomaly fires around lap 32.\n")
     print("1. Open the SQL shell for the labs:")
     print("     uv run f1-sql")
     print("2. Open the live dashboard (second terminal):")

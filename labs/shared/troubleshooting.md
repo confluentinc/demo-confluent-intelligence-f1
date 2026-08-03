@@ -1,15 +1,25 @@
 # Troubleshooting
 
-## `f1-sql` won't connect
+## Can't sign in to Confluent Cloud
 
-- The shell prints which card it used, right under the `Connected` line — check it's
-  yours. If it says it found none (or more than one), name yours explicitly:
-  `uv run f1-sql --creds <your-prefix>.env`.
-- The card must contain `F1_FLINK_*`, `F1_ORGANIZATION_ID`, `F1_ENVIRONMENT_ID`,
-  and `F1_COMPUTE_POOL_ID`. If a key is missing, ask your instructor to
-  regenerate it (`uv run workshop creds`).
-- A `401/403` means the API keys in your card are wrong or revoked — get a fresh
-  card from your instructor.
+- Use the **Console Username** on your card — a workshop account ending in
+  `+f1wp###@confluent.io`. Your own work email won't find your environment.
+- Copy the password exactly; they're generated and contain symbols. A trailing
+  space from a copy-paste is the usual culprit.
+- If it still fails, the account's password may have been rotated after your card
+  was printed. Ask your instructor for a fresh one.
+
+## Signed in, but I see no environment (or the wrong one)
+
+You're granted access to exactly one environment, `RIVER-RACING-f1wp###-ENV`. If
+the environment list is empty, your access grant didn't land — tell your
+instructor, it's a provisioning problem on their side, not something you can fix.
+
+## `SHOW TABLES` is empty in the SQL workspace
+
+Check the **catalog** and **database** dropdowns above the editor. They must be
+set to your environment and your cluster (`RIVER-RACING-f1wp###-CLUSTER`) — a
+workspace pointed somewhere else runs fine and shows nothing.
 
 ## `car_telemetry` / `race_standings` look idle
 
@@ -20,8 +30,7 @@ few seconds. If nothing arrives for several minutes, tell your instructor — on
 they can inspect or restart the simulators (`uv run workshop start-races`, run
 from the organizer's machine with AWS access; you have Confluent API keys only).
 
-> Tip: a streaming `SELECT` keeps running. Press Ctrl-C to stop it and return to
-> the `f1-sql>` prompt.
+> Tip: a streaming `SELECT` keeps running until you hit **Stop**.
 
 ## `race_standings` has data but `car_state` is empty
 
@@ -58,9 +67,9 @@ loses its rowtime attribute and the join silently returns zero rows.
 
 ## `SHOW MODELS;` / `SHOW AGENTS;` returns nothing
 
-This almost always means your card points at the wrong environment. Quit (`\q`)
-and relaunch `f1-sql` with your own `<prefix>.env`. The models are pre-deployed
-per environment, so they only appear when you're connected to yours.
+This almost always means the workspace is pointed at the wrong catalog. The
+models are pre-deployed per environment, so they only appear when the catalog is
+your own `RIVER-RACING-f1wp###-ENV`.
 
 ## LAB 5 — Orchestrate agent / race-feed tool
 

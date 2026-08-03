@@ -7,10 +7,12 @@ that recommends pit stops, then (LAB 5) build a no-code IBM watsonx Orchestrate
 agent that drafts social posts from the same live feed. Organizers provision
 everything from a single Confluent org + AWS account with **`wsa`**
 (confluentinc/workshop-setup-accelerator, run from a sibling checkout, driven by
-this repo's `wsa-spec-aws.yaml`); attendees never run Terraform and **never log
-in to the Confluent Console** — they claim an account through the wsa dispenser
-(or get an instructor-distributed card) and run Flink SQL through the bundled
-shell (`uv run f1-sql`). See "WSA (organizer provisioning)" below.
+this repo's `wsa-spec-aws.yaml`); attendees never run Terraform — they claim an
+account through the wsa dispenser (or get an instructor-distributed card), **log
+in to the Confluent Cloud Console** with the username/password on that card, and
+write every lab statement in the browser **Flink SQL workspace**. `uv run f1-sql`
+is no longer taught in LAB 1-6; it stays for the standalone/self-service tracks.
+See "Attendee Console access" and "WSA (organizer provisioning)" below.
 
 **Team:** River Racing | **Driver:** John Doe (#88) | **Circuit:** Silverstone | **60 laps**
 
@@ -54,7 +56,8 @@ uv run workshop validate --creds-glob 'runs/*/credentials/*.env'   # no AWS/logi
 # Attendee, self-serve (wsa dispenser claim email -> local credentials.env)
 uv run f1-onboard                # prompts field-by-field, or --paste to parse a pasted email
 
-# Attendee (no Console login): run Flink SQL with a credential card.
+# Flink SQL from a credential card, no Console login. NOT what LAB 1-6 teaches
+# (that's the browser SQL workspace) — this is the standalone/self-service path.
 # The card is resolved automatically — see "Credential card resolution" below.
 uv run f1-sql
 uv run f1-sql --creds runs/<name>/credentials/f1wp001.env   # override
@@ -239,8 +242,24 @@ canonical SQL is in `demo-reference/` and reproduced in the lab guides.
 | Job | SQL file | Input → Output |
 |-----|----------|----------------|
 | 1 | `demo-reference/enrichment_anomaly.sql` | `car_telemetry` + `race_standings` → `car_state` |
+| 1 (opt-in) | `demo-reference/enrichment_anomaly_ai.sql` | same, Granite `AI_DETECT_ANOMALIES` instead of ARIMA |
 | 2a | `demo-reference/streaming_agent_create_agent.sql` | creates `pit_strategy_agent` |
 | 2b | `demo-reference/streaming_agent_pit_decisions.sql` | `car_state` → `pit_decisions` |
+
+**Job 1 has two implementations, and only one of them works.** The default is the GA
+`ML_DETECT_ANOMALIES` (ARIMA), which flags lap 32 and only lap 32. The
+foundation-model `AI_DETECT_ANOMALIES` variant (`'model' VALUE 'ttm'`; `'flowstate'`,
+`'patchtstfm'`, and Google's `'timesfm-2.5'` are one-word swaps) is kept as an opt-in
+— `F1_ANOMALY_FN=ai` on any `--with-labs` path, or submit `enrichment_anomaly_ai.sql`
+directly — but on the build measured 2026-07-31 it **runs without error and never
+flags anything**: `is_anomaly`, `upper_bound`, and `lower_bound` all stay NULL, so the
+`CASE` can never be true and `car_state` carries `anomaly_tire_temp_fl = false` for the
+whole race. It forecasts fine (`actual_value`/`forecast_value`/`rmse` populate). Do not
+make it the default again without re-running the probe in
+`docs/technical-discoveries.md` item 13b. Both emit the identical `car_state` schema, so
+LAB 4/5, the pit wall, and the social feed cannot tell them apart. **Their config keys
+differ:** `minTrainingSize`/`maxTrainingSize` vs `minContextSize`/`maxContextSize`, and
+`enableStl` exists only on `ML_` — see `docs/technical-discoveries.md` item 13.
 
 `llm_textgen_model` / `llm_embedding_model` are pre-deployed per environment by
 `terraform/aws`.
@@ -276,17 +295,18 @@ rowtime attribute and the join silently returns zero rows.
 telemetry producer writes a string message key; do not add a PK that would
 register an Avro int key schema.
 
-**ML_DETECT_ANOMALIES warmup — the lap-0 warmup laps do NOT prime it:** the function
-withholds output for its first `minTrainingSize` (20) windows, i.e. 20 × 10s ≈ 3.3
+**Anomaly warmup — the lap-0 warmup laps do NOT prime it:** the function withholds
+output for its first 20 windows (`minTrainingSize` on `ML_DETECT_ANOMALIES`,
+`minContextSize` on the Granite variant — both 20), i.e. 20 × 10s ≈ 3.3
 minutes of live data, whatever the lap pacing. The simulator's `PRE_RACE_WARMUP_LAPS`
 (`datagen/config.py`, default 4) cannot shorten that, and **not** because of the
 count — 4 laps is `4 × SECONDS_PER_LAP/10` windows' worth of telemetry (8 at 20s/lap,
 24 at 60s/lap), which would clear 20 at the slower pacing. They contribute nothing
 because they carry telemetry but **no `race_standings`**: with no version to match at
 those timestamps, LAB 3's *inner* temporal join drops every warmup row before it ever
-reaches TUMBLE or the OVER window, so zero of them become training points at any
+reaches TUMBLE or the OVER window, so zero of them reach the function at any
 pacing (the closing `lap > 0` filter is then redundant for them). Their real value is
-a producer/schema smoke test before lap 1. Actual training comes from race data —
+a producer/schema smoke test before lap 1. The context comes from race data —
 `SECONDS_PER_LAP / 10` windows per lap, so 2/lap at 20s and 6/lap at 60s, reaching 20
 windows well before the lap-32 anomaly either way.
 `f1-race` therefore sets `PRE_RACE_WARMUP_LAPS=0` (`scripts/selfservice/race.py`,
@@ -321,7 +341,37 @@ Full technical discoveries: `docs/technical-discoveries.md`.
 | `credentials.env` | Deploy secrets (`TF_VAR_*`) + the `F1_CARD` pointer | `deploy.py` |
 | `runs/<track>/deployment.env` | Per-track deployment inputs: resolved prefix, pacing, region, card path | `deploy.py`, `selfservice up` |
 | `runs/<name>/credentials/<prefix>.env` | Credential card (`F1_*`) — what the attendee tools authenticate with | `workshop creds`, `deploy.py`, `selfservice up` |
+| `runs/<name>/credentials/<prefix>.md` | The printed handout: Console URL/username/password first, then env IDs | `workshop creds` |
 | `confluent-mcp.env` | MCP server env (mode `0600`), rewritten whole each run | `setup-mcp` |
+
+### Attendee Console access
+
+Workshop attendees sign in to Confluent Cloud as **pool accounts on the organizer's
+plus-alias** (`bheintz+f1wpN@confluent.io`, from `wsa-spec-aws.yaml`'s `email_pattern`)
+— not as themselves. Three moving parts, none of which a build creates:
+
+1. **The users.** Invited by hand (`confluent iam user invitation create`), then
+   accepted + first password set by `wsa accept-account-invitation` (headless browser
+   + Gmail API). One-time per account number, **forever** — `wsa clean` rotates
+   passwords but never deletes users. See WORKSHOP-GUIDE.md "One-time org prep".
+2. **The password.** Lives only in the 1Password vault `Workshop Setup Accelerator
+   Users`, item `Account NNN`, field `confluent-cloud/password`. Terraform never sees
+   it; wsa writes the literal `(from 1Password)` into `build-output.csv`.
+   `workshop creds --resolve-op` (always on via `workshop build`) substitutes the real
+   value into the card — see `_resolve_op_password` in `scripts/workshop/creds.py`,
+   which reconstructs a wsa-internal ref and will break silently if wsa changes it.
+   `create.py`'s `_check_console_accounts` fails the build early when a password is
+   missing, because **`wsa validate` reports every `source: op` field as OK without
+   ever touching the vault**.
+3. **The RBAC.** `terraform/modules/environment` binds the user as `EnvironmentAdmin`
+   on their own environment, gated by `grant_console_access` (default **false**;
+   `wsa-spec-aws.yaml` sets it true). Off for standalone/self-service, whose
+   `owner_email` may not resolve as a CC user. The `data "confluent_user"` lookup
+   fails at **plan** time if the invite wasn't accepted — that's the hard ordering
+   dependency between Phase 0 and `wsa build`.
+
+Cards are only valid for the password current when they were written; regenerating
+after a `reset-account-password` is required.
 
 ### Deployment identity (`scripts/common/deployment_meta.py`)
 
@@ -391,9 +441,10 @@ you no longer invoke it from there: `uv run workshop spec-validate|build|clean`
   `terraform_path: terraform/aws/`. Every `credentials:` field with
   `source: terraform` must match a flat root `output` in
   `terraform/aws/outputs.tf` by name.
-- **Secrets:** plain `.env`/shell `TF_VAR_*` exports (Confluent + Bedrock
-  keys) — this workshop does not use the TMM 1Password vault, so `op` is
-  omitted from `tools_required`.
+- **Secrets:** Terraform inputs (Confluent + Bedrock keys) are plain `.env`/shell
+  `TF_VAR_*` exports — not the TMM 1Password vault. But `op` **is** in
+  `tools_required`, because the attendee Console passwords live in wsa's
+  `Workshop Setup Accelerator Users` vault (see "Attendee Console access").
 - **Dispenser:** attendees can claim via `wsa dispenser-upload` (Google
   Form/Sheet) and self-serve `uv run f1-onboard` their claim-email values
   into a local `credentials.env`, or an instructor can run
@@ -410,7 +461,17 @@ you no longer invoke it from there: `uv run workshop spec-validate|build|clean`
 `demo-reference/*.sql` and the lab guides under `labs/instructor-led/` must stay
 in sync — when you change the SQL in one, update the other in the same pass. The
 same applies to `demo-reference/orchestrate_social_agent.md` ↔ the LAB 5 guide
-(`labs/instructor-led/LAB5_orchestrate_integration/LAB5.md`).
+(`labs/instructor-led/LAB5_orchestrate_integration/LAB5.md`). The root
+`RUN-OF-SHOW.md` (presenter/attendee command sheet) inlines the LAB 3/4 SQL
+verbatim, so it is part of the same sync set — update it too when the SQL changes.
+
+LAB 3 has **two** implementations, so its sync set is doubled. The default ARIMA
+`ML_DETECT_ANOMALIES` version lives in `demo-reference/enrichment_anomaly.sql`,
+`LAB3.md`, and `RUN-OF-SHOW.md` — change one and change the other two. The only guard
+is a manual diff: extract the `CREATE TABLE car_state` … `WHERE lap > 0;` span from
+each of the three and compare. The opt-in Granite `AI_DETECT_ANOMALIES` version lives
+in `demo-reference/enrichment_anomaly_ai.sql` and the collapsed `<details>` block in
+`LAB3.md` (RUN-OF-SHOW just links the file); those two share only the `anomaly` CTE.
 
 ---
 
@@ -423,7 +484,7 @@ same applies to `demo-reference/orchestrate_social_agent.md` ↔ the LAB 5 guide
 | `scripts/race_control.py` | `uv run race status\|start\|stop\|restart` — scoped to THIS deployment's one ECS service |
 | `scripts/setup_mcp.py` | `uv run setup-mcp` — register `@confluentinc/mcp-confluent` with Claude Code (project-local) or Codex (user-global) from a credential card |
 | `scripts/common/deployment_meta.py` | Track definitions, derived prefixes, `runs/<track>/deployment.env`, pacing validation, `retire_track` |
-| `scripts/common/simulator_control.py` | Shared `--with-labs` machinery: submits the `demo-reference/` SQL and waits for RUNNING/COMPLETED |
+| `scripts/common/simulator_control.py` | Shared `--with-labs` machinery: submits the `demo-reference/` SQL and waits for RUNNING/COMPLETED; owns the `F1_ANOMALY_FN` ARIMA/Granite switch (`anomaly_sql_filename`) |
 | `scripts/workshop/create.py` | `create-workshop` / `workshop create` — one-command workshop provisioning: preflight, secrets, validate, build, cards, next-steps |
 | `scripts/workshop/teardown.py` | `teardown-workshop` / `workshop teardown` — one-command teardown: secrets, confirm, clean, card cleanup |
 | `scripts/workshop/reset.py` | `workshop reset-races` — fleet-level reset: stop all feeds, fan out per-card reset, leave feeds stopped |
@@ -440,11 +501,15 @@ same applies to `demo-reference/orchestrate_social_agent.md` ↔ the LAB 5 guide
 | `terraform/aws/` | Per-attendee CC env + ECS simulator service |
 | `terraform/modules/topics/main.tf` | `car_telemetry` + `race_standings` CREATE TABLE |
 | `wsa-spec-aws.yaml` | wsa orchestration spec — read by `wsa build`/`clean`/`validate` |
-| `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md` |
+| `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md`; `--resolve-op` pulls Console passwords from 1Password |
+| `terraform/modules/environment/main.tf` | The environment, plus the `grant_console_access`-gated `confluent_user` lookup + EnvironmentAdmin binding that makes an attendee login useful |
 | `scripts/workshop/onboard.py` | `f1-onboard` — self-serve: wsa claim-email values → local `credentials.env` |
 | `scripts/workshop/validate.py` | `workshop validate` — API-key health checks against one or many cards |
 | `labs/` | Attendee lab guides |
+| `RUN-OF-SHOW.md` | In-room command sheet: every attendee command LAB 1→6 in order + presenter talk track; inlines LAB 3/4 SQL (in the File Sync set) |
+| `WORKSHOP-GUIDE.md` | Organizer-facing lifecycle guide: create → hand out → run → reset → teardown |
 | `demo-reference/*.sql` | Canonical lab SQL |
+| `demo-reference/enrichment_anomaly_ai.sql` | LAB 3's Granite/`AI_DETECT_ANOMALIES` variant — `F1_ANOMALY_FN=ai`. EAP-gated, and currently never flags an anomaly (docs/technical-discoveries.md 13b) |
 | `demo-reference/orchestrate_social_agent.md` | Canonical LAB 5 Orchestrate agent config (persona, tool, prompts) |
 
 ---
