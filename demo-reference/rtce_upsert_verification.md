@@ -1,65 +1,91 @@
-# RTCE lookup → UPSERT → lookup verification
+# Video-only RTCE UPSERT demo
 
-This is a disposable, live verification of RTCE's behavior for an F1 standings
-lookup. RTCE itself is read-only: the UPSERT is written through Flink SQL, then
-the same row is queried again through RTCE.
+This is the reusable recording runbook for the existing `f1wp050` deployment.
+It is deliberately separate from workshop provisioning, attendee materials,
+reset flows, and the social-feed service. The data path is:
 
-Before creating the final demo fixture, confirm that the workshop organization
-is enabled in `lightning.cheetahdb.upsert.allowlist`. Without that org-level
-feature flag, both valid upsert variants fail with the non-retryable
-`MT_UPSERT_NOT_SUPPORTED` error. Changing only `kafka.cleanup-policy` to
-`delete` is not a workaround while `changelog.mode` remains `upsert`.
+```text
+race_standings -> continuous Flink UPSERT -> race_standings_rtce -> RTCE MCP
+```
 
-Use a fresh topic name that has never had RTCE enabled for the post-allowlist
-verification. Do not drop and recreate a previously enabled topic under the
-same name; internal issue `CHEETAH-1418` documents stale data-provider state for
-that lifecycle. Rename the table consistently in the setup, baseline, update,
-lookup, and cleanup SQL before running the final transcript.
+Use `runs/f7zxf/credentials/f1wp050.env` and the existing
+`bheintz+f1wp50@confluent.io` account. Do not create another user, environment,
+cluster, or compute pool.
 
-Use the `f1wp050` credential card, never the Terraform-managed
-`race_standings` topic. First create the empty test tables:
+## One-time setup
+
+Capture the source schema before changing anything, then prove the serving table
+name has never existed. Save both outputs with the recording artifacts.
+
+```bash
+uv run f1-sql --creds runs/f7zxf/credentials/f1wp050.env \
+  --exec 'SHOW CREATE TABLE `race_standings`'
+uv run f1-sql --creds runs/f7zxf/credentials/f1wp050.env \
+  --exec "SHOW TABLES LIKE 'race_standings_rtce'"
+```
+
+The second command must return no rows. If it does, inspect and reuse the
+existing object; never drop and recreate the topic under the same name.
+
+Create the raw-key, compacted serving table:
 
 ```bash
 uv run f1-sql --creds runs/f7zxf/credentials/f1wp050.env \
   --file demo-reference/rtce_upsert_verification_setup.sql
 ```
 
-Enable both `rtce_standings_*_test` topics in the Console's **Real-Time Context
-Engine** panel (or with `confluent rtce rtce-topic create`) and wait for `ACTIVE`.
-Then write the baseline **after** enablement so RTCE has post-enable data to
-materialize:
+Before submitting the continuous feed, paste the contents of
+`demo-reference/rtce_upsert_verification_feed.sql` after `EXPLAIN` in the Flink
+SQL workspace. The plan is acceptable only when it reports:
+
+- derived upsert key `[key]` and sink primary key `[key]`;
+- no `UpsertMaterialize` operator;
+- no `UPSERT_AND_PRIMARY_KEYS_DIFFERENT` warning; and
+- no `HIGH_STATE_OPERATOR_WITHOUT_TTL` warning.
+
+Do not substitute a direct cast projection. Explicit `INT` to `STRING` casts
+currently lose the source upsert-key metadata. The grouped `LAST_VALUE`
+reduction establishes `key` as the derived upsert key, and the one-hour
+`STATE_TTL` bounds aggregation state. An idle car's last compacted RTCE row
+remains available; its next source event upserts the same key again.
+
+Submit the unchanged feed only after the plan passes:
 
 ```bash
 uv run f1-sql --creds runs/f7zxf/credentials/f1wp050.env \
-  --file demo-reference/rtce_upsert_verification_baseline.sql
+  --file demo-reference/rtce_upsert_verification_feed.sql
 ```
 
-Use the attendee's RTCE MCP endpoint to run these exact lookups:
+Save the printed Flink statement name; that is the only statement stopped after
+recording.
+
+Enable RTCE for `race_standings_rtce` in the Console's **Real-Time Context
+Engine** panel, or with the currently supported `confluent rtce` command shown
+by `confluent rtce --help`, and wait for `ACTIVE`. Allow up to 12 minutes after
+`ACTIVE` for the fresh materialization. `DP_INVALID_TABLE` and
+`DP_TABLE_NOT_AVAILABLE` are retryable during this window. If it remains
+unqueryable after 10–12 minutes, use the existing Lightning on-call escalation;
+do not recreate the topic.
+
+## Recording proof
+
+Use the already registered Claude RTCE MCP server. Query by both the raw key and
+the business identifier:
 
 ```sql
-SELECT * FROM "rtce_standings_delete_test" WHERE "CAR_NUMBER" = 88
-SELECT * FROM "rtce_standings_raw_compact_test" WHERE "KEY" = '88'
+SELECT * FROM "race_standings_rtce" WHERE "KEY" = '88'
+SELECT * FROM "race_standings_rtce" WHERE "CAR_NUMBER" = 88
 ```
 
-Save those baseline results, then write the same keys again:
+Record one current row for car 88, including position, both gaps, tire compound,
+tire age, and pit-stop state (`pit_stops` and `in_pit_lane`). Wait for a later
+lap, repeat both lookups, and save the transcript proving that the same key now
+has the newer lap and that no historical duplicate row exists.
 
-```bash
-uv run f1-sql --creds runs/f7zxf/credentials/f1wp050.env \
-  --file demo-reference/rtce_upsert_verification_update.sql
-```
+## After recording
 
-Repeat the two RTCE lookups until materialization catches up. Success is one
-row with the updated values: lap 32, P7, MEDIUM tires, and tire age 0. If the
-delete-policy table returns both the lap-31 and lap-32 rows, it is queryable but
-has RTCE append semantics; do not present it as an RTCE UPSERT lookup.
-
-The native compacted/raw-key table is the preferred demo candidate if it returns
-only the lap-32 row. It is a true current-state lookup and mirrors the existing
-`race_standings` story: “Where is John Doe now, and what tires is he on?”
-
-After saving the complete transcript, remove only the disposable objects:
-
-```bash
-uv run f1-sql --creds runs/f7zxf/credentials/f1wp050.env \
-  --file demo-reference/rtce_upsert_verification_cleanup.sql
-```
+Stop only the continuous INSERT by its saved statement name. In the Flink SQL
+workspace use **Stop**, or use the matching supported statement-stop command
+from `confluent flink statement --help`. Retain `race_standings_rtce`, its Kafka
+topic, schemas, and RTCE configuration until the entire f1wp050 environment is
+torn down. There is intentionally no cleanup SQL file.

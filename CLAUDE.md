@@ -60,40 +60,19 @@ HTTP service (an OpenAPI tool) — everything upstream is Confluent-only.
 
 ## Terraform Layout
 
-Two AWS tiers plus a Confluent-only one. `aws-shared` is applied once; `aws` is
-applied per attendee (by `wsa`, or once by `deploy.py`). The `aws` tier consumes
-`aws-shared` outputs as variables (injected by wsa, or by `deploy.py` reading the
-shared state). `self-service` stands alone.
+Three tiers: `aws-shared` (applied once), `aws` (per attendee), and the
+Confluent-only `self-service`. The tier relationships, per-attendee resource naming,
+CDC slot isolation, and the `flink_max_cfu` / `seconds_per_lap` / `race_loop` knobs are
+in the **`f1-terraform-layout`** skill
+(`.claude/skills/f1-terraform-layout/SKILL.md`). Load it before editing anything under
+`terraform/`.
 
-`terraform/self-service/` is Confluent-**only** — no AWS (Postgres/CDC/ECS/ECR),
-and its `driver_race_history` table starts empty: `uv run selfservice up` seeds it
-with a bounded Flink INSERT and the local `f1-race` simulator feeds the topics.
-
-The Bedrock connections + `CREATE MODEL` statements live in the shared
-`terraform/modules/llm/` module, consumed by both `terraform/aws` and
-`terraform/self-service` (keep them in sync via the module, not by copy).
-
-**Naming:** per-attendee CC resources use `RIVER-RACING-${prefix}` (e.g.
-`RIVER-RACING-f1wp001-ENV`); ECS resources use the lowercased
-`river-racing-${prefix}-<hex>-simulator` (the instructor scripts filter on
-`river-racing`).
-
-**Per-attendee isolation:** separate CC environment/cluster/Flink pool; CDC
-connector uses `slot.name=f1_cdc_${prefix}` + `publication.name=f1_pub_${prefix}`
-so many connectors share one Postgres. Bedrock credentials are shared across all
-attendees. `aws-shared` fixes `max_replication_slots` at 105 (the accelerator's
-95-account maximum plus 10 spare slots), so resizing a resumed run does not
-replace or silently reconfigure the shared database.
-
-**Key `aws` variables:** `prefix`, `owner_email`, `region`,
-`confluent_cloud_api_key/_secret`, `aws_bedrock_access_key/_secret`,
-`aws_session_token` (optional), and the shared inputs `shared_vpc_id`,
-`shared_subnet_ids`, `shared_postgres_host`, `shared_postgres_password`,
-`shared_ecr_image_uri` — every `shared_*` variable name must exactly match an
-output name in `terraform/aws-shared/outputs.tf` (`shared_X` ← output `X`),
-since `wsa` injects them by that naming convention as `TF_VAR_shared_X`.
-`flink_max_cfu` (default 5), `seconds_per_lap` (default 60 → 60-minute race),
-`race_loop` (default true) tune cost/pacing.
+**The one contract that reaches outside `terraform/`:** every `shared_*` variable name
+in `terraform/aws` must exactly match an output name in
+`terraform/aws-shared/outputs.tf` (`shared_X` ← output `X`), since `wsa` injects them by
+that naming convention as `TF_VAR_shared_X`. Breaking it silently starves the attendee
+tier of its shared inputs, and it also governs `wsa-spec-aws.yaml` and
+`scripts/workshop/wsa.py`.
 
 ---
 
@@ -250,79 +229,13 @@ Full technical discoveries: `docs/technical-discoveries.md`.
 | `runs/<name>/credentials/<prefix>.md` | The printed handout: Console URL/username/password first, then env IDs | `workshop creds` |
 | `confluent-mcp.env` | MCP server env (mode `0600`), rewritten whole each run | `setup-mcp` |
 
-### Attendee Console access
+Credential cards are **gitignored — do not commit.**
 
-Workshop attendees sign in to Confluent Cloud as **pool accounts on the organizer's
-configured plus-address pattern** (for example,
-`organizer+f1wp{N}@example.com`, supplied through `--email-pattern` or
-`WORKSHOP_EMAIL_PATTERN`)
-— not as themselves. Three moving parts, none of which a build creates:
-
-1. **The users.** Invited by hand (`confluent iam user invitation create`), then
-   accepted + first password set by `wsa accept-account-invitation` (headless browser
-   + Gmail API). One-time per account number, **forever** — `wsa clean` rotates
-   passwords but never deletes users. See `PREREQUISITES.md`.
-2. **The password.** Lives only in the 1Password vault `Workshop Setup Accelerator
-   Users`, item `Account NNN`, field `confluent-cloud/password`. Terraform never sees
-   it; wsa writes the literal `(from 1Password)` into `build-output.csv`.
-   `workshop creds --resolve-op` (always on via `workshop build`) substitutes the real
-   value into the card — see `_resolve_op_password` in `scripts/workshop/creds.py`,
-   which reconstructs a wsa-internal ref and will break silently if wsa changes it.
-   `create.py`'s `_check_console_accounts` fails the build early when a password is
-   missing, because **`wsa validate` reports every `source: op` field as OK without
-   ever touching the vault**.
-3. **The RBAC.** `terraform/modules/environment` binds the user as `EnvironmentAdmin`
-   on their own environment, gated by `grant_console_access` (default **false**;
-   `wsa-spec-aws.yaml` sets it true). Off for standalone/self-service, whose
-   `owner_email` may not resolve as a CC user. The `data "confluent_user"` lookup
-   fails at **plan** time if the invite wasn't accepted — that's the hard ordering
-   dependency between Phase 0 and `wsa build`.
-
-Cards are only valid for the password current when they were written; regenerating
-after a `reset-account-password` is required.
-
-### Deployment identity (`scripts/common/deployment_meta.py`)
-
-Two tracks, `standalone` (`terraform/aws`) and `selfservice`
-(`terraform/self-service`, suffix `s`), each with its own `runs/<track>/deployment.env`
-so one checkout can hold both without either clobbering the other's Terraform inputs.
-The prefix is **derived**, not prompted-with-a-shared-example: `$USER` (or a short
-hash of the owner email when `$USER` is generic/shared), truncated to 8, plus the
-track suffix, max 12 alphanumerics. Deterministic on purpose — `race`, `reset`,
-`destroy` and screen-shares all resolve the same names on every rerun. `resolve_prefix`
-refuses a value that contradicts live state, so **a deployed prefix can't be renamed
-in place**; tear down first.
-
-The shared tier's name is `f1-<prefix>` unless `F1_SHARED_PREFIX` overrides it. It is
-not cosmetic: the ECR repo is `force_delete`d and recreated, the image rebuilt, and the
-attendee task definition revised (restarting a running race). `deploy.py` detects the
-mismatch from `aws-shared`'s `ecr_image_uri`, warns, and under `--automated` **refuses**
-— pin the existing name with `export F1_SHARED_PREFIX=<deployed>`.
-
-### Credential card resolution
-
-`f1-sql` / `f1-pitwall` / `f1-race` no longer require `--creds`. `resolve_card()` in
-`scripts/common/credentials.py` picks the card, first hit wins:
-
-1. `--creds <path>`
-2. `$F1_CREDS`
-3. `credentials.env` — its `F1_CARD=<path>` pointer (skipped if the target is gone), or
-   the file itself when it holds `F1_*` keys (what `f1-onboard` writes)
-4. the only card under `runs/*/credentials/*.env`
-
-Ambiguity is an error, never a guess: several cards and no pointer exits listing them.
-`deploy.py` and `selfservice up` call `set_active_card()`; `destroy` and
-`selfservice down` call `clear_active_card(only_if_under=...)`, scoped so tearing down
-one deployment leaves another's pointer alone. The organizer fan-out tools
-(`f1-social-feed`, `f1-social-feed-rtce`, `workshop validate`) deliberately keep
-explicit `--creds` / `--creds-glob` — operating over many cards is their whole job.
-
-Gitignored. Do not commit. The `aws` tier's flat outputs (`environment_id`,
-`kafka_api_key`, `sr_api_key`, ...) are what `wsa-spec-aws.yaml`'s
-`credentials:` fields point at (`source: terraform`); `wsa` turns those into
-the dispenser CSV and each attendee's claim email. The nested
-`attendee_credentials` map output still exists for the single-environment
-smoke-test flow (`terraform output -json attendee_credentials`, `deploy.py`).
+Console logins (invited pool users, 1Password passwords, the
+`grant_console_access` RBAC gate), the derived per-track deployment prefixes in
+`scripts/common/deployment_meta.py`, and `resolve_card()`'s precedence order are in the
+**`f1-credentials`** skill (`.claude/skills/f1-credentials/SKILL.md`). Load it before
+touching credential cards, `workshop creds`, `deployment.env`, or `f1-onboard`.
 
 ---
 
@@ -376,16 +289,10 @@ in `demo-reference/enrichment_anomaly_ai.sql` and the collapsed `<details>` bloc
 | `scripts/pitwall/` | `f1-pitwall` live web dashboard — Kafka consumer → FastAPI/websocket → animated browser view; progressive reveal of LAB 3/4 panels; `--mock` offline feed |
 | `scripts/social_feed/` | `f1-social-feed` shared HTTP service for LAB 5 — tails each attendee's Kafka topics, serves `GET /race-feed/{prefix}` + auto OpenAPI spec for the watsonx Orchestrate tool; reuses pitwall consumer; `--mock` offline feed |
 | `scripts/social_feed_rtce/` | `f1-social-feed-rtce` — same OpenAPI tool, but an MCP client to the Real-Time Context Engine (RTCE) instead of Kafka. Reuses `social_feed`'s `FeedState`+`create_app`; new bits are the RTCE MCP client + poller. Global API key via `RTCE_API_KEY/SECRET`; per-attendee endpoint from card `F1_RTCE_MCP_ENDPOINT`; `--probe` validates the live contract |
-| `datagen/simulator.py` | Race simulator — produces telemetry + standings to Kafka, RACE_LOOP |
 | `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md`; `--resolve-op` pulls Console passwords from 1Password; `--rtce-keys` mints each attendee's RTCE Global API key (`_mint_rtce_key`, replace-not-accumulate) and prints the `claude mcp add` line. Also appends `Real-Time Context Engine / MCP Setup Command` back into build-output.csv so dispenser claim emails carry it (`_add_dispenser_column`, `--no-dispenser-column`) — the `" / "` in that header is what makes the dispenser's Apps Script email it |
 | `terraform/modules/environment/main.tf` | The environment, plus the `grant_console_access`-gated `confluent_user` lookup + EnvironmentAdmin binding that makes an attendee login useful |
 | `scripts/workshop/onboard.py` | `f1-onboard` — self-serve: wsa claim-email values → local `credentials.env` |
 | `scripts/workshop/validate.py` | `workshop validate` — API-key health checks against one or many cards |
-| `PREREQUISITES.md` | One-time organizer setup: tools, credentials, Confluent users, invitation acceptance, and preflight |
-| `RUN-OF-SHOW.md` | In-room command sheet: every attendee command LAB 1→6 in order + presenter talk track; inlines LAB 3/4 SQL (in the File Sync set) |
-| `WORKSHOP-GUIDE.md` | Organizer-facing lifecycle guide: create → hand out → run → reset → teardown |
-| `docs/OTHER-TRACKS.md` | Entry point for the standalone AWS and self-service solo tracks |
-| `scripts/check_markdown_links.py` | CI checker for links and image targets in tracked Markdown files |
 | `demo-reference/enrichment_anomaly_ai.sql` | LAB 3's Granite/`AI_DETECT_ANOMALIES` variant — `F1_ANOMALY_FN=ai`. EAP-gated, and currently never flags an anomaly (docs/technical-discoveries.md 13b) |
 | `demo-reference/orchestrate_social_agent.md` | Canonical LAB 5 Orchestrate agent config (persona, tool, prompts) |
 

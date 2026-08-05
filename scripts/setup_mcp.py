@@ -232,7 +232,7 @@ _CARD_TO_MCP: tuple[tuple[str, tuple[str, ...]], ...] = (
     # The catalog/database a Flink statement resolves against are the Confluent
     # environment and cluster *display names* — which is what the card stores
     # them as.
-    ("F1_CATALOG", ("FLINK_ENV_NAME",)),
+    ("F1_CATALOG", ("FLINK_CATALOG_NAME",)),
     ("F1_DATABASE", ("FLINK_DATABASE_NAME",)),
     ("F1_SR_API_KEY", ("SCHEMA_REGISTRY_API_KEY",)),
     ("F1_SR_API_SECRET", ("SCHEMA_REGISTRY_API_SECRET",)),
@@ -277,6 +277,17 @@ def kafka_rest_endpoint(bootstrap: str) -> str:
     return f"https://{host}:443" if host else ""
 
 
+def kafka_bootstrap_servers(bootstrap: str) -> str:
+    """Return the host:port form mcp-confluent accepts for BOOTSTRAP_SERVERS.
+
+    Credential cards retain the SASL_SSL scheme because Kafka clients use it,
+    whereas mcp-confluent validates this setting as a comma-separated host:port
+    list and configures TLS itself. Keep the card unchanged; normalize only at
+    the MCP boundary.
+    """
+    return bootstrap.split("://", 1)[-1]
+
+
 def cloud_api_credentials(project_root: Path) -> tuple[str, str]:
     """
     Best-effort Confluent Cloud (control-plane) API key and secret.
@@ -309,6 +320,8 @@ def build_mcp_env(card: dict[str, str], cloud: tuple[str, str] = ("", "")) -> li
     pairs: list[tuple[str, str]] = []
     for card_key, mcp_vars in _CARD_TO_MCP:
         value = card.get(card_key, "") or ""
+        if card_key == "F1_KAFKA_BOOTSTRAP":
+            value = kafka_bootstrap_servers(value)
         pairs += [(var, value) for var in mcp_vars]
 
     pairs.append(("KAFKA_REST_ENDPOINT", kafka_rest_endpoint(card.get("F1_KAFKA_BOOTSTRAP", "") or "")))

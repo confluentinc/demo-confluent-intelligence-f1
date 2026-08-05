@@ -23,12 +23,9 @@ import time
 from pathlib import Path
 
 # LAB 3 has two implementations emitting the identical `car_state` schema, so
-# everything downstream is indifferent to which one ran. The default is the GA
-# `ML_DETECT_ANOMALIES` (ARIMA), which is the only one that actually flags the
-# lap-32 anomaly today: the foundation-model `AI_DETECT_ANOMALIES` variant runs
-# without error but leaves `is_anomaly` and both bounds NULL, so it never fires
-# (docs/technical-discoveries.md items 13b-13d). It is kept as an opt-in for the
-# day that changes.
+# everything downstream is indifferent to which one ran. The default uses GA
+# `ML_DETECT_ANOMALIES` (ARIMA); the foundation-model
+# `AI_DETECT_ANOMALIES` implementation remains available as an opt-in.
 ANOMALY_SQL = "enrichment_anomaly.sql"
 ANOMALY_SQL_AI = "enrichment_anomaly_ai.sql"
 

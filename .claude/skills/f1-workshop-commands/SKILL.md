@@ -50,7 +50,8 @@ uv run f1-onboard                # prompts field-by-field, or --paste to parse a
 
 # Flink SQL from a credential card, no Console login. NOT what LAB 1-6 teaches
 # (that's the browser SQL workspace) — this is the standalone/self-service path.
-# The card is resolved automatically — see "Credential card resolution" in CLAUDE.md.
+# The card is resolved automatically — see "Credential card resolution" in the
+# f1-credentials skill.
 uv run f1-sql
 uv run f1-sql --creds runs/<name>/credentials/f1wp001.env   # override
 
@@ -72,7 +73,8 @@ uv run deploy --with-labs      # also build LAB 3 + LAB 4 from demo-reference/ a
                                #   race behind them — ready to demo. Omit for a bare environment
                                #   (what the workshop hands attendees).
                                # Prefix is derived from $USER (+ track suffix) and pinned in
-                               #   runs/<track>/deployment.env — see "Deployment identity" in CLAUDE.md.
+                               #   runs/<track>/deployment.env — see "Deployment identity"
+                               #   in the f1-credentials skill.
                                # Postgres defaults to t3.small here (aws-shared's own default,
                                #   which wsa uses, stays t3.large).
 uv run destroy                 # pick which local deployment(s) to tear down, confirm, destroy

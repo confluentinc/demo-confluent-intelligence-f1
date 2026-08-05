@@ -36,7 +36,8 @@ you no longer invoke it from there: `uv run workshop spec-validate|build|clean`
 - **Secrets:** Terraform inputs (Confluent + Bedrock keys) are plain `.env`/shell
   `TF_VAR_*` exports — not the TMM 1Password vault. But `op` **is** in
   `tools_required`, because the attendee Console passwords live in wsa's
-  `Workshop Setup Accelerator Users` vault (see "Attendee Console access" in CLAUDE.md).
+  `Workshop Setup Accelerator Users` vault (see "Attendee Console access" in the
+  `f1-credentials` skill).
 - **Dispenser:** attendees can claim via the Google Form/Sheet and self-serve
   `uv run f1-onboard` their claim-email values into a local `credentials.env`,
   or an instructor can run

@@ -53,9 +53,9 @@ variable "confluent_cloud_api_secret" {
 }
 
 variable "flink_max_cfu" {
-  description = "Max CFUs for the Flink compute pool"
+  description = "Autoscaling ceiling for the Flink compute pool; CFUs are consumed on demand, not reserved"
   type        = number
-  default     = 5
+  default     = 10
 }
 
 # --- AWS Bedrock (credentials only — no AWS infrastructure) ---

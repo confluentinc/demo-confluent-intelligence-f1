@@ -161,8 +161,10 @@ def _run_warmup_laps(producer, avro_serializer):
 
         producer.flush(timeout=5)
         logger.info(
-            f"Warmup window {i + 1}/{config.PRE_RACE_WARMUP_LAPS} produced. "
-            f"Sleeping {config.PRE_RACE_LAP_DELAY_SEC}s..."
+            f"Warmup window {i + 1}/{config.PRE_RACE_WARMUP_LAPS} produced over "
+            f"{config.SECONDS_PER_LAP}s ({readings_per_lap} telemetry readings); "
+            f"waiting {config.PRE_RACE_LAP_DELAY_SEC}s before the next window "
+            f"({config.SECONDS_PER_LAP + config.PRE_RACE_LAP_DELAY_SEC}s cadence)."
         )
         time.sleep(config.PRE_RACE_LAP_DELAY_SEC)
 

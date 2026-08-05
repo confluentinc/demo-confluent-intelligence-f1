@@ -158,8 +158,7 @@ LOCAL_RACE_TOKENS = ("f1-race", "scripts.selfservice.race")
 # the same behavior. They are re-exported above so existing importers of
 # `scripts.reset` keep working. That module also owns the `F1_ANOMALY_FN` switch
 # choosing which LAB 3 implementation `--with-labs` submits (ARIMA by default,
-# Granite/AI_DETECT_ANOMALIES as an opt-in that currently never flags — see
-# docs/technical-discoveries.md 13b).
+# Granite/AI_DETECT_ANOMALIES as an opt-in).
 
 
 def run_cli(cmd: list[str], confirm: bool = False) -> tuple[int, str, str]:

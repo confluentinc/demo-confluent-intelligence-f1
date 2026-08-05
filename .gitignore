@@ -178,3 +178,7 @@ package-lock.json
 # Confluent CLI `api-key create --output-file` drops these in the CWD, named for
 # the key id. Pattern, not one exact filename, so the next one is covered too.
 api-key-*.txt
+/RTCE-UPSERT+LIGHTNING-QUERIES.md
+# Local validation notes can include internal product behavior and live-run
+# observations. Keep them available to organizers without publishing them.
+/docs/technical-discoveries.md

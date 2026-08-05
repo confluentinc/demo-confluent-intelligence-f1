@@ -168,6 +168,8 @@ uv run setup-mcp --dry-run            # write confluent-mcp.env, print the comma
 
 This registers Confluent's `@confluentinc/mcp-confluent` server against **your
 credential card**, so the agent gets the same scoped Kafka/Flink/Schema-Registry
+access as the labs. Restart Claude Code or Codex after setup so it loads the new
+server registration.
 keys the labs use — no Console login and no org-wide key. It writes
 `confluent-mcp.env` (mode `0600`, gitignored) in the repo root and installs the MCP
 package locally. Needs **Node ≥ 20** (v24 LTS is what has prebuilt native binaries;

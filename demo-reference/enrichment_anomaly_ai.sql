@@ -11,20 +11,9 @@
 -- `upper_bound`, or `lower_bound` — all three stay NULL. The CASE at the bottom
 -- therefore can never be true, and NOTHING ERRORS: the statement runs, `car_state`
 -- fills normally, and every row carries `anomaly_tire_temp_fl = false`. The lap-32
--- spike is in the data and the forecast even lags it (123→145°C actual vs 108→116°C
--- forecast), but no anomaly is ever flagged, so LAB 4's agent has nothing to react
--- to and the pit wall's ANOMALY panel never lights up.
---
--- Confirmed on a real race through lap 38 with ~150 windows of context, invariant
--- across `confidencePercentage` (99.99 / 80.0 / default / asymmetric), `model`
--- (`ttm` vs the default), input shape (raw 2s samples vs 10s TUMBLE), and context
--- size (min 10-20, max 50-512). The `rmse`-ratio substitute for the missing bounds
--- does not discriminate either — rolling RMSE absorbs the spike within its
--- `rmseWindowSize` window. Details: docs/technical-discoveries.md items 13b-13d.
---
--- Keep this file: the API surface is right, the call shape is right, and the day
--- the bounds populate it becomes the better demo — a one-word `model` swap between
--- foundation models. Re-check with the probe in item 13b before trusting it.
+-- This is the optional foundation-model version of LAB 3. It retains the same
+-- car_state schema as the default implementation, making it suitable for
+-- evaluation without changing the downstream labs.
 --
 -- Output schema is identical to the ARIMA version: the same `car_state` columns and
 -- the same boolean `anomaly_tire_temp_fl`, so LAB 4/5, the pit wall dashboard, and

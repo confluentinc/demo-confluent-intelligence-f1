@@ -7,7 +7,9 @@ these tests must never do is register a server into the developer's own agent
 config, so the recorder is installed before ``main()`` is ever called.
 """
 
+import io
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -82,7 +84,7 @@ class PureMappingTests(unittest.TestCase):
     def test_card_values_reach_the_right_mcp_variables(self):
         env = dict(setup_mcp.build_mcp_env(CARD))
 
-        self.assertEqual(env["BOOTSTRAP_SERVERS"], CARD["F1_KAFKA_BOOTSTRAP"])
+        self.assertEqual(env["BOOTSTRAP_SERVERS"], "pkc-abc12.us-east-1.aws.confluent.cloud:9092")
         self.assertEqual(env["KAFKA_API_KEY"], "KKEY7")
         self.assertEqual(env["KAFKA_CLUSTER_ID"], "lkc-cluster7")
         self.assertEqual(env["FLINK_COMPUTE_POOL_ID"], "lfcp-pool7")
@@ -98,7 +100,7 @@ class PureMappingTests(unittest.TestCase):
 
     def test_catalog_and_database_become_flink_names(self):
         env = dict(setup_mcp.build_mcp_env(CARD))
-        self.assertEqual(env["FLINK_ENV_NAME"], CARD["F1_CATALOG"])
+        self.assertEqual(env["FLINK_CATALOG_NAME"], CARD["F1_CATALOG"])
         self.assertEqual(env["FLINK_DATABASE_NAME"], CARD["F1_DATABASE"])
 
     def test_rest_endpoint_derived_from_bootstrap_host(self):
@@ -112,6 +114,16 @@ class PureMappingTests(unittest.TestCase):
             "https://pkc-abc12.us-east-1.aws.confluent.cloud:443",
         )
         self.assertEqual(setup_mcp.kafka_rest_endpoint(""), "")
+
+    def test_bootstrap_scheme_is_removed_for_mcp(self):
+        self.assertEqual(
+            setup_mcp.kafka_bootstrap_servers("SASL_SSL://pkc-abc12.us-east-1.aws.confluent.cloud:9092"),
+            "pkc-abc12.us-east-1.aws.confluent.cloud:9092",
+        )
+        self.assertEqual(
+            setup_mcp.kafka_bootstrap_servers("pkc-abc12.us-east-1.aws.confluent.cloud:9092"),
+            "pkc-abc12.us-east-1.aws.confluent.cloud:9092",
+        )
 
     def test_cloud_api_keys_default_to_empty(self):
         env = dict(setup_mcp.build_mcp_env(CARD))
@@ -256,13 +268,20 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn(str(self.dist.resolve()), agent[1])
         self.assertIn(str((self.root / "confluent-mcp.env").resolve()), agent[1])
 
+    def test_successful_registration_tells_the_user_to_restart_the_agent(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.run_main([])
+
+        self.assertIn("Restart your coding agent to pick the server up.", output.getvalue())
+
     def test_generated_env_carries_the_cards_values(self):
         self.run_main([])
         body = self.env_file()
-        self.assertIn('BOOTSTRAP_SERVERS="SASL_SSL://pkc-abc12.us-east-1.aws.confluent.cloud:9092"', body)
+        self.assertIn('BOOTSTRAP_SERVERS="pkc-abc12.us-east-1.aws.confluent.cloud:9092"', body)
         self.assertIn('KAFKA_REST_ENDPOINT="https://pkc-abc12.us-east-1.aws.confluent.cloud:443"', body)
         self.assertIn('FLINK_COMPUTE_POOL_ID="lfcp-pool7"', body)
-        self.assertIn('FLINK_ENV_NAME="RIVER-RACING-f1wp007-ENV"', body)
+        self.assertIn('FLINK_CATALOG_NAME="RIVER-RACING-f1wp007-ENV"', body)
         self.assertIn('SCHEMA_REGISTRY_API_KEY="SRKEY7"', body)
 
     def test_env_file_is_owner_only(self):

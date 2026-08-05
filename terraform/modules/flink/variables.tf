@@ -39,7 +39,7 @@ variable "service_account_id" {
 }
 
 variable "max_cfu" {
-  description = "Max CFUs for the Flink compute pool. Lower per-attendee values keep aggregate workshop cost down."
+  description = "Autoscaling ceiling for the Flink compute pool; CFUs are consumed on demand, not reserved."
   type        = number
   default     = 10
 }

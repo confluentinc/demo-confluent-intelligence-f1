@@ -474,6 +474,7 @@ uv run setup-mcp --dry-run            # write confluent-mcp.env, print the comma
 
 This registers Confluent's `@confluentinc/mcp-confluent` server using **your credential
 card**, so the agent gets the same scoped keys the labs use rather than an org-wide one.
+Restart Claude Code or Codex after setup so it loads the new server registration.
 It writes `confluent-mcp.env` (mode `0600`, gitignored) at the repo root and installs the
 MCP package locally. Needs **Node ≥ 20** — v24 LTS is the version with prebuilt native
 binaries. Re-running only replaces this script's own server entry.
