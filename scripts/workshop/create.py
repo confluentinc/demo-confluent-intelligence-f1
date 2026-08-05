@@ -34,7 +34,6 @@ from scripts.common.login_checks import (
     ensure_confluent_login,
 )
 from scripts.common.terraform import get_project_root
-from scripts.workshop import creds as creds_mod
 from scripts.workshop import wsa as wsa_mod
 from scripts.workshop.secrets import ensure_secrets
 
@@ -42,11 +41,6 @@ from scripts.workshop.secrets import ensure_secrets
 def _read_spec_account_count(root: Path) -> int:
     spec = yaml.safe_load((root / wsa_mod.SPEC_FILE).read_text())
     return int(spec.get("account_count", 5))
-
-
-def _read_spec_email_pattern(root: Path) -> str:
-    spec = yaml.safe_load((root / wsa_mod.SPEC_FILE).read_text())
-    return str(spec.get("email_pattern", ""))
 
 
 def _read_spec_prefix(root: Path) -> str:
@@ -195,56 +189,6 @@ def _list_confluent_environments(api_key: str, api_secret: str) -> dict[str, str
     return out
 
 
-def _check_console_accounts(root: Path, attendees: int) -> None:
-    """Fail before the build if the attendee Console passwords aren't in 1Password.
-
-    ``wsa validate`` will not catch this: it reports every ``source: op`` field
-    as OK without ever touching the vault, so a build succeeds and the cards
-    come out with no password on them. The passwords are put there by the
-    one-time ``wsa accept-account-invitation`` prep and rotated by ``wsa clean``
-    — see WORKSHOP-GUIDE.md.
-
-    Skipped entirely when the spec doesn't grant Console access.
-
-    Stops at the first few misses instead of sweeping every account: each lookup is
-    an ``op read`` with a 30s timeout, so a fat-fingered ``--attendees 400`` would
-    otherwise sit through hundreds of sequential probes before saying anything.
-    This is now the only guard on an over-large count — it replaces the old
-    account_count ceiling, and unlike that ceiling it checks something real.
-    """
-    spec = yaml.safe_load((root / wsa_mod.SPEC_FILE).read_text())
-    if str(spec.get("terraform_vars", {}).get("grant_console_access", "")).lower() != "true":
-        return
-
-    missing: list[int] = []
-    for n in range(1, attendees + 1):
-        if not creds_mod._resolve_op_password(str(n)):
-            missing.append(n)
-            if len(missing) == 3:
-                break
-    if not missing:
-        print(f"  console pw:  ok ({attendees} account{'s' if attendees != 1 else ''})")
-        return
-
-    listed = ", ".join(str(n) for n in missing)
-    if len(missing) == 3:
-        listed += " (stopped after 3 — there may be more)"
-    raise SystemExit(
-        f"\nNo Confluent Cloud password in 1Password for account(s): {listed}\n"
-        f"  Vault '{creds_mod.OP_VAULT}', items 'Account NNN', field "
-        f"'{creds_mod.OP_PLATFORM}/password'.\n\n"
-        "  Signed in?               op signin (better: 1Password app -> Developer ->\n"
-        "                           'Integrate with 1Password CLI', so wsa's child\n"
-        "                           processes can read the vault too)\n"
-        "  Accounts never set up?   invite them, then run (--accounts is required —\n"
-        "                           its default is the spec's account_count, not\n"
-        "                           everyone you invited):\n"
-        f"      <wsa>/bin/wsa accept-account-invitation -w {wsa_mod.SPEC_FILE} \\\n"
-        f"        --accounts 1-{attendees} --gmail-credentials ~/.wsa/gmail-credentials.json\n"
-        "  See WORKSHOP-GUIDE.md, 'One-time org prep'. Attendees can't log in without this."
-    )
-
-
 def _check_env_name_collisions(prefix_pattern: str, attendees: int) -> None:
     """Refuse early if any ``RIVER-RACING-<prefix>-ENV`` the build will create exists.
 
@@ -293,15 +237,13 @@ def _check_env_name_collisions(prefix_pattern: str, attendees: int) -> None:
 
 
 def _export_attendee_count(attendees: int) -> None:
-    """Pin ``terraform/aws-shared``'s Postgres replication-slot capacity to the real count.
+    """Keep the shared-infra attendee-count compatibility variable authoritative.
 
-    One CDC slot per attendee, and ``max_replication_slots = attendee_count + 10``
-    (``terraform/aws-shared/main.tf``). wsa's shared-infra apply forwards only a
-    fixed set of variables, but its Terraform runner inherits this process's
-    environment and Terraform reads ``TF_VAR_*`` natively — the same route
-    ``deploy.py`` uses to pass ``TF_VAR_attendee_count=1``. Without this the value
-    fell back to the Terraform default, which a large workshop could silently
-    outgrow: the build succeeds and the CDC connectors then fail to start.
+    The shared Postgres host is fixed at 105 replication slots and no longer
+    derives capacity from this value. The accelerator's Terraform runner still
+    inherits ``TF_VAR_*`` values, so keep the variable aligned with
+    ``--attendees`` for compatibility with the shared-infra contract and older
+    tooling.
 
     Deliberately an assignment, not ``setdefault``: --attendees is authoritative,
     so a stale export must not quietly cap the slot count. A conflicting value is
@@ -332,14 +274,20 @@ def _build_namespace(attendees: int, args: argparse.Namespace) -> argparse.Names
     ns.name = args.name
     ns.region = args.region
     ns.social_feed_url = args.social_feed_url
+    ns.email_pattern = args.email_pattern
+    ns.email_pattern_interactive = False
     ns.no_cards = False
     ns.no_dispenser_upload = getattr(args, "no_dispenser_upload", False)
     return ns
 
 
-def _print_next_steps(name: str, attendees: int, root: Path) -> None:
+def _print_next_steps(
+    name: str,
+    attendees: int,
+    root: Path,
+    email_pattern: str = "",
+) -> None:
     cards_dir = f"runs/{name}/credentials/"
-    email_pattern = _read_spec_email_pattern(root)
 
     print(f"""
 === Workshop Ready ===
@@ -365,9 +313,7 @@ Races are already running (ECS auto-starts each simulator).
         )
 
     if email_pattern:
-        print(f"""
-Note: wsa-spec-aws.yaml's email_pattern is {email_pattern}.
-Edit that file if a different organizer is running this workshop.""")
+        print(f"\n  Attendee emails:   {email_pattern}")
     print()
 
 
@@ -395,6 +341,15 @@ def create(args: argparse.Namespace) -> None:
     """The full create-workshop orchestration."""
     root = get_project_root()
     interactive = not args.yes
+    email_pattern = ""
+    if not interactive:
+        # Fail before tool and cloud preflight when --yes would otherwise build
+        # accounts from the neutral pattern committed in the public spec.
+        email_pattern = wsa_mod.resolve_email_pattern(
+            root,
+            override=getattr(args, "email_pattern", ""),
+            interactive=False,
+        )
 
     # --- 1. Fast preflight: wsa binary, terraform, docker, AWS ---
     print("=== Preflight checks ===\n")
@@ -427,11 +382,12 @@ def create(args: argparse.Namespace) -> None:
         )
 
     # --- 3. Validate --attendees ---
-    # --attendees is authoritative: it drives the accounts wsa builds, the spec's
-    # account_count (via a derived spec) and TF_VAR_attendee_count below, so no
-    # committed file needs editing to grow a workshop. The spec value survives only
-    # as the interactive default. Over-reaching is caught by _check_console_accounts,
-    # which verifies the Console password of every account actually exists.
+    # --attendees is authoritative: it drives the accounts wsa builds and the spec's
+    # account_count via a derived spec, so no committed file needs editing to grow a
+    # workshop. TF_VAR_attendee_count is retained only for shared-infra compatibility.
+    # The spec value survives only as the interactive default. Over-reaching is
+    # caught by wsa's shared precheck, which verifies the Console password of every
+    # account actually exists.
     spec_count = _read_spec_account_count(root)
 
     if args.attendees is None:
@@ -451,6 +407,15 @@ def create(args: argparse.Namespace) -> None:
     # --- 3b. Environment prefix (drives every per-attendee resource name) ---
     prefix = _prompt_prefix(root, attendees, interactive, override=args.prefix)
 
+    # --- 3c. Attendee login pattern ---
+    if not email_pattern:
+        email_pattern = wsa_mod.resolve_email_pattern(
+            root,
+            override=getattr(args, "email_pattern", ""),
+            interactive=True,
+        )
+    args.email_pattern = email_pattern
+
     # --- 4. Collect secrets ---
     print("\n=== Secrets ===")
     if interactive and sys.stdin.isatty():
@@ -461,11 +426,18 @@ def create(args: argparse.Namespace) -> None:
     _check_env_name_collisions(prefix, attendees)
 
     # --- 4c. Attendee Console logins must already exist in 1Password ---
-    _check_console_accounts(root, attendees)
+    invitation_spec = wsa_mod._derive_spec(root, email_pattern=email_pattern)
+    wsa_mod._check_console_accounts(
+        root,
+        list(range(1, attendees + 1)),
+        spec_path=invitation_spec,
+    )
 
     # --- 5. Spec validation ---
     print("\n=== Spec validation (wsa validate) ===\n")
-    wsa_mod.spec_validate(argparse.Namespace())
+    wsa_mod.spec_validate(
+        argparse.Namespace(email_pattern=email_pattern, email_pattern_interactive=False)
+    )
 
     # --- 6. Build ---
     _export_attendee_count(attendees)
@@ -477,7 +449,7 @@ def create(args: argparse.Namespace) -> None:
     # --- 7. Next steps ---
     run = wsa_mod.resolve_run(output_dir, ns.run_id)
     name = args.name or (run.run_id if run else "workshop")
-    _print_next_steps(name, attendees, root)
+    _print_next_steps(name, attendees, root, email_pattern=email_pattern)
 
 
 def add_arguments(p: argparse.ArgumentParser) -> None:
@@ -485,9 +457,9 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
         "--attendees",
         type=int,
         default=None,
-        help="Number of attendee environments. Authoritative — also sets the spec's "
-        "account_count and the shared Postgres slot capacity, so no file needs editing "
-        "to grow a workshop (default: prompted, or the spec's account_count)",
+        help="Number of attendee environments. Authoritative — also sets the derived "
+        "spec's account_count; shared Postgres already supports up to 95 accounts "
+        "(default: prompted, or the spec's account_count)",
     )
     p.add_argument("-c", "--concurrency", type=int, default=4, help="Parallel Terraform runs (default: 4)")
     p.add_argument(
@@ -500,6 +472,12 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
         help="Environment prefix, e.g. f1ws (letters/digits; the {NNN} account number is "
         "appended automatically). Default: prompted, or the spec value. Mainly for --yes "
         "runs; the interactive flow prompts with a resource-name preview.",
+    )
+    p.add_argument(
+        "--email-pattern",
+        default="",
+        help="Attendee login pattern, e.g. organizer+f1wp{N}@example.com. Default: "
+        f"${wsa_mod.EMAIL_PATTERN_ENV}, credentials.env, then an interactive prompt.",
     )
     p.add_argument("--social-feed-url", default="", help="LAB 5 race-feed base URL, stamped onto every card")
     p.add_argument(

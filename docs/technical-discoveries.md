@@ -92,7 +92,7 @@ anything related to Flink SQL, Terraform, or serialization.
     `actual_value` and a NULL `is_anomaly`/`forecast_value`. `forecast_value` starts
     populating at ~row 21, consistent with `minContextSize` 20. So this note is correct
     and the downstream prose is the stale part: everything that describes `car_state` as
-    *empty* for the first ~20 windows (the lab guides, `docs/STANDALONE-DEMO.md`, the
+    *empty* for the first ~20 windows (the lab guides, `docs/tracks/STANDALONE-DEMO.md`, the
     "ready" messages `reset` and `selfservice up` print) is describing the flag gate, not
     an empty topic. Harmless for the demo — the `CASE` maps those rows to `false` — but
     do not debug an "empty car_state" against that prose.
@@ -117,3 +117,16 @@ anything related to Flink SQL, Terraform, or serialization.
 
 26. **Standalone git repo** — Has its own `.git` at project root, separate from any parent monorepo. Remote: `confluentinc/demo-confluent-intelligence-f1`.
 27. **`git push-external`** — Required for pushing to `confluentinc` org repos (Confluent airlock security policy).
+
+## Real-Time Context Engine
+
+28. **UPSERT materialization requires the organization allowlist.** A table with
+    `changelog.mode = upsert` returns the terminal `MT_UPSERT_NOT_SUPPORTED` error
+    when the organization is not enabled for
+    `lightning.cheetahdb.upsert.allowlist`. Changing only
+    `kafka.cleanup-policy` to `delete` does not make that table append-only.
+29. **Use a fresh topic name for the post-allowlist test.** Internal issue
+    `CHEETAH-1418` records stale data-provider state when a previously enabled
+    Kafka topic is dropped and recreated under the same name. The repeatable
+    setup, baseline, update, lookup, and cleanup procedure lives in
+    [`demo-reference/rtce_upsert_verification.md`](../demo-reference/rtce_upsert_verification.md).

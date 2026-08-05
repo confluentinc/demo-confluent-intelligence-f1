@@ -29,6 +29,11 @@ from dotenv import dotenv_values
 # Set by deploy.py / `selfservice up` in credentials.env, read by resolve_card().
 CARD_POINTER_KEY = "F1_CARD"
 
+# ``WORKSHOP_EMAIL_PATTERN`` replaced this old setting name. Keep ignoring the
+# legacy key so an organizer's pre-upgrade credentials.env cannot shadow a real
+# attendee card while they migrate it.
+LEGACY_NON_CARD_KEYS = {"F1_WORKSHOP_EMAIL_PATTERN"}
+
 # One-off override, e.g. F1_CREDS=... uv run f1-sql
 CARD_ENV_VAR = "F1_CREDS"
 
@@ -56,7 +61,10 @@ def load_or_create_credentials_file(root: Path) -> tuple[Path, dict[str, str]]:
 
 def _is_card(values: dict[str, str | None]) -> bool:
     """A parsed .env is a credential card if it carries F1_* keys of its own."""
-    return any(k.startswith("F1_") and k != CARD_POINTER_KEY for k in values)
+    return any(
+        key.startswith("F1_") and key not in {CARD_POINTER_KEY, *LEGACY_NON_CARD_KEYS}
+        for key in values
+    )
 
 
 def resolve_card(explicit: str | None = None, root: Path | None = None) -> Path:

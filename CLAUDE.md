@@ -24,10 +24,9 @@ Every `uv run` command in this repo — organizer provisioning, credential cards
 race control, reset, standalone deploy, self-service, pitwall, social feed,
 setup-mcp, tests and lint — is in the **`f1-workshop-commands`** skill
 (`.claude/skills/f1-workshop-commands/SKILL.md`). Load it before running or
-explaining any of them. `.claude/` is gitignored, so that skill may not exist in
-a fresh clone — the checked-in fallbacks are `RUN-OF-SHOW.md` (attendee commands
-in lab order), `WORKSHOP-GUIDE.md` (organizer lifecycle), and the `[project.scripts]`
-table in `pyproject.toml` (every entry point).
+explaining any of them. The checked-in references are `RUN-OF-SHOW.md` (attendee
+commands in lab order), `WORKSHOP-GUIDE.md` (organizer lifecycle), and the
+`[project.scripts]` table in `pyproject.toml` (every entry point).
 
 ---
 
@@ -82,7 +81,9 @@ The Bedrock connections + `CREATE MODEL` statements live in the shared
 **Per-attendee isolation:** separate CC environment/cluster/Flink pool; CDC
 connector uses `slot.name=f1_cdc_${prefix}` + `publication.name=f1_pub_${prefix}`
 so many connectors share one Postgres. Bedrock credentials are shared across all
-attendees. `aws-shared` sets `max_replication_slots = attendee_count + 10`.
+attendees. `aws-shared` fixes `max_replication_slots` at 105 (the accelerator's
+95-account maximum plus 10 spare slots), so resizing a resumed run does not
+replace or silently reconfigure the shared database.
 
 **Key `aws` variables:** `prefix`, `owner_email`, `region`,
 `confluent_cloud_api_key/_secret`, `aws_bedrock_access_key/_secret`,
@@ -252,13 +253,15 @@ Full technical discoveries: `docs/technical-discoveries.md`.
 ### Attendee Console access
 
 Workshop attendees sign in to Confluent Cloud as **pool accounts on the organizer's
-plus-alias** (`bheintz+f1wpN@confluent.io`, from `wsa-spec-aws.yaml`'s `email_pattern`)
+configured plus-address pattern** (for example,
+`organizer+f1wp{N}@example.com`, supplied through `--email-pattern` or
+`WORKSHOP_EMAIL_PATTERN`)
 — not as themselves. Three moving parts, none of which a build creates:
 
 1. **The users.** Invited by hand (`confluent iam user invitation create`), then
    accepted + first password set by `wsa accept-account-invitation` (headless browser
    + Gmail API). One-time per account number, **forever** — `wsa clean` rotates
-   passwords but never deletes users. See WORKSHOP-GUIDE.md "One-time org prep".
+   passwords but never deletes users. See `PREREQUISITES.md`.
 2. **The password.** Lives only in the 1Password vault `Workshop Setup Accelerator
    Users`, item `Account NNN`, field `confluent-cloud/password`. Terraform never sees
    it; wsa writes the literal `(from 1Password)` into `build-output.csv`.
@@ -331,8 +334,7 @@ Provisioning and teardown are owned by `wsa`
 `wsa-spec-aws.yaml` contract, `account_count` vs `--attendees`, the dispenser
 upload, and the teardown gotcha where a missing Google OAuth client leaves
 attendee passwords live are all in the **`wsa-provisioning`** skill
-(`.claude/skills/wsa-provisioning/SKILL.md`). `.claude/` is gitignored, so that
-skill may not exist in a fresh clone — the checked-in fallbacks are
+(`.claude/skills/wsa-provisioning/SKILL.md`). The checked-in references are
 `WORKSHOP-GUIDE.md`, `wsa-spec-aws.yaml` itself, and `scripts/workshop/wsa.py`.
 
 ---
@@ -366,8 +368,8 @@ in `demo-reference/enrichment_anomaly_ai.sql` and the collapsed `<details>` bloc
 | `scripts/setup_mcp.py` | `uv run setup-mcp` — register `@confluentinc/mcp-confluent` with Claude Code (project-local) or Codex (user-global) from a credential card |
 | `scripts/common/deployment_meta.py` | Track definitions, derived prefixes, `runs/<track>/deployment.env`, pacing validation, `retire_track` |
 | `scripts/common/simulator_control.py` | Shared `--with-labs` machinery: submits the `demo-reference/` SQL and waits for RUNNING/COMPLETED; owns the `F1_ANOMALY_FN` ARIMA/Granite switch (`anomaly_sql_filename`) |
-| `scripts/workshop/create.py` | `create-workshop` / `workshop create` — one-command workshop provisioning: preflight, secrets, validate, build, cards, next-steps |
-| `scripts/workshop/teardown.py` | `teardown-workshop` / `workshop teardown` — one-command teardown: secrets, confirm, clean, card cleanup |
+| `scripts/workshop/create.py` | `create-workshop` — one-command workshop provisioning: preflight, secrets, validate, build, cards, next-steps |
+| `scripts/workshop/teardown.py` | `teardown-workshop` — one-command teardown: secrets, confirm, clean, card cleanup |
 | `scripts/workshop/reset.py` | `workshop reset-races` — fleet-level reset: stop all feeds, fan out per-card reset, leave feeds stopped |
 | `scripts/workshop/secrets.py` | Shared secret collection for organizer commands (env → credentials.env → interactive prompt) |
 | `scripts/workshop/wsa.py` | `workshop spec-validate\|build\|clean` — wsa binary discovery, `-w` injection, run-id resolution, in-process card writing |
@@ -379,8 +381,11 @@ in `demo-reference/enrichment_anomaly_ai.sql` and the collapsed `<details>` bloc
 | `terraform/modules/environment/main.tf` | The environment, plus the `grant_console_access`-gated `confluent_user` lookup + EnvironmentAdmin binding that makes an attendee login useful |
 | `scripts/workshop/onboard.py` | `f1-onboard` — self-serve: wsa claim-email values → local `credentials.env` |
 | `scripts/workshop/validate.py` | `workshop validate` — API-key health checks against one or many cards |
+| `PREREQUISITES.md` | One-time organizer setup: tools, credentials, Confluent users, invitation acceptance, and preflight |
 | `RUN-OF-SHOW.md` | In-room command sheet: every attendee command LAB 1→6 in order + presenter talk track; inlines LAB 3/4 SQL (in the File Sync set) |
 | `WORKSHOP-GUIDE.md` | Organizer-facing lifecycle guide: create → hand out → run → reset → teardown |
+| `docs/OTHER-TRACKS.md` | Entry point for the standalone AWS and self-service solo tracks |
+| `scripts/check_markdown_links.py` | CI checker for links and image targets in tracked Markdown files |
 | `demo-reference/enrichment_anomaly_ai.sql` | LAB 3's Granite/`AI_DETECT_ANOMALIES` variant — `F1_ANOMALY_FN=ai`. EAP-gated, and currently never flags an anomaly (docs/technical-discoveries.md 13b) |
 | `demo-reference/orchestrate_social_agent.md` | Canonical LAB 5 Orchestrate agent config (persona, tool, prompts) |
 

@@ -26,7 +26,7 @@ output "postgres_user" {
 }
 
 output "postgres_password" {
-  value     = "f1passw0rd"
+  value     = module.postgres.postgres_password
   sensitive = true
 }
 

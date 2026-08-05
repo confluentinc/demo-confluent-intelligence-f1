@@ -27,12 +27,12 @@ walks you through signing in.
 > **Running solo?** These same labs apply to an environment you provisioned
 > yourself, with a couple of differences depending on which way you did it:
 >
-> - **`uv run selfservice up`** ([docs/SELF-SERVICE.md](../docs/SELF-SERVICE.md)) —
+> - **`uv run selfservice up`** ([self-service guide](../docs/tracks/SELF-SERVICE.md)) —
 >   Confluent Cloud only. Start your own live feed with `uv run f1-race` instead of
 >   relying on an instructor's simulator. There is no CDC connector, so
 >   `driver_race_history` is an **Avro** table seeded by a bounded Flink `INSERT`
 >   rather than JSON arriving from Postgres.
-> - **`uv run deploy`** ([docs/STANDALONE-DEMO.md](../docs/STANDALONE-DEMO.md)) —
+> - **`uv run deploy`** ([standalone guide](../docs/tracks/STANDALONE-DEMO.md)) —
 >   the same AWS shape as the workshop below (ECS simulator, Postgres CDC, JSON
 >   `driver_race_history`); you control your own feed with `uv run race start|stop`.
 >

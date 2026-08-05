@@ -21,6 +21,17 @@ variable "key_pair_name" {
   default     = ""
 }
 
+variable "ssh_ingress_cidr" {
+  description = "CIDR blocks allowed to reach SSH. Empty by default because normal workshop operation does not require SSH."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.ssh_ingress_cidr : can(cidrnetmask(cidr))])
+    error_message = "Every ssh_ingress_cidr entry must be a valid IPv4 CIDR block."
+  }
+}
+
 variable "owner_email" {
   description = "Owner email for AWS resource tagging"
   type        = string

@@ -110,7 +110,7 @@ SOURCE_TOPICS = ["car_telemetry", "race_standings"]
 # Flink objects created by the labs, dropped before their topics. Labels become
 # part of the Flink statement name, which rejects underscores (HTTP 400).
 #
-# Order is deliberately NOT the dependency order that docs/STANDALONE-DEMO.md
+# Order is deliberately NOT the dependency order that docs/tracks/STANDALONE-DEMO.md
 # gives for dropping these by hand (`pit_decisions` first, because its INSERT
 # reads `car_state`). It does not need to be: delete_flink_statements() has
 # already stopped every running lab statement by the time these are submitted, so

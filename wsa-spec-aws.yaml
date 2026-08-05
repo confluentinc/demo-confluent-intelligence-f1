@@ -33,16 +33,17 @@ description: F1 Pit Wall AI Workshop — Confluent Cloud + Flink Streaming Agent
 cloud: AWS
 
 # The default attendee count, and nothing more: `uv run create-workshop
-# --attendees N` is authoritative and overrides this value (via a derived spec) as
-# well as terraform/aws-shared's attendee_count (via TF_VAR_attendee_count), so
-# growing a workshop needs no edit here. This number is what the interactive prompt
-# offers, and what a raw `wsa build` with no --accounts would build.
+# --attendees N` is authoritative and overrides this value via a derived spec, so
+# growing a workshop needs no edit here. The shared Postgres host is already sized
+# for the accelerator's supported 95-account maximum. This number is what the
+# interactive prompt offers, and what a raw `wsa build` with no --accounts builds.
 # wsa itself only uses account_count for its `>= 1` check, its "(N accounts)"
 # banner, and that default account list — --accounts decides what gets built.
 account_count: 5
 
-# {N} is replaced with the account number (1..account_count).
-email_pattern: "bheintz+f1wp{N}@confluent.io"
+# {N} is replaced with the account number (1..account_count). The workshop
+# commands prompt for the organizer's pattern and override this placeholder.
+email_pattern: "youremail+f1wp{N}@yourcompany.com"
 
 # Terraform source. terraform_repo/terraform_ref omitted for local-copy mode
 # (build straight from this local checkout — useful while iterating on

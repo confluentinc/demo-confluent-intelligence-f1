@@ -25,12 +25,28 @@ from scripts.workshop.sql_shell import (
     strip_leading_comments,
 )
 
-REFERENCE_SQL = sorted((Path(__file__).resolve().parents[1] / "demo-reference").glob("*.sql"))
+REFERENCE_DIR = Path(__file__).resolve().parents[1] / "demo-reference"
+RTCE_VERIFICATION_FIXTURES = {
+    "rtce_upsert_verification_baseline.sql",
+    "rtce_upsert_verification_cleanup.sql",
+    "rtce_upsert_verification_setup.sql",
+    "rtce_upsert_verification_update.sql",
+}
+REFERENCE_SQL = [
+    path
+    for path in sorted(REFERENCE_DIR.glob("*.sql"))
+    if path.name not in RTCE_VERIFICATION_FIXTURES
+]
 
 
 @pytest.mark.parametrize("path", REFERENCE_SQL, ids=lambda p: p.name)
 def test_reference_sql_is_left_running(path: Path) -> None:
-    """Every canonical lab file must survive being pasted or --exec'd whole."""
+    """Every canonical lab file must survive being pasted or --exec'd whole.
+
+    The RTCE verification fixtures in this directory are intentionally
+    multi-statement setup/cleanup scripts and are covered by the generic
+    multi-statement tests below.
+    """
     assert is_durable(path.read_text())
 
 

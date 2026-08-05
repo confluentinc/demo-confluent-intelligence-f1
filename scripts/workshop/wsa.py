@@ -47,6 +47,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -54,6 +55,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+from dotenv import dotenv_values, set_key
 
 from scripts.common.terraform import get_project_root
 from scripts.workshop import creds as creds_mod
@@ -72,6 +74,11 @@ SPEC_FILE = "wsa-spec-aws.yaml"
 # shared_infra_path, stage_paths — resolves identically.
 # Gitignored; `wsa clean` uses the copy staged inside the run dir, not this file.
 GENERATED_SPEC = ".wsa-spec-generated.yaml"
+
+EMAIL_PATTERN_ENV = "WORKSHOP_EMAIL_PATTERN"
+COMMITTED_EMAIL_PLACEHOLDER = "youremail+f1wp{N}@yourcompany.com"
+_EMAIL_ACCOUNT_PLACEHOLDER_RE = re.compile(r"\{N\}")
+_EXPANDED_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 # Sibling checkout layout, per workshop-setup-accelerator's ONBOARDING.md.
 SIBLING_DIR = "workshop-setup-accelerator"
@@ -197,17 +204,154 @@ def _spec_account_count(root: Path) -> int | None:
     return None if raw is None else int(raw)
 
 
-def _export_attendee_count(root: Path, args: argparse.Namespace) -> None:
-    """Pin ``TF_VAR_attendee_count`` before wsa's shared-infra apply.
+def _spec_email_pattern(root: Path) -> str:
+    """The committed spec's attendee login pattern."""
+    spec = yaml.safe_load(_spec_path(root).read_text()) or {}
+    return str(spec.get("email_pattern") or "").strip()
 
-    ``terraform/aws-shared`` sizes Postgres with ``max_replication_slots =
-    attendee_count + 10``, and that number is baked into the EC2 ``user_data``.
-    Leaving it unset does not merely under-provision — it silently *changes* the
-    value, because Terraform then falls back to its own ``default = 50``. A
-    workshop created with ``--attendees 2`` (slots 12) followed by a bare
-    ``workshop build`` (slots 60) rewrites ``user_data``, which is an in-place
-    update that stops and starts the instance. That is exactly how a live
-    Postgres went unreachable mid-build.
+
+def _validate_email_pattern(pattern: str) -> str | None:
+    """Return an actionable error when a pattern cannot name attendee accounts."""
+    if not _EMAIL_ACCOUNT_PLACEHOLDER_RE.search(pattern):
+        return "include the literal account placeholder ({N})"
+    expanded = pattern.replace("{N}", "1")
+    if not _EXPANDED_EMAIL_RE.fullmatch(expanded):
+        return "produce a valid email address after the account placeholder is expanded"
+    return None
+
+
+def _persist_email_pattern(creds_file: Path, pattern: str) -> None:
+    """Store the non-secret organizer setting without routing it through secret keys."""
+    creds_file.touch(exist_ok=True)
+    set_key(str(creds_file), EMAIL_PATTERN_ENV, pattern)
+    try:
+        creds_file.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass
+
+
+def resolve_email_pattern(root: Path, override: str = "", interactive: bool = True) -> str:
+    """Resolve and, when entered locally, remember the attendee email pattern.
+
+    Precedence is command-line override, environment, ``credentials.env``, then
+    the committed spec. The committed neutral value is a prompt sentinel, never
+    a usable non-interactive default.
+    """
+    creds_file = root / "credentials.env"
+    # A read-only resolution must not create an ignored credentials file. This
+    # permits an exported setting to work in a fresh clone without side effects.
+    creds = dotenv_values(creds_file) if creds_file.exists() else {}
+    explicit = override.strip()
+    from_env = os.environ.get(EMAIL_PATTERN_ENV, "").strip()
+    from_file = str(creds.get(EMAIL_PATTERN_ENV) or "").strip()
+    committed = _spec_email_pattern(root)
+    chosen = explicit or from_env or from_file or committed
+
+    needs_prompt = chosen == COMMITTED_EMAIL_PLACEHOLDER
+    if needs_prompt:
+        if not (interactive and sys.stdin.isatty()):
+            raise SystemExit(
+                "The workshop email pattern is still the committed placeholder. "
+                f"Pass --email-pattern or set {EMAIL_PATTERN_ENV} in the "
+                "environment or credentials.env."
+            )
+        print("\n=== Attendee email pattern ===\n")
+        print("  Use {N} where the attendee account number belongs.")
+        while True:
+            chosen = input("  Email pattern: ").strip()
+            error = _validate_email_pattern(chosen)
+            if error:
+                print(f"  Invalid: must {error}.")
+                continue
+            break
+
+    if not chosen:
+        return ""
+    error = _validate_email_pattern(chosen)
+    if error:
+        raise SystemExit(f"Email pattern '{chosen}' is invalid: must {error}.")
+
+    if explicit or needs_prompt:
+        _persist_email_pattern(creds_file, chosen)
+    return chosen
+
+
+def _account_numbers(accounts: str, account_count: int | None) -> list[int]:
+    """Expand WSA's ``--accounts`` grammar for the local 1Password precheck."""
+    raw = accounts.strip()
+    if not raw:
+        return list(range(1, (account_count or 0) + 1))
+
+    numbers: list[int] = []
+    for part in raw.split(","):
+        match = re.fullmatch(r"(\d+)(?:-(\d+))?", part.strip())
+        if match is None:
+            raise SystemExit(
+                "--accounts must be comma-separated positive account numbers or ranges, "
+                "for example 1-20 or 1,4-10."
+            )
+        start = int(match.group(1))
+        end = int(match.group(2) or start)
+        if start < 1 or end < start:
+            raise SystemExit("--accounts ranges must use positive ascending account numbers.")
+        numbers.extend(range(start, end + 1))
+    return list(dict.fromkeys(numbers))
+
+
+def _check_console_accounts(
+    root: Path,
+    account_numbers: list[int],
+    spec_path: Path | None = None,
+) -> None:
+    """Fail before a build when its actual Console passwords are absent from 1Password.
+
+    ``wsa validate`` reports every ``source: op`` field as OK without reading the
+    vault. Checking here makes the preflight shared by ``create-workshop`` and
+    ``workshop build`` and avoids late failures while cards are being written.
+    """
+    effective_spec = spec_path or _spec_path(root)
+    spec = yaml.safe_load(effective_spec.read_text()) or {}
+    if str((spec.get("terraform_vars") or {}).get("grant_console_access", "")).lower() != "true":
+        return
+    if not account_numbers:
+        return
+
+    missing: list[int] = []
+    for number in account_numbers:
+        if not creds_mod._resolve_op_password(str(number)):
+            missing.append(number)
+            if len(missing) == 3:
+                break
+    if not missing:
+        count = len(account_numbers)
+        print(f"  console pw:  ok ({count} account{'s' if count != 1 else ''})")
+        return
+
+    listed = ", ".join(str(number) for number in missing)
+    if len(missing) == 3:
+        listed += " (stopped after 3 — there may be more)"
+    requested = ",".join(str(number) for number in account_numbers)
+    raise SystemExit(
+        f"\nNo Confluent Cloud password in 1Password for account(s): {listed}\n"
+        f"  Vault '{creds_mod.OP_VAULT}', items 'Account NNN', field "
+        f"'{creds_mod.OP_PLATFORM}/password'.\n\n"
+        "  Signed in?               op signin (better: 1Password app -> Developer ->\n"
+        "                           'Integrate with 1Password CLI', so wsa's child\n"
+        "                           processes can read the vault too)\n"
+        "  Accounts never set up?   invite them, then run:\n"
+        f"      <wsa>/bin/wsa accept-account-invitation -w {effective_spec.name} \\\n"
+        f"        --accounts {requested} --gmail-credentials ~/.wsa/gmail-credentials.json\n"
+        "  See PREREQUISITES.md sections 4-5. Attendees can't log in without this."
+    )
+
+
+def _export_attendee_count(root: Path, args: argparse.Namespace) -> None:
+    """Preserve ``TF_VAR_attendee_count`` for the shared-infra contract.
+
+    Postgres now has a fixed 105-slot ceiling, so this compatibility variable no
+    longer changes EC2 ``user_data`` or replication capacity. Keeping it aligned
+    with the derived spec avoids surprising older accelerator/tooling versions
+    that still consume the shared module's ``attendee_count`` input.
 
     Resolution order, most authoritative first:
 
@@ -217,8 +361,7 @@ def _export_attendee_count(root: Path, args: argparse.Namespace) -> None:
     3. The committed spec's ``account_count``.
 
     Deliberately NOT derived from ``--accounts``: that is a slice of the
-    workshop (``1-2`` while running a 50-person event), not its size, and
-    sizing Postgres from it would under-provision every CDC slot.
+    workshop (``1-2`` while running a 50-person event), not its total size.
     """
     var = "TF_VAR_attendee_count"
     if os.environ.get(var, "").strip():
@@ -227,12 +370,17 @@ def _export_attendee_count(root: Path, args: argparse.Namespace) -> None:
     count = getattr(args, "account_count", None) or _spec_account_count(root)
     if count is None:
         # No spec value and none passed: leave it unset rather than invent one.
-        # Terraform's default applies, and at least it applies consistently.
+        # Terraform's compatibility default applies.
         return
     os.environ[var] = str(count)
 
 
-def _derive_spec(root: Path, prefix: str = "", account_count: int | None = None) -> Path:
+def _derive_spec(
+    root: Path,
+    prefix: str = "",
+    account_count: int | None = None,
+    email_pattern: str = "",
+) -> Path:
     """Write a copy of the committed spec with the given fields overridden.
 
     ONE function for every override, deliberately: it reads the committed spec and
@@ -246,6 +394,8 @@ def _derive_spec(root: Path, prefix: str = "", account_count: int | None = None)
         spec.setdefault("terraform_vars", {})["prefix"] = prefix
     if account_count is not None:
         spec["account_count"] = account_count
+    if email_pattern:
+        spec["email_pattern"] = email_pattern
     out = root / GENERATED_SPEC
     out.write_text(yaml.safe_dump(spec, sort_keys=False))
     return out
@@ -526,6 +676,11 @@ def _upload_dispenser(
 def build(args: argparse.Namespace) -> None:
     """`wsa build` against this repo's spec, then write the credential cards."""
     root = get_project_root()
+    email_pattern = resolve_email_pattern(
+        root,
+        override=getattr(args, "email_pattern", ""),
+        interactive=getattr(args, "email_pattern_interactive", sys.stdin.isatty()),
+    )
     binary = find_wsa(root)
 
     # Terraform needs the TF_VAR_* secrets in the environment. `create-workshop`
@@ -571,18 +726,36 @@ def build(args: argparse.Namespace) -> None:
     if account_count is not None and account_count == _spec_account_count(root):
         account_count = None
 
+    if email_pattern == _spec_email_pattern(root):
+        email_pattern = ""
+
     spec_path = None
-    if prefix or account_count is not None:
-        spec_path = _derive_spec(root, prefix=prefix, account_count=account_count)
+    if prefix or account_count is not None or email_pattern:
+        spec_path = _derive_spec(
+            root,
+            prefix=prefix,
+            account_count=account_count,
+            email_pattern=email_pattern,
+        )
         changed = ", ".join(
             part
             for part in (
                 f"prefix={prefix}" if prefix else "",
                 f"account_count={account_count}" if account_count is not None else "",
+                f"email_pattern={email_pattern}" if email_pattern else "",
             )
             if part
         )
         print(f"Spec override: {changed}  (generated spec: {spec_path.name})\n", flush=True)
+
+    # Check exactly the accounts this invocation will build against the same
+    # effective spec WSA uses. In particular, a preflight for `--accounts 10-11`
+    # must inspect vault items 10 and 11, not the first two workshop accounts.
+    _check_console_accounts(
+        root,
+        _account_numbers(args.accounts, account_count or _spec_account_count(root)),
+        spec_path=spec_path,
+    )
 
     code = _stream_wsa(binary, root, "build", extra, spec_path=spec_path)
 
@@ -630,7 +803,16 @@ def spec_validate(args: argparse.Namespace) -> None:
     and needs no infrastructure.
     """
     root = get_project_root()
-    code = _stream_wsa(find_wsa(root), root, "validate", [])
+    email_pattern = resolve_email_pattern(
+        root,
+        override=getattr(args, "email_pattern", ""),
+        interactive=getattr(args, "email_pattern_interactive", sys.stdin.isatty()),
+    )
+    spec_path = None
+    if email_pattern != _spec_email_pattern(root):
+        spec_path = _derive_spec(root, email_pattern=email_pattern)
+        print(f"Spec override: email_pattern={email_pattern}  (generated spec: {spec_path.name})\n", flush=True)
+    code = _stream_wsa(find_wsa(root), root, "validate", [], spec_path=spec_path)
     if code != 0:
         raise SystemExit(code)
 
@@ -821,6 +1003,12 @@ def add_build_arguments(p: argparse.ArgumentParser) -> None:
         "\"(N accounts)\" banner, since --accounts decides what actually gets built. "
         "create-workshop sets this from --attendees.",
     )
+    p.add_argument(
+        "--email-pattern",
+        default="",
+        help="Attendee login pattern, e.g. organizer+f1wp{N}@example.com. "
+        f"Default: ${EMAIL_PATTERN_ENV}, credentials.env, then the spec.",
+    )
     p.add_argument("--force", action="store_true", help="Re-run even if this run-id already built successfully")
     p.add_argument(
         "--no-dispenser-check",
@@ -864,11 +1052,16 @@ def add_build_arguments(p: argparse.ArgumentParser) -> None:
 def configure_spec_validate_parser(p: argparse.ArgumentParser) -> None:
     """Set up the `spec-validate` parser.
 
-    Deliberately adds no arguments — everything wsa validate needs comes from
-    the spec and the environment, so there is nothing to pass. Named
-    `configure_*` rather than `add_*_arguments` to say so out loud.
+    An email-pattern override derives the ignored spec used by invitation
+    acceptance and later builds, so WSA never reads the committed placeholder.
     """
     p.description = "Run `wsa validate` against this repo's wsa-spec-aws.yaml (spec + local prerequisites)."
+    p.add_argument(
+        "--email-pattern",
+        default="",
+        help="Attendee login pattern, e.g. organizer+f1wp{N}@example.com. "
+        f"Default: ${EMAIL_PATTERN_ENV}, credentials.env, then the spec.",
+    )
 
 
 def add_clean_arguments(p: argparse.ArgumentParser) -> None:

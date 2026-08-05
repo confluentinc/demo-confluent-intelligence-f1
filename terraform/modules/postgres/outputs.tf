@@ -11,5 +11,11 @@ output "postgres_instance_id" {
 }
 
 output "postgres_connection_string" {
-  value = "postgresql://f1user:f1passw0rd@${aws_instance.postgres.public_ip}:5432/f1demo"
+  value     = "postgresql://f1user:${random_password.postgres.result}@${aws_instance.postgres.public_ip}:5432/f1demo"
+  sensitive = true
+}
+
+output "postgres_password" {
+  value     = random_password.postgres.result
+  sensitive = true
 }

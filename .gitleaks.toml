@@ -1,0 +1,12 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Non-secret environment-variable names that match generic-api-key"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = [
+  '''KEY_RESOLVED_PREFIX = "F1_RESOLVED_PREFIX"''',
+  '''KEY_SECONDS_PER_LAP = "F1_SECONDS_PER_LAP"''',
+  '''AUTOMATED_CREDS, TF_VAR_prefix="''',
+]

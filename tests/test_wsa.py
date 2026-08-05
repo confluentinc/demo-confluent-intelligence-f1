@@ -23,6 +23,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 import yaml
+from dotenv import dotenv_values
 
 from scripts.workshop import creds as creds_mod
 from scripts.workshop import wsa as wsa_mod
@@ -249,6 +250,129 @@ class BinaryDiscoveryTests(unittest.TestCase):
             self.assertIsNone(wsa_mod._main_checkout(loose))
 
 
+class EmailPatternResolutionTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        (self.root / wsa_mod.SPEC_FILE).write_text(
+            f"name: test\nemail_pattern: '{wsa_mod.COMMITTED_EMAIL_PLACEHOLDER}'\n"
+        )
+
+    def test_flag_wins_and_is_persisted(self):
+        (self.root / "credentials.env").write_text(
+            f"{wsa_mod.EMAIL_PATTERN_ENV}=file+f1wp{{N}}@example.com\n"
+        )
+        with patch.dict(
+            os.environ,
+            {wsa_mod.EMAIL_PATTERN_ENV: "env+f1wp{N}@example.com"},
+            clear=False,
+        ):
+            chosen = wsa_mod.resolve_email_pattern(
+                self.root,
+                override="flag+f1wp{N}@example.com",
+                interactive=False,
+            )
+        self.assertEqual(chosen, "flag+f1wp{N}@example.com")
+        persisted = dotenv_values(self.root / "credentials.env")
+        self.assertEqual(persisted[wsa_mod.EMAIL_PATTERN_ENV], chosen)
+
+    def test_environment_wins_over_credentials_file(self):
+        (self.root / "credentials.env").write_text(
+            f"{wsa_mod.EMAIL_PATTERN_ENV}=file+f1wp{{N}}@example.com\n"
+        )
+        with patch.dict(
+            os.environ,
+            {wsa_mod.EMAIL_PATTERN_ENV: "env+f1wp{N}@example.com"},
+            clear=False,
+        ):
+            chosen = wsa_mod.resolve_email_pattern(self.root, interactive=False)
+        self.assertEqual(chosen, "env+f1wp{N}@example.com")
+
+    def test_noninteractive_placeholder_fails(self):
+        with patch.dict(os.environ, {wsa_mod.EMAIL_PATTERN_ENV: ""}, clear=False):
+            with self.assertRaisesRegex(SystemExit, "still the committed placeholder"):
+                wsa_mod.resolve_email_pattern(self.root, interactive=False)
+
+    def test_reading_an_exported_pattern_does_not_create_credentials_file(self):
+        with patch.dict(
+            os.environ,
+            {wsa_mod.EMAIL_PATTERN_ENV: "env+f1wp{N}@example.com"},
+            clear=False,
+        ):
+            self.assertEqual(
+                wsa_mod.resolve_email_pattern(self.root, interactive=False),
+                "env+f1wp{N}@example.com",
+            )
+        self.assertFalse((self.root / "credentials.env").exists())
+
+    def test_only_literal_n_placeholder_is_accepted(self):
+        for pattern in ("organizer+f1wp{NN}@example.com", "organizer+f1wp{NNN}@example.com"):
+            with self.assertRaisesRegex(SystemExit, "literal account placeholder"):
+                wsa_mod.resolve_email_pattern(self.root, override=pattern, interactive=False)
+
+    def test_interactive_prompt_is_persisted(self):
+        stdin = Mock()
+        stdin.isatty.return_value = True
+        with (
+            patch.dict(os.environ, {wsa_mod.EMAIL_PATTERN_ENV: ""}, clear=False),
+            patch.object(wsa_mod.sys, "stdin", stdin),
+            patch("builtins.input", return_value="organizer+f1wp{N}@example.com"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            chosen = wsa_mod.resolve_email_pattern(self.root, interactive=True)
+        self.assertEqual(chosen, "organizer+f1wp{N}@example.com")
+        persisted = dotenv_values(self.root / "credentials.env")
+        self.assertEqual(persisted[wsa_mod.EMAIL_PATTERN_ENV], chosen)
+
+    def test_pattern_requires_an_account_placeholder(self):
+        with self.assertRaisesRegex(SystemExit, "literal account placeholder"):
+            wsa_mod.resolve_email_pattern(
+                self.root,
+                override="organizer@example.com",
+                interactive=False,
+            )
+
+
+class AccountSelectionTests(unittest.TestCase):
+    def test_expands_the_requested_account_slice_for_prechecks(self):
+        self.assertEqual(wsa_mod._account_numbers("10-11,14", 50), [10, 11, 14])
+
+    def test_default_selection_uses_the_spec_account_count(self):
+        self.assertEqual(wsa_mod._account_numbers("", 3), [1, 2, 3])
+
+    def test_rejects_invalid_account_syntax_before_precheck(self):
+        with self.assertRaisesRegex(SystemExit, "comma-separated"):
+            wsa_mod._account_numbers("one-two", 3)
+
+
+class SpecValidateDerivedSpecTests(unittest.TestCase):
+    def test_real_email_pattern_is_written_and_validated_via_the_generated_spec(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / wsa_mod.SPEC_FILE).write_text(
+                f"name: test\nemail_pattern: '{wsa_mod.COMMITTED_EMAIL_PLACEHOLDER}'\n"
+            )
+            with (
+                patch.object(wsa_mod, "get_project_root", return_value=root),
+                patch.object(wsa_mod, "find_wsa", return_value=Path("/fake/bin/wsa")),
+                patch.object(wsa_mod, "_stream_wsa", return_value=0) as stream,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                wsa_mod.spec_validate(
+                    argparse.Namespace(
+                        email_pattern="organizer+f1wp{N}@example.com",
+                        email_pattern_interactive=False,
+                    )
+                )
+
+            self.assertEqual(
+                yaml.safe_load((root / wsa_mod.GENERATED_SPEC).read_text())["email_pattern"],
+                "organizer+f1wp{N}@example.com",
+            )
+            self.assertEqual(stream.call_args.kwargs["spec_path"], root / wsa_mod.GENERATED_SPEC)
+
+
 def sample_csv(path: Path, prefixes: list[str]) -> None:
     """A build-output.csv shaped by creds.py's own COLUMNS map.
 
@@ -264,7 +388,7 @@ def sample_csv(path: Path, prefixes: list[str]) -> None:
             row = {header: f"{key}-{prefix}" for key, header in creds_mod.COLUMNS.items()}
             row[creds_mod.COLUMNS["prefix"]] = prefix
             row["Account"] = str(i)
-            row["Email"] = f"dmarsh+{prefix}@confluent.io"
+            row["Email"] = f"organizer+{prefix}@example.com"
             writer.writerow(row)
 
 
@@ -410,6 +534,21 @@ class BuildHandoffTests(unittest.TestCase):
         derived = yaml.safe_load((self.root / wsa_mod.GENERATED_SPEC).read_text())
         self.assertEqual(derived["terraform_vars"]["prefix"], "f1ws{NNN}")
         self.assertEqual(derived["account_count"], 40)
+
+    def test_email_pattern_override_lands_in_the_derived_spec(self):
+        (self.root / wsa_mod.SPEC_FILE).write_text(
+            f"name: test\nemail_pattern: '{wsa_mod.COMMITTED_EMAIL_PLACEHOLDER}'\n"
+        )
+        with self.fake_build(), patch.object(creds_mod, "creds"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                wsa_mod.build(
+                    self.build_args(email_pattern="organizer+f1wp{N}@example.com")
+                )
+        derived = yaml.safe_load((self.root / wsa_mod.GENERATED_SPEC).read_text())
+        self.assertEqual(
+            derived["email_pattern"],
+            "organizer+f1wp{N}@example.com",
+        )
 
     def test_prefix_matching_the_spec_is_not_an_override(self):
         # --prefix equal to the committed value uses the committed spec, no file.
@@ -894,7 +1033,7 @@ class SpecHeaderContractTests(unittest.TestCase):
 
 
 class RaceControlNamingTests(unittest.TestCase):
-    """Item 20: `workshop start-races` is canonical; the old scripts alias it."""
+    """The organizer namespace is the only race-fan-out command surface."""
 
     def test_workshop_subcommands_keep_every_flag(self):
         from scripts.workshop import cli as cli_mod
@@ -911,22 +1050,13 @@ class RaceControlNamingTests(unittest.TestCase):
                 cli_mod.main()
         self.assertEqual(stopped.call_args.args[0].region, "eu-west-1")
 
-    def test_deprecated_aliases_warn_and_delegate(self):
+    def test_race_modules_are_importable_but_not_console_scripts(self):
         from scripts.instructor import start_all_races, stop_all_races
 
-        for module, body_name, replacement in (
-            (start_all_races, "start_races", "workshop start-races"),
-            (stop_all_races, "stop_races", "workshop stop-races"),
-        ):
-            with self.subTest(module=module.__name__):
-                with patch.object(module, body_name) as body:
-                    err = io.StringIO()
-                    with patch("sys.argv", [module.__name__, "--region", "us-west-2"]):
-                        with contextlib.redirect_stderr(err):
-                            module.main()
-                self.assertEqual(body.call_args.args[0].region, "us-west-2")
-                self.assertIn("deprecated", err.getvalue())
-                self.assertIn(replacement, err.getvalue())
+        self.assertTrue(callable(start_all_races.start_races))
+        self.assertTrue(callable(stop_all_races.stop_races))
+        self.assertFalse(hasattr(start_all_races, "main"))
+        self.assertFalse(hasattr(stop_all_races, "main"))
 
 
 if __name__ == "__main__":

@@ -359,7 +359,7 @@ def up(args: argparse.Namespace) -> None:
     print("     uv run f1-pitwall")
     if not (args.with_labs and labs_ok):
         print("\nWork through labs/instructor-led: LAB 1 → LAB 4, then LAB 6.")
-    print("Optional LAB 5 (watsonx Orchestrate) — see docs/SELF-SERVICE.md.")
+    print("Optional LAB 5 (watsonx Orchestrate) — see docs/tracks/SELF-SERVICE.md.")
     print("\nTear down when finished:  uv run selfservice down")
 
     if not (seeded and labs_ok):

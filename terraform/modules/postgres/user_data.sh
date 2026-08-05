@@ -15,12 +15,14 @@ echo "${driver_race_history_seed_b64}" | base64 -d | gunzip > /opt/postgres-init
 # Start Postgres with CDC-ready config.
 #
 # `--restart unless-stopped` is load-bearing, not hygiene. cloud-init runs
-# user_data once per instance *id*, so it is skipped entirely on a stop/start —
-# and any change to this file or to max_replication_slots is an in-place
-# `user_data` update, which stops and starts the instance. Without a restart
-# policy Docker comes back on boot and this container does not, leaving every
-# attendee's CDC connector failing with "Connection to <host>:5432 refused"
-# and no way in (no SSH key, no SSM role) to `docker start` it by hand.
+# user_data once per instance *id*, so it is skipped entirely on a stop/start.
+# The normal build path keeps this template stable: replication capacity is a
+# fixed 105 slots, and password rotations explicitly replace the instance.
+# Any operator changing a boot-time setting must also explicitly replace the
+# instance (see POSTGRES-PASSWORD-MIGRATION.md). Without a restart policy Docker
+# comes back on boot and this container does not, leaving every attendee's CDC
+# connector failing with "Connection to <host>:5432 refused" and no way in (no
+# SSH key, no SSM role) to `docker start` it by hand.
 #
 # The database lives in the container's writable layer (only /opt/postgres-init
 # is bind-mounted), so this preserves the container across reboots but a
@@ -32,7 +34,7 @@ docker run -d \
   -p 5432:5432 \
   -e POSTGRES_DB=f1demo \
   -e POSTGRES_USER=f1user \
-  -e POSTGRES_PASSWORD=f1passw0rd \
+  -e POSTGRES_PASSWORD=${postgres_password} \
   -v /opt/postgres-init:/docker-entrypoint-initdb.d \
   postgres:15 \
   -c wal_level=logical \

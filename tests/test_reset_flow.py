@@ -121,8 +121,6 @@ class ResetFlowTests(unittest.TestCase):
             self.run_reset([], STANDALONE_TF)
         output = "\n".join(str(c.args[0]) for c in printed.call_args_list if c.args)
         self.assertIn("uv run race start", output)
-        self.assertNotIn("stop-all-races", output)
-        self.assertNotIn("start-all-races", output)
 
     def test_keep_source_skips_both_the_stop_and_the_truncation(self):
         self.make_state("aws")

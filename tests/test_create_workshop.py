@@ -74,7 +74,7 @@ class ConsoleAccountCheckTests(unittest.TestCase):
         # not sit through 400 sequential probes before reporting anything.
         with patch.object(creds_mod, "_resolve_op_password", return_value="") as probe:
             with self.assertRaises(SystemExit) as caught:
-                create_mod._check_console_accounts(self.root, 400)
+                wsa_mod._check_console_accounts(self.root, list(range(1, 401)))
         self.assertEqual(probe.call_count, 3)
         message = str(caught.exception)
         self.assertIn("1, 2, 3", message)
@@ -83,13 +83,13 @@ class ConsoleAccountCheckTests(unittest.TestCase):
     def test_passes_when_every_password_resolves(self):
         with patch.object(creds_mod, "_resolve_op_password", return_value="pw"):
             with contextlib.redirect_stdout(io.StringIO()) as out:
-                create_mod._check_console_accounts(self.root, 40)
+                wsa_mod._check_console_accounts(self.root, list(range(1, 41)))
         self.assertIn("console pw:  ok (40 accounts)", out.getvalue())
 
     def test_skipped_without_console_access(self):
         (self.root / wsa_mod.SPEC_FILE).write_text("name: test\naccount_count: 5\n")
         with patch.object(creds_mod, "_resolve_op_password") as probe:
-            create_mod._check_console_accounts(self.root, 40)
+            wsa_mod._check_console_accounts(self.root, list(range(1, 41)))
         probe.assert_not_called()
 
 
@@ -110,14 +110,13 @@ class AttendeeCountAuthorityTests(unittest.TestCase):
             ("ensure_secrets", {"return_value": None}),
             ("_prompt_prefix", {"return_value": "f1wp{NNN}"}),
             ("_check_env_name_collisions", {"return_value": None}),
-            ("_check_console_accounts", {"return_value": None}),
             ("_print_next_steps", {"return_value": None}),
         ):
             patcher = patch.object(create_mod, target, **kwargs)
             patcher.start()
             self.addCleanup(patcher.stop)
 
-        for target in ("find_wsa", "spec_validate", "newest_run", "resolve_run"):
+        for target in ("find_wsa", "spec_validate", "newest_run", "resolve_run", "_check_console_accounts"):
             patcher = patch.object(wsa_mod, target, return_value=None)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -145,6 +144,7 @@ class AttendeeCountAuthorityTests(unittest.TestCase):
         namespace = build.call_args.args[0]
         self.assertEqual(namespace.accounts, "1-40")
         self.assertEqual(namespace.account_count, 40)
+        self.assertEqual(namespace.email_pattern, "org+f1wp{N}@example.com")
 
     def test_zero_is_still_rejected(self):
         with patch.object(wsa_mod, "build") as build:
@@ -152,6 +152,18 @@ class AttendeeCountAuthorityTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     create_mod.create(self.args(attendees=0))
         build.assert_not_called()
+
+    def test_yes_rejects_the_committed_email_placeholder_before_preflight(self):
+        (self.root / wsa_mod.SPEC_FILE).write_text(
+            f"name: test\nemail_pattern: '{wsa_mod.COMMITTED_EMAIL_PLACEHOLDER}'\n"
+        )
+        with (
+            patch.dict(os.environ, {wsa_mod.EMAIL_PATTERN_ENV: ""}, clear=False),
+            patch.object(wsa_mod, "find_wsa") as find_wsa,
+            self.assertRaisesRegex(SystemExit, "still the committed placeholder"),
+        ):
+            create_mod.create(self.args(yes=True, email_pattern=""))
+        find_wsa.assert_not_called()
 
 
 if __name__ == "__main__":

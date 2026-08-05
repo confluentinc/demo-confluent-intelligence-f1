@@ -13,6 +13,11 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
+resource "random_password" "postgres" {
+  length  = 32
+  special = false
+}
+
 resource "aws_security_group" "postgres" {
   name_prefix = "${lower(var.name_prefix)}-postgres-"
   description = "Security group for Postgres"
@@ -22,15 +27,22 @@ resource "aws_security_group" "postgres" {
     to_port     = 5432
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "PostgreSQL"
+    # Confluent's managed CDC connector runs outside this AWS account and must
+    # reach the shared host over its public address. This is intentionally open
+    # at the network layer; the generated database password remains required.
+    description = "PostgreSQL for managed CDC connector (public reachability required)"
   }
 
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "SSH access"
+  dynamic "ingress" {
+    for_each = toset(var.ssh_ingress_cidr)
+
+    content {
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = [ingress.value]
+      description = "SSH access"
+    }
   }
 
   egress {
@@ -57,7 +69,16 @@ resource "aws_instance" "postgres" {
   user_data = templatefile("${path.module}/user_data.sh", {
     driver_race_history_seed_b64 = base64gzip(file("${path.module}/../../../data/driver_race_history_seed.sql"))
     max_replication_slots        = var.max_replication_slots
+    postgres_password            = random_password.postgres.result
   })
+
+  # A password rotation must replace and reseed the instance. Do not enable
+  # user_data_replace_on_change: routine attendee-count changes must not
+  # replace a live shared database. See the migration runbook for the explicit
+  # replacement required when changing other boot-time settings.
+  lifecycle {
+    replace_triggered_by = [random_password.postgres]
+  }
 
   root_block_device {
     volume_size = 30

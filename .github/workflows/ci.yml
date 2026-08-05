@@ -9,6 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # PR secret scans compare the actual head commits with the base commit.
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v6
         with:
@@ -29,3 +32,37 @@ jobs:
       # `validate` needs initialized providers — add it once CI can install or
       # cache them predictably.
       - run: terraform fmt -check -recursive terraform
+
+      - name: Check tracked Markdown links
+        run: uv run python scripts/check_markdown_links.py
+
+      - name: Scan pull-request commits for secrets
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          docker run --rm
+          --network none
+          --cap-drop ALL
+          --security-opt no-new-privileges
+          -e GIT_CONFIG_COUNT=1
+          -e GIT_CONFIG_KEY_0=safe.directory
+          -e GIT_CONFIG_VALUE_0=/repo
+          -v "$PWD:/repo:ro"
+          -w /repo
+          ghcr.io/gitleaks/gitleaks:v8.30.1
+          git --no-banner --redact --config .gitleaks.toml
+          --log-opts="$BASE_SHA..$HEAD_SHA"
+
+      - name: Scan the pushed tree for secrets
+        if: github.event_name == 'push'
+        run: >-
+          docker run --rm
+          --network none
+          --cap-drop ALL
+          --security-opt no-new-privileges
+          -v "$PWD:/repo:ro"
+          -w /repo
+          ghcr.io/gitleaks/gitleaks:v8.30.1
+          dir --no-banner --redact --config .gitleaks.toml

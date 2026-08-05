@@ -6,12 +6,11 @@
     uv run race restart
 
 The standalone demo's race feed is an ECS Fargate service (one looping simulator
-task) created by ``terraform/aws``. Before this command existed, the only way to
-stop it was ``uv run stop-all-races`` — the instructor fan-out, which enumerates
-every ``river-racing*`` cluster in the AWS account and scales all of them. On an
-organizer's laptop, mid-workshop, that stops twenty attendees' feeds to reset one
-demo environment. This command reads the ECS cluster and service names out of
-*this* checkout's Terraform state and touches exactly that one service.
+task) created by ``terraform/aws``. The organizer command ``uv run workshop
+stop-races`` fans out across every ``river-racing*`` cluster in the AWS account;
+using it for one demo environment can stop every attendee's feed. This command
+reads the ECS cluster and service names out of *this* checkout's Terraform state
+and touches exactly that one service.
 
 Deliberately narrow:
 

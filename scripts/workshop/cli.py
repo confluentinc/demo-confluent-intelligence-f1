@@ -14,8 +14,7 @@ Three groups of subcommands:
               tools authenticate with. `validate` then health-checks those
               cards against the live environments.
   race feeds  start-races / stop-races — scale every attendee's simulator ECS
-              service at once. `start-all-races` / `stop-all-races` remain as
-              deprecated aliases for the same code.
+              service at once.
 
 Note the two "validate" flavours, which check different things at different
 times: `spec-validate` is wsa's pre-flight on the spec and local tooling
@@ -29,10 +28,8 @@ import argparse
 
 from scripts.instructor import start_all_races as start_mod
 from scripts.instructor import stop_all_races as stop_mod
-from scripts.workshop import create as create_mod
 from scripts.workshop import creds as creds_mod
 from scripts.workshop import reset as reset_mod
-from scripts.workshop import teardown as teardown_mod
 from scripts.workshop import validate as validate_mod
 from scripts.workshop import wsa as wsa_mod
 
@@ -71,16 +68,6 @@ def main() -> None:
     p_stop = sub.add_parser("stop-races", help="Scale every attendee race simulator to zero")
     stop_mod.add_arguments(p_stop)
     p_stop.set_defaults(func=stop_mod.stop_races)
-
-    p_create = sub.add_parser(
-        "create", help="One-command workshop setup (preflight + secrets + validate + build + cards)"
-    )
-    create_mod.add_arguments(p_create)
-    p_create.set_defaults(func=create_mod.create)
-
-    p_teardown = sub.add_parser("teardown", help="Tear down the workshop (secrets + clean + card cleanup)")
-    teardown_mod.add_arguments(p_teardown)
-    p_teardown.set_defaults(func=teardown_mod.teardown)
 
     p_reset = sub.add_parser("reset-races", help="Reset all attendee environments for a new race")
     reset_mod.add_arguments(p_reset)

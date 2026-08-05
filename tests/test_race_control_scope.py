@@ -1,7 +1,7 @@
 """`uv run race` must touch exactly one ECS service, and say so when it can't.
 
 The command exists because the only previous way to stop a standalone demo's feed
-was `uv run stop-all-races`, the instructor fan-out over every `river-racing*`
+was `uv run workshop stop-races`, the instructor fan-out over every `river-racing*`
 cluster in the AWS account. On an organizer's laptop that stops twenty attendees'
 feeds. These tests pin the two properties that keep them apart: the service names
 come from this checkout's Terraform state, and nothing in the import graph reaches

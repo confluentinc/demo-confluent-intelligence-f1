@@ -19,7 +19,7 @@ Fargate service, and **no Docker**. Setup takes about five minutes.
 
 Everything the labs touch is identical: the same topics (`car_telemetry`,
 `race_standings`, `driver_race_history`), the same `llm_textgen_model` /
-`llm_embedding_model`, and the same canonical SQL in [`demo-reference/`](../demo-reference/).
+`llm_embedding_model`, and the same canonical SQL in [`demo-reference/`](../../demo-reference/).
 
 ## Prerequisites
 
@@ -71,7 +71,7 @@ that first count can time out (~45 s) — `selfservice up` then exits **non-zero
 the environment already provisioned; just run it again and the seed completes.
 
 Add `--with-labs` to have LAB 3 and LAB 4 built for you from
-[`demo-reference/`](../demo-reference/), for a ready-to-demo environment. Omit it
+[`demo-reference/`](../../demo-reference/), for a ready-to-demo environment. Omit it
 (the default) to write them yourself — which is the point of the labs.
 
 The card's path is recorded as `F1_CARD` in `credentials.env`, so the commands below
@@ -115,7 +115,7 @@ SELECT * FROM race_standings;         -- 22 cars, updating while f1-race runs
 SELECT COUNT(*) FROM driver_race_history;   -- 198
 ```
 
-Then work through the guides under [`labs/`](../labs/README.md):
+Then work through the guides under [`labs/`](../../labs/README.md):
 
 - **LAB 1–2** — explore the environment and source data. Two things read
   differently on this track: where the guides say "the simulator is already
@@ -194,8 +194,8 @@ Orchestrate account. To try it:
    the tool's `prefix` to your prefix. Because Orchestrate needs to reach the spec
    over the internet, expose `http://localhost:8080/openapi.json` with a tunnel
    (e.g. `ngrok`, Cloudflare Tunnel) and import that public URL.
-3. Build the agent using [`demo-reference/orchestrate_social_agent.md`](../demo-reference/orchestrate_social_agent.md)
-   and the [LAB 5 guide](../labs/instructor-led/LAB5_orchestrate_integration/LAB5.md).
+3. Build the agent using [`demo-reference/orchestrate_social_agent.md`](../../demo-reference/orchestrate_social_agent.md)
+   and the [LAB 5 guide](../../labs/instructor-led/LAB5_orchestrate_integration/LAB5.md).
 
 ## Tear down
 

@@ -14,8 +14,10 @@
 
 locals {
   name_prefix = var.prefix
-  # One replication slot per attendee CDC connector, plus headroom.
-  max_replication_slots = var.attendee_count + 10
+  # The accelerator supports workshops of up to 95 accounts. Keep the shared
+  # host at 105 slots (one per CDC connector plus ten spare) so changing an
+  # attendee count does not alter EC2 user_data on a resumed run.
+  max_replication_slots = var.postgres_max_replication_slots
 }
 
 # Use the account's default VPC + public subnets. Attendee ECS tasks run here
@@ -38,6 +40,7 @@ module "postgres" {
   name_prefix           = local.name_prefix
   instance_type         = var.postgres_instance_type
   max_replication_slots = local.max_replication_slots
+  ssh_ingress_cidr      = var.ssh_ingress_cidr
 }
 
 # Postgres user_data runs asynchronously after the instance is created. Poll the

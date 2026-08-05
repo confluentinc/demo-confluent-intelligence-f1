@@ -586,7 +586,7 @@ def main():
     print("     uv run f1-pitwall")
     print("3. Control this deployment's race feed:")
     print("     uv run race status | stop | start | restart")
-    print("\nWalkthrough: docs/STANDALONE-DEMO.md")
+    print("\nWalkthrough: docs/tracks/STANDALONE-DEMO.md")
     print("Tear down all resources:  uv run destroy")
     if not labs_ok:
         sys.exit(1)

@@ -227,7 +227,7 @@ runs `ML_DETECT_ANOMALIES` on the front-left tire temperature.
 > **Deployed with `--with-labs`?** This statement is already running — skip the submit
 > below and go straight to **Verify**. `SHOW TABLES;` will list `car_state` already.
 
-The canonical SQL is [`demo-reference/enrichment_anomaly.sql`](../demo-reference/enrichment_anomaly.sql).
+The canonical SQL is [`demo-reference/enrichment_anomaly.sql`](../../demo-reference/enrichment_anomaly.sql).
 Submit it whole, without copy-pasting — from a **separate terminal** (not inside the
 shell):
 
@@ -274,7 +274,7 @@ Around **lap 32**, `anomaly_tire_temp_fl` flips to `true` and `tire_temp_fl_c` s
 > they do, then jump to **What to expect**.
 
 Two statements. First create the agent (its full prompt lives in
-[`demo-reference/streaming_agent_create_agent.sql`](../demo-reference/streaming_agent_create_agent.sql)):
+[`demo-reference/streaming_agent_create_agent.sql`](../../demo-reference/streaming_agent_create_agent.sql)):
 
 ```bash
 uv run f1-sql --file demo-reference/streaming_agent_create_agent.sql
@@ -296,7 +296,7 @@ SHOW AGENTS;
 ```
 
 Then run the agent over `car_state`
-([`demo-reference/streaming_agent_pit_decisions.sql`](../demo-reference/streaming_agent_pit_decisions.sql)):
+([`demo-reference/streaming_agent_pit_decisions.sql`](../../demo-reference/streaming_agent_pit_decisions.sql)):
 
 ```bash
 uv run f1-sql --file demo-reference/streaming_agent_pit_decisions.sql
@@ -513,8 +513,8 @@ Orchestrate has to reach the spec over the internet, so expose
 import the public URL. It can't consume RTCE's MCP endpoint directly — it supports only
 *local* MCP servers, which is the whole reason this REST shim exists. Agent
 configuration (persona, prompts, tool wiring):
-[`demo-reference/orchestrate_social_agent.md`](../demo-reference/orchestrate_social_agent.md)
-and the [LAB 5 guide](../labs/instructor-led/LAB5_orchestrate_integration/LAB5.md).
+[`demo-reference/orchestrate_social_agent.md`](../../demo-reference/orchestrate_social_agent.md)
+and the [LAB 5 guide](../../labs/instructor-led/LAB5_orchestrate_integration/LAB5.md).
 
 ---
 

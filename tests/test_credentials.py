@@ -86,6 +86,14 @@ class CardResolutionTests(unittest.TestCase):
 
         self.assertEqual(resolve_card(root=self.root), card)
 
+    def test_legacy_workshop_setting_is_not_mistaken_for_a_card(self):
+        self.write_creds_env(
+            "TF_VAR_prefix=bren\nF1_WORKSHOP_EMAIL_PATTERN=organizer+f1wp{N}@example.com\n"
+        )
+        card = self.make_card("workshop", "f1wp001")
+
+        self.assertEqual(resolve_card(root=self.root), card)
+
     def test_loose_root_card_is_found(self):
         """An instructor-handed f1wp001.env dropped in the repo root."""
         card = self.root / "f1wp001.env"

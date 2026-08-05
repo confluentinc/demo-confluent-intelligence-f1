@@ -41,11 +41,6 @@ api-keys = "scripts.common.api_keys:main"
 reset = "scripts.reset:main"
 race = "scripts.race_control:main"
 setup-mcp = "scripts.setup_mcp:main"
-# Deprecated aliases for the organizer fan-out. The canonical spelling is
-# `uv run workshop start-races` / `stop-races` — these stay so existing wsa docs
-# and muscle memory keep working.
-start-all-races = "scripts.instructor.start_all_races:main"
-stop-all-races = "scripts.instructor.stop_all_races:main"
 workshop = "scripts.workshop.cli:main"
 create-workshop = "scripts.workshop.create:main"
 teardown-workshop = "scripts.workshop.teardown:main"

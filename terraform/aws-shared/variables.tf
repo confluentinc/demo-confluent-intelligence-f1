@@ -16,15 +16,37 @@ variable "prefix" {
 }
 
 variable "attendee_count" {
-  description = "Expected number of attendees. Drives Postgres replication-slot capacity (one CDC slot per attendee). `create-workshop` exports TF_VAR_attendee_count from its --attendees value (and deploy.py sets 1), so this default applies only to a hand-run apply — no need to bump it by hand for a larger workshop."
+  description = "Accepted for compatibility with workshop tooling. Shared Postgres capacity is fixed by postgres_max_replication_slots so a resumed run with a different attendee count does not modify EC2 user_data."
   type        = number
   default     = 50
+}
+
+variable "postgres_max_replication_slots" {
+  description = "Shared Postgres replication-slot and WAL-sender capacity. The default supports the accelerator's 95-account maximum plus ten spare slots. Treat a changed value as an instance-replacement migration; see POSTGRES-PASSWORD-MIGRATION.md."
+  type        = number
+  default     = 105
+
+  validation {
+    condition     = var.postgres_max_replication_slots >= 1 && floor(var.postgres_max_replication_slots) == var.postgres_max_replication_slots
+    error_message = "postgres_max_replication_slots must be a positive whole number."
+  }
 }
 
 variable "postgres_instance_type" {
   description = "EC2 instance type for the shared Postgres host"
   type        = string
   default     = "t3.large"
+}
+
+variable "ssh_ingress_cidr" {
+  description = "CIDR blocks allowed to reach the shared Postgres host over SSH. Leave empty unless temporary operator access is required."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.ssh_ingress_cidr : can(cidrnetmask(cidr))])
+    error_message = "Every ssh_ingress_cidr entry must be a valid IPv4 CIDR block."
+  }
 }
 
 # --- Injected by wsa on every shared-infra apply (see workshop-setup-accelerator
