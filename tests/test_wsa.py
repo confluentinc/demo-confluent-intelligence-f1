@@ -20,7 +20,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import yaml
 
@@ -284,6 +284,16 @@ class BuildHandoffTests(unittest.TestCase):
         patcher = patch.object(wsa_mod, "find_wsa", return_value=Path("/fake/bin/wsa"))
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Secret collection is real work against credentials.env and would prompt
+        # on the empty tmp root. `SecretCollectionTests` covers that it happens.
+        patcher = patch.object(wsa_mod, "ensure_secrets")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # No dispenser unless a test asks for one — otherwise these assertions would
+        # depend on whether the developer's shell exports a spreadsheet id.
+        patcher = patch.dict(os.environ, {wsa_mod.DISPENSER_ID_ENV: ""}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def build_args(self, **overrides) -> argparse.Namespace:
         defaults = dict(
@@ -478,6 +488,115 @@ class BuildHandoffTests(unittest.TestCase):
         fake_creds.assert_not_called()
         self.assertIn("uv run workshop creds --csv", out.getvalue())
 
+    def test_the_dispenser_upload_runs_after_the_cards(self):
+        # Ordering is the whole point: `creds` appends the RTCE column to the same
+        # build-output.csv the upload reads, so an upload that ran first would email
+        # attendees a card without their MCP setup command.
+        calls: list[str] = []
+        (self.root / "wsa.env").write_text("WSA_DISPENSER_SPREADSHEET_ID=1AbC-real\n")
+        with (
+            self.fake_build(),
+            patch.object(creds_mod, "creds", side_effect=lambda ns: calls.append("creds")),
+            patch.object(wsa_mod, "find_google_credentials", return_value=Path("/fake/oauth.json")),
+            patch.object(wsa_mod.subprocess, "run") as fake_run,
+        ):
+            fake_run.side_effect = lambda *a, **kw: calls.append("upload") or Mock(returncode=0)
+            with contextlib.redirect_stdout(io.StringIO()):
+                wsa_mod.build(self.build_args())
+
+        self.assertEqual(calls, ["creds", "upload"])
+        cmd = fake_run.call_args.args[0]
+        self.assertEqual(cmd[1], "dispenser-upload")
+        self.assertIn("--yes", cmd)  # or a non-interactive create-workshop hangs
+        self.assertEqual(cmd[cmd.index("--run-id") + 1], "ab12")
+        self.assertEqual(cmd[cmd.index("--sheets-credentials") + 1], "/fake/oauth.json")
+        self.assertEqual(fake_run.call_args.kwargs["cwd"], self.root)
+
+
+class DispenserUploadTests(unittest.TestCase):
+    """Every way `_upload_dispenser` declines to run, and how loudly."""
+
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self.run = wsa_mod.Run(
+            run_id="ab12",
+            path=self.root / wsa_mod.OUTPUT_DIR / "ab12",
+            csv=self.root / wsa_mod.OUTPUT_DIR / "ab12" / wsa_mod.BUILD_CSV,
+            finished=datetime(2026, 7, 30, 17, 0, tzinfo=timezone.utc),
+        )
+        patcher = patch.dict(os.environ, {wsa_mod.DISPENSER_ID_ENV: ""}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def upload(self, **kwargs):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            wsa_mod._upload_dispenser(self.root, self.run, Path("/fake/bin/wsa"), **kwargs)
+        return out.getvalue(), err.getvalue()
+
+    def test_no_dispenser_configured_says_so_instead_of_passing_silently(self):
+        # A quiet skip reads as "uploaded" — the failure mode is discovering on
+        # workshop morning that the sheet still holds the last run's accounts.
+        with patch.object(wsa_mod.subprocess, "run") as fake_run:
+            _, err = self.upload()
+        fake_run.assert_not_called()
+        self.assertIn(wsa_mod.DISPENSER_ID_ENV, err)
+        self.assertIn("wsa.env", err)
+        self.assertIn("dispenser-upload --run-id ab12", err)
+
+    def test_missing_credentials_skip_and_name_the_consequence(self):
+        (self.root / "wsa.env").write_text("WSA_DISPENSER_SPREADSHEET_ID=1AbC-real\n")
+        with (
+            patch.object(wsa_mod, "find_google_credentials", return_value=None),
+            patch.object(wsa_mod.subprocess, "run") as fake_run,
+        ):
+            _, err = self.upload()
+        fake_run.assert_not_called()
+        self.assertIn("skipping the dispenser upload", err)
+        self.assertIn("no longer exist", err)  # the consequence, not just the fact
+        self.assertIn("dispenser-upload --run-id ab12", err)  # and the retry
+
+    def test_an_explicit_skip_prints_the_manual_command(self):
+        (self.root / "wsa.env").write_text("WSA_DISPENSER_SPREADSHEET_ID=1AbC-real\n")
+        with patch.object(wsa_mod.subprocess, "run") as fake_run:
+            _, err = self.upload(skip=True)
+        fake_run.assert_not_called()
+        self.assertIn("dispenser-upload --run-id ab12", err)
+        self.assertIn("no longer exist", err)
+
+    def test_a_failed_upload_warns_but_does_not_raise(self):
+        # The build succeeded and the cards are on disk — exiting nonzero here would
+        # make a recoverable one-command retry look like a failed workshop.
+        (self.root / "wsa.env").write_text("WSA_DISPENSER_SPREADSHEET_ID=1AbC-real\n")
+        with (
+            patch.object(wsa_mod, "find_google_credentials", return_value=Path("/fake/oauth.json")),
+            patch.object(wsa_mod.subprocess, "run", return_value=Mock(returncode=1)),
+        ):
+            _, err = self.upload()
+        self.assertIn("dispenser upload failed (exit 1)", err)
+        self.assertIn("Cards are written and valid", err)
+
+    def test_a_partial_build_does_not_upload(self):
+        # `build -a 21-25` tops up a running workshop. Uploading that run's CSV would
+        # replace the whole sheet with five rows and clear every claim already made.
+        (self.root / "wsa.env").write_text("WSA_DISPENSER_SPREADSHEET_ID=1AbC-real\n")
+        with (
+            patch.object(wsa_mod, "find_google_credentials", return_value=Path("/fake/oauth.json")),
+            patch.object(wsa_mod.subprocess, "run") as fake_run,
+        ):
+            _, err = self.upload(full_workshop=False)
+        fake_run.assert_not_called()
+        self.assertIn("only part of the workshop", err)
+        self.assertIn("dispenser-upload --run-id ab12", err)
+
+    def test_which_account_ranges_count_as_the_whole_workshop(self):
+        for accounts in ("", "  ", "1", "1-20"):
+            self.assertTrue(wsa_mod._is_full_workshop(accounts), accounts)
+        for accounts in ("21-25", "2-20", "3", "1,3,5"):
+            self.assertFalse(wsa_mod._is_full_workshop(accounts), accounts)
+
 
 class CleanTests(unittest.TestCase):
     def setUp(self):
@@ -495,6 +614,10 @@ class CleanTests(unittest.TestCase):
         # not depend on whether the developer running them happens to have one at
         # ~/.wsa/. Tests that care patch it themselves.
         patcher = patch.object(wsa_mod, "find_google_credentials", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # Same reason as BuildHandoffTests: real collection would prompt here.
+        patcher = patch.object(wsa_mod, "ensure_secrets")
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -613,6 +736,82 @@ class CleanTests(unittest.TestCase):
             extra = self._clean_extra(no_password_reset=True, no_dispenser_clear=True)
         self.assertNotIn("--gmail-credentials", extra)
         self.assertNotIn("--sheets-credentials", extra)
+
+
+class SecretCollectionTests(unittest.TestCase):
+    """Both wsa subcommands must export TF_VAR_* before Terraform runs.
+
+    `clean` originally did not, so every `terraform destroy` failed on "No value
+    for required variable" before touching a resource — and wsa retried that
+    non-retryable error twice more. Asserting on the assembled `extra` list would
+    not have caught it: the flags were right, the environment was empty. These
+    assert the call happens, and happens *before* wsa is invoked.
+    """
+
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        (self.root / wsa_mod.SPEC_FILE).write_text("name: test\n")
+        for module in (wsa_mod, creds_mod):
+            patcher = patch.object(module, "get_project_root", return_value=self.root)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        for name, value in (
+            ("find_wsa", Path("/fake/bin/wsa")),
+            ("find_google_credentials", None),
+        ):
+            patcher = patch.object(wsa_mod, name, return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher = patch.dict(os.environ, {wsa_mod.DISPENSER_ID_ENV: ""}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _order(self, invoke) -> list[str]:
+        """Run `invoke()` with both calls recorded in one ordered log."""
+        calls: list[str] = []
+        with patch.object(wsa_mod, "ensure_secrets", side_effect=lambda root: calls.append("secrets")):
+            with patch.object(wsa_mod, "_stream_wsa", side_effect=lambda *a, **k: calls.append("wsa") or 0):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        invoke()
+        return calls
+
+    def test_clean_collects_secrets_before_running_wsa(self):
+        write_report(self.root / wsa_mod.OUTPUT_DIR / "ab12", "ab12", "2026-07-30T17:00:00Z")
+        args = argparse.Namespace(
+            run_id="",
+            accounts="",
+            concurrency=None,
+            no_password_reset=True,
+            no_dispenser_clear=True,
+            accounts_only=False,
+            shared_only=False,
+            google_credentials="",
+        )
+        self.assertEqual(self._order(lambda: wsa_mod.clean(args)), ["secrets", "wsa"])
+
+    def test_build_collects_secrets_before_running_wsa(self):
+        # build resolves the run it just made; the faked wsa writes nothing.
+        write_report(self.root / wsa_mod.OUTPUT_DIR / "ab12", "ab12", "2026-07-30T17:00:00Z")
+        args = argparse.Namespace(
+            accounts="1-2",
+            concurrency=None,
+            retries=None,
+            run_id="",
+            force=False,
+            no_dispenser_check=False,
+            stream_terraform_logs=False,
+            no_cards=True,
+            no_dispenser_upload=True,
+            name="",
+            prefix="",
+            account_count=None,
+            social_feed_url="",
+            region="",
+        )
+        self.assertEqual(self._order(lambda: wsa_mod.build(args))[:2], ["secrets", "wsa"])
 
 
 class GoogleCredentialsTests(unittest.TestCase):

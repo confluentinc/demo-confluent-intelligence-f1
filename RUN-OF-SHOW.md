@@ -192,14 +192,12 @@ FROM `car_state`;
 > expect the lap-32 flag instantly." The ANOMALY DETECTION panel on the Pit Wall unlocks
 > here.
 >
-> **If someone asks about foundation models:** Flink also ships `AI_DETECT_ANOMALIES`,
-> where `'model' VALUE 'ttm'` selects IBM's Granite TinyTimeMixer and `'flowstate'`,
-> `'patchtstfm'`, or Google's `'timesfm-2.5'` drop into the same slot with no other change
-> to the statement — a one-word swap between foundation models, mid-pipeline, in SQL. It is
-> Early-Access-gated, and on the build we tested it forecasts but never populates
-> `is_anomaly` or the bounds, so `anomaly_tire_temp_fl` stays `false` all race. Good story,
-> not yet a demo. Statement kept at `demo-reference/enrichment_anomaly_ai.sql`
-> (`F1_ANOMALY_FN=ai uv run reset --with-labs`); see docs/technical-discoveries.md 13b-13d.
+> **Granite extension:** attendees now run `AI_FORECAST` with `'model' VALUE 'ttm'`
+> after verifying `car_state`, then stop that temporary SELECT before LAB 4. This is
+> the runnable Granite story. `AI_DETECT_ANOMALIES` remains opt-in because it forecasts
+> but does not populate `is_anomaly` or the bounds in this environment, so replacing
+> ARIMA would silently remove the lap-32 result. Canonical forecast SQL:
+> `labs/instructor-led/LAB3_stream_processing/granite_tire_forecast.sql`.
 
 ### Optional: publish `car_state` to the Real-Time Context Engine
 
@@ -207,10 +205,10 @@ Console → cluster → **Topics** → `car_state` → **Real-Time Context Engin
 **Off** → **On**, plus a description. Skippable — the labs don't depend on it.
 
 > [!NOTE]
-> **Talk track:** "`car_telemetry` and `race_standings` were RTCE-enabled when we
-> built your environment, so your coding agent can already query the live race over
-> MCP — no Kafka client, no consumer group. `car_state` isn't, because you created
-> it thirty seconds ago. One toggle fixes that." The description field is the point
+> **Talk track:** "`car_telemetry` was RTCE-enabled when we built your environment,
+> so your coding agent can already query live sensor data over MCP — no Kafka client,
+> no consumer group. `car_state` isn't, because you created it thirty seconds ago.
+> One toggle fixes that." The description field is the point
 > worth landing: the *agent* reads it to decide whether the topic answers a
 > question, so it's prompt text, not a comment.
 >
@@ -283,7 +281,9 @@ FORBIDDEN PATTERNS — these are bugs, not options:
   "performance falling off" — these are PIT SOON or STAY OUT signals, never PIT NOW.
 
 SELF-CHECK before responding: re-read Steps 1–3 with the actual input values.
-If your Suggestion does not match the algorithm, fix it before outputting.
+The input includes REQUIRED SUGGESTION, computed by Flink SQL from those rules.
+Copy that exact value into Suggestion. If your prose conflicts with it, fix the
+prose before outputting.
 
 COMPETITOR CONTEXT:
 Current top-10 standings are provided at the end of each input. Use them to identify:
@@ -318,7 +318,11 @@ SELECT
   cs.tire_compound AS tire_compound_current,
   cs.tire_age_laps,
   cs.anomaly_tire_temp_fl,
-  TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Suggestion:\*{0,2}\s*([A-Z ]+)', 1)) AS suggestion,
+  CASE
+    WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
+    WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 26 THEN 'PIT SOON'
+    ELSE 'STAY OUT'
+  END AS suggestion,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Condition Summary:\*{0,2}\s*([^\n]+)', 1)) AS condition_summary,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Race Context:\*{0,2}\s*([^\n]+)', 1)) AS race_context,
   NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Compound:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS recommended_tire_compound,
@@ -332,6 +336,12 @@ LATERAL TABLE(AI_RUN_AGENT(
   CONCAT(
     'CAR STATE — Lap ', CAST(cs.lap AS STRING), ' of 60 | Silverstone British Grand Prix\n',
     'Driver: John Doe (#', CAST(cs.car_number AS STRING), ') | Current Position: P', CAST(cs.`position` AS STRING), '\n',
+    'REQUIRED SUGGESTION — copy exactly: ',
+    CASE
+      WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
+      WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 26 THEN 'PIT SOON'
+      ELSE 'STAY OUT'
+    END, '\n',
     '\nTIRE DATA:\n',
     '  Compound: ', cs.tire_compound, ' | Age: ', CAST(cs.tire_age_laps AS STRING), ' laps\n',
     '  FL Temp: ', CAST(ROUND(cs.tire_temp_fl_c, 1) AS STRING), 'C',

@@ -357,9 +357,9 @@ def _rtce_section(f: dict[str, str]) -> str:
     return f"""
 ## Ask an AI agent about the live race (Real-Time Context Engine)
 
-`car_telemetry` and `race_standings` are already published to Confluent's
-Real-Time Context Engine, so an AI agent can query them directly — no Kafka
-client and no consumer group.
+`car_telemetry` is already published to Confluent's Real-Time Context Engine,
+so an AI agent can query the live sensor stream directly — no Kafka client and
+no consumer group.
 
 Register it with Claude Code (one line, run it anywhere):
 
@@ -370,7 +370,7 @@ Register it with Claude Code (one line, run it anywhere):
 Then just ask, in plain English:
 
 - "What are car 88's front-left tire temperatures over the last few laps?"
-- "Who is within two seconds of car 88, and what tires are they on?"
+- "How did car 88's tire temperatures change around lap 32?"
 
 Three tools come with it: `list_topics`, `get_metadata`, and `query_data`.
 """

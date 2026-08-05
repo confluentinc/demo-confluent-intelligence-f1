@@ -31,7 +31,11 @@ SELECT
   cs.tire_compound AS tire_compound_current,
   cs.tire_age_laps,
   cs.anomaly_tire_temp_fl,
-  TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Suggestion:\*{0,2}\s*([A-Z ]+)', 1)) AS suggestion,
+  CASE
+    WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
+    WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 26 THEN 'PIT SOON'
+    ELSE 'STAY OUT'
+  END AS suggestion,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Condition Summary:\*{0,2}\s*([^\n]+)', 1)) AS condition_summary,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Race Context:\*{0,2}\s*([^\n]+)', 1)) AS race_context,
   NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Compound:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS recommended_tire_compound,
@@ -45,6 +49,12 @@ LATERAL TABLE(AI_RUN_AGENT(
   CONCAT(
     'CAR STATE — Lap ', CAST(cs.lap AS STRING), ' of 60 | Silverstone British Grand Prix\n',
     'Driver: John Doe (#', CAST(cs.car_number AS STRING), ') | Current Position: P', CAST(cs.`position` AS STRING), '\n',
+    'REQUIRED SUGGESTION — copy exactly: ',
+    CASE
+      WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
+      WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 26 THEN 'PIT SOON'
+      ELSE 'STAY OUT'
+    END, '\n',
     '\nTIRE DATA:\n',
     '  Compound: ', cs.tire_compound, ' | Age: ', CAST(cs.tire_age_laps AS STRING), ' laps\n',
     '  FL Temp: ', CAST(ROUND(cs.tire_temp_fl_c, 1) AS STRING), 'C',

@@ -5,7 +5,8 @@
 Build the intelligence layer. You'll combine the live telemetry and standings
 into a single `car_state` stream and detect the front-left tire-temperature
 anomaly that signals a failing tire — using Flink's built-in
-`ML_DETECT_ANOMALIES`.
+`ML_DETECT_ANOMALIES` — then use IBM Granite to forecast the next three
+tire-temperature windows.
 
 ### What you'll accomplish
 
@@ -13,6 +14,7 @@ anomaly that signals a failing tire — using Flink's built-in
 2. Temporal-join with `race_standings` to add position, gaps, and tire context
 3. Run `ML_DETECT_ANOMALIES` on `tire_temp_fl_c`
 4. Produce the `car_state` table
+5. Run `AI_FORECAST` with IBM Granite TinyTimeMixer (`ttm`)
 
 ### Prerequisites
 
@@ -190,13 +192,74 @@ spikes to ~145°C. (Ctrl-C to stop the query.)
 > `car_state` stays empty, see
 > [troubleshooting](../../shared/troubleshooting.md).
 
-### Step 3 (optional): Publish `car_state` to the Real-Time Context Engine
+### Step 3: Forecast tire temperature with IBM Granite
 
-Your two **source** topics — `car_telemetry` and `race_standings` — are already
-published to Confluent's Real-Time Context Engine, so an AI agent can query them
-over MCP without a Kafka client or a consumer group. `car_state` isn't, for a
-simple reason: you just created it, so it didn't exist when your environment was
-built.
+Open a new SQL cell and run the query below. It uses the same 10-second tire
+temperature windows, but asks the built-in `AI_FORECAST` function for the next
+three values. The `model` option selects IBM Granite TinyTimeMixer directly;
+there is no connection or model to register.
+
+```sql
+WITH windowed AS (
+  SELECT
+    window_start, window_end, window_time, car_number,
+    MAX(lap) AS lap,
+    AVG(tire_temp_fl_c) AS tire_temp_fl_c
+  FROM TABLE(
+    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
+  )
+  GROUP BY window_start, window_end, window_time, car_number
+),
+forecasted AS (
+  SELECT
+    *,
+    AI_FORECAST(
+      tire_temp_fl_c,
+      window_time,
+      JSON_OBJECT(
+        'model' VALUE 'ttm',
+        'horizon' VALUE 3,
+        'minContextSize' VALUE 20,
+        'maxContextSize' VALUE 50,
+        'rmseWindowSize' VALUE 5
+      )
+    ) OVER (
+      PARTITION BY car_number
+      ORDER BY window_time
+      RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS forecast_result
+  FROM windowed
+)
+SELECT
+  lap,
+  window_time AS forecast_generated_at,
+  tire_temp_fl_c AS current_tire_temperature_c,
+  forecast_result.forecast AS tire_temperature_forecast,
+  forecast_result.metadata AS forecast_metadata
+FROM forecasted
+WHERE CARDINALITY(forecast_result.forecast) > 0;
+```
+
+Each result contains a three-element forecast array. Each element has a future
+timestamp and predicted mean. The metadata identifies `ttm`, confirming that
+Granite served the forecast. `minContextSize = 20` means the model needs about
+3½ minutes of 10-second windows before it can forecast.
+
+This SELECT is only an experiment. After you see forecast rows, stop the
+statement in the SQL workspace so LAB 4 has the full compute pool available.
+The checked-in copy is
+[`granite_tire_forecast.sql`](granite_tire_forecast.sql).
+
+### Step 4 (optional): Publish `car_state` to the Real-Time Context Engine
+
+`car_telemetry` is already published to Confluent's Real-Time Context Engine,
+so an AI agent can query the sensor stream over MCP without a Kafka client or a
+consumer group. `car_state` isn't, for a simple reason: you just created it, so
+it didn't exist when your environment was built.
+
+`race_standings` is intentionally not published. It is a compacted upsert topic,
+and RTCE currently rejects queries against it in this workshop environment. The
+Flink temporal join in Step 1 still uses its upsert semantics normally.
 
 Turning it on is one toggle:
 
@@ -220,5 +283,7 @@ tools (`list_topics`, `get_metadata`, `query_data`) pick it up automatically.
 
 ## Conclusion
 
-`car_state` is the live, enriched, anomaly-aware view of the car. Feed it to the
-AI agent in [LAB 4 — Streaming agent](../LAB4_streaming_agent/LAB4.md).
+`car_state` is the live, enriched, anomaly-aware view of the car, and Granite
+can forecast its source telemetry without changing that proven anomaly path.
+Feed `car_state` to the AI agent in
+[LAB 4 — Streaming agent](../LAB4_streaming_agent/LAB4.md).

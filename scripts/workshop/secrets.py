@@ -1,10 +1,11 @@
 """Shared secret collection for workshop organizer commands.
 
-Both ``create-workshop`` and ``teardown-workshop`` need the same five
-``TF_VAR_*`` environment variables that wsa's Terraform runs consume.
+``create-workshop``, ``teardown-workshop``, and the ``workshop build`` /
+``workshop clean`` wrappers all need the same five ``TF_VAR_*`` environment
+variables that wsa's Terraform runs consume — the destroy as much as the apply.
 This module collects them once, following ``deploy.py``'s precedence:
 
-  1. ``os.environ``  (so ``op run --env-file=.env.tpl`` still works)
+  1. ``os.environ``  (so an ``op run --env-file=<template>`` wrapper still works)
   2. ``credentials.env`` at the project root
   3. Interactive prompt (unless ``interactive=False``, which raises)
 

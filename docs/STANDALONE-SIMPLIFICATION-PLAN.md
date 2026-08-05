@@ -99,7 +99,8 @@ with `wsa clean`.
 The organizer flow today is two hand-wired commands with three paths to fill in:
 
 ```bash
-op run --env-file=.env.tpl -- ./bin/wsa build -w <path-to-this-repo>/wsa-spec-aws.yaml --accounts 1-20 --concurrency 4
+set -a; . ./credentials.env; set +a   # the raw binary does not collect TF_VAR_* itself
+./bin/wsa build -w <path-to-this-repo>/wsa-spec-aws.yaml --accounts 1-20 --concurrency 4
 uv run workshop creds --csv <wsa-repo>/wsa-output/<run-id>/build-output.csv --name <name>
 ```
 

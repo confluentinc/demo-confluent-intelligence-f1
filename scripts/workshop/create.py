@@ -333,6 +333,7 @@ def _build_namespace(attendees: int, args: argparse.Namespace) -> argparse.Names
     ns.region = args.region
     ns.social_feed_url = args.social_feed_url
     ns.no_cards = False
+    ns.no_dispenser_upload = getattr(args, "no_dispenser_upload", False)
     return ns
 
 
@@ -356,6 +357,12 @@ Races are already running (ECS auto-starts each simulator).
   Tear down entirely:  uv run teardown-workshop
 
   All subcommands:     uv run workshop --help""")
+
+    if wsa_mod.dispenser_configured(root):
+        print(
+            "\nThe dispenser sheet now holds this run's accounts — attendees can claim\n"
+            "via the Google Form (turn on 'Accepting responses' if it is off)."
+        )
 
     if email_pattern:
         print(f"""
@@ -495,6 +502,12 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
         "runs; the interactive flow prompts with a resource-name preview.",
     )
     p.add_argument("--social-feed-url", default="", help="LAB 5 race-feed base URL, stamped onto every card")
+    p.add_argument(
+        "--no-dispenser-upload",
+        action="store_true",
+        help="Skip pushing the accounts into the dispenser Google Sheet after cards are "
+        "written (already a no-op when WSA_DISPENSER_SPREADSHEET_ID is unset)",
+    )
     p.add_argument("--yes", action="store_true", help="Skip all prompts (fail if secrets are missing)")
     p.add_argument("--force", action="store_true", help="Proceed even if a previous workshop run is still live")
 

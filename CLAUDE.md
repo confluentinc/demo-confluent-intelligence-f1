@@ -20,136 +20,14 @@ See "Attendee Console access" and "WSA (organizer provisioning)" below.
 
 ## Commands
 
-```bash
-# Organizer: one-command workshop creation and teardown.
-# Prompts for any missing secrets (or use `op run` / env vars to inject them).
-uv run create-workshop --attendees 5               # preflight + secrets + build + cards
-uv run create-workshop --attendees 20 --concurrency 4  # larger workshop
-uv run teardown-workshop                            # tears down the newest run
-uv run workshop reset-races                         # stop feeds + reset all attendee envs
-#   Lifecycle: create-workshop → attendees write LAB 3 → start-races → ... →
-#   reset-races → attendees write LAB 3 → start-races → ... → teardown-workshop
-
-# Organizer: full workshop (many attendees) — power-user subcommands.
-# `workshop` wraps the `wsa` CLI (which still owns provisioning) and locates the
-# sibling checkout itself, so these run from THIS repo with -w injected.
-# Secrets: either prompted by create-workshop, or injected with op / .env / exports.
-op run --env-file=.env.tpl -- uv run workshop spec-validate    # wsa pre-flight: spec + local tooling
-op run --env-file=.env.tpl -- uv run workshop build --accounts 1-20 --concurrency 4
-#   ONE command: applies terraform/aws-shared, then N × terraform/aws, THEN writes every
-#   credential card from that run's build-output.csv — no run-id to copy by hand.
-#   --no-cards to skip the card step, -n/--name for the card directory label.
-op run --env-file=.env.tpl -- uv run workshop clean            # newest non-cleaned run in wsa-output/
-#   --run-id to target another run; --accounts-only / --shared-only;
-#   --no-password-reset --no-dispenser-clear if this run never used the dispenser/Gmail reset.
-<sibling>/bin/wsa dispenser-upload --sheets-credentials sheets-credentials.json  # self-serve claim (optional)
-# Raw wsa stays fully supported for flags the wrapper doesn't expose:
-op run --env-file=.env.tpl -- <sibling>/bin/wsa build -w <path-to-this-repo>/wsa-spec-aws.yaml ...
-
-# Organizer: cards from an existing wsa run (`workshop build` already does this)
-uv run workshop creds --csv <wsa-repo>/wsa-output/<run-id>/build-output.csv --name <name>
-# TWO different "validate"s — never conflate them:
-#   workshop spec-validate = wsa's pre-flight on the spec + local prerequisites, BEFORE a build
-#   workshop validate      = API-key health checks against provisioned environments, AFTER one
-uv run workshop validate --creds-glob 'runs/*/credentials/*.env'   # no AWS/login needed
-
-# Attendee, self-serve (wsa dispenser claim email -> local credentials.env)
-uv run f1-onboard                # prompts field-by-field, or --paste to parse a pasted email
-
-# Flink SQL from a credential card, no Console login. NOT what LAB 1-6 teaches
-# (that's the browser SQL workspace) — this is the standalone/self-service path.
-# The card is resolved automatically — see "Credential card resolution" below.
-uv run f1-sql
-uv run f1-sql --creds runs/<name>/credentials/f1wp001.env   # override
-
-# Attendee: live race dashboard (consumes their own Kafka topics, no login)
-uv run f1-pitwall                                           # → http://localhost:8000
-uv run f1-pitwall --mock                                    # offline demo/dev, no Confluent env
-
-# Organizer: shared race-feed service for LAB 5 (OpenAPI tool for watsonx Orchestrate)
-uv run f1-social-feed --creds-glob 'runs/*/credentials/*.env'   # → :8080, serves /race-feed/{prefix}
-uv run f1-social-feed --mock                                    # offline demo/dev, no Confluent env
-# Same OpenAPI tool, but sourced from the Real-Time Context Engine (MCP) instead of Kafka:
-RTCE_API_KEY=... RTCE_API_SECRET=... uv run f1-social-feed-rtce --creds-glob 'runs/*/credentials/*.env'
-RTCE_API_KEY=... RTCE_API_SECRET=... uv run f1-social-feed-rtce --probe --creds <card>.env  # validate RTCE contract
-
-# Standalone demo: single environment (smoke test / presenter) — shared then attendee
-uv run deploy                  # prompts → credentials.env → terraform/aws-shared → terraform/aws
-uv run deploy --automated      # same, no prompts (reads credentials.env)
-uv run deploy --with-labs      # also build LAB 3 + LAB 4 from demo-reference/ and restart the
-                               #   race behind them — ready to demo. Omit for a bare environment
-                               #   (what the workshop hands attendees).
-                               # Prefix is derived from $USER (+ track suffix) and pinned in
-                               #   runs/<track>/deployment.env — see "Deployment identity" below.
-                               # Postgres defaults to t3.small here (aws-shared's own default,
-                               #   which wsa uses, stays t3.large).
-uv run destroy                 # pick which local deployment(s) to tear down, confirm, destroy
-                               #   groups: "deploy" (aws + aws-shared) / "self-service"
-                               #   A wsa workshop is unreachable (wsa keeps state in its own
-                               #   run dir) — tear one down with `wsa clean`. Hand-applied
-                               #   aws-shared state IS reachable, behind a typed confirmation.
-
-# Self-service (solo): Confluent-only, NO AWS infra (no Postgres/CDC/ECS/ECR/Docker)
-uv run selfservice up          # apply terraform/self-service → credential card → seed driver_race_history
-uv run selfservice up --automated   # no prompts (reads credentials.env)
-uv run selfservice up --with-labs   # also prebuild LAB 3 + LAB 4 from demo-reference/
-uv run selfservice down        # tear down terraform/self-service (--yes to skip the prompt)
-uv run f1-race                 # local simulator (ECS stand-in); --once, --seconds-per-lap N, --20
-                               #   Pacing: flag > runs/<track>/deployment.env > 20. Minimum 10s/lap.
-                               #   Sets PRE_RACE_WARMUP_LAPS=0 (the ECS path keeps the default 4).
-
-# Optional: register the Confluent MCP server with a local coding agent, from a card
-uv run setup-mcp               # Claude Code, project-local scope (default)
-uv run setup-mcp --client codex     # Codex CLI — user-global ~/.codex/config.toml
-uv run setup-mcp --client both --dry-run   # write confluent-mcp.env (0600) + print, change nothing
-                               #   Needs Node >= 20 (v24 LTS has the prebuilt native binaries).
-
-# Control ALL attendee race feeds (organizer fan-out over every matching ECS service)
-uv run workshop start-races    # scale every attendee simulator to 1
-uv run workshop stop-races     # scale every attendee simulator to 0
-                               #   `start-all-races` / `stop-all-races` still work — deprecated
-                               #   aliases for the same code. Prefer the workshop spelling.
-
-# Control just THIS deployment's race feed (standalone track — one ECS service)
-uv run race status             # desired vs running task count, plus the aws-logs-tail command
-uv run race start / stop / restart   # scale and wait for the transition
-                               #   Those four actions are the whole surface: no `logs` action
-                               #   (status prints the command) and no pacing flag (pacing is
-                               #   TF_VAR_seconds_per_lap + redeploy, or f1-race's own flag).
-
-uv run reset                   # blank slate for a new race: drops lab objects (car_state,
-                               #   pit_decisions, agent) AND truncates car_telemetry so LAB 3
-                               #   doesn't replay finished races. race_standings is compacted,
-                               #   so it can't be truncated (harmless — see scripts/reset.py).
-                               #   Stops the feed FIRST (scales this deployment's ECS service to
-                               #   0, or refuses when a local `f1-race` is producing — --force
-                               #   overrides) and leaves it stopped, so LAB 3 can be submitted
-                               #   before standings resume. Prints `=== Reset INCOMPLETE ===`
-                               #   and exits nonzero if any step failed.
-                               #   --keep-source skips the truncation AND leaves the feed
-                               #   running (unless --with-labs needs it stopped).
-                               #   --track standalone|selfservice — required only when both
-                               #   tracks have Terraform state in this checkout.
-uv run reset --with-labs       # same, then REBUILDS the lab objects from demo-reference/
-                               #   and restarts this deployment's race — one command to a
-                               #   ready-to-demo environment. Standalone/solo demos only:
-                               #   plain `reset` leaves the labs dropped because building
-                               #   them is LAB 3/LAB 4. Scales only THIS deployment's ECS
-                               #   service (not the instructor fan-out), and submits the labs
-                               #   BEFORE restarting the race since race_standings reads `latest`.
-
-uv run api-keys create         # Create AWS IAM user + keys for Bedrock access
-
-# Read attendee Terraform outputs
-cd terraform/aws && terraform output -json attendee_credentials
-
-# Logs for one attendee simulator (`uv run race status` prints this line for you)
-aws logs tail /ecs/<prefix>-<hex>-simulator --follow
-
-# Tests / lint
-uv run pytest                  # testpaths + the runtime extras are declared in pyproject.toml
-uv run ruff check datagen/ scripts/ deploy.py
-```
+Every `uv run` command in this repo — organizer provisioning, credential cards,
+race control, reset, standalone deploy, self-service, pitwall, social feed,
+setup-mcp, tests and lint — is in the **`f1-workshop-commands`** skill
+(`.claude/skills/f1-workshop-commands/SKILL.md`). Load it before running or
+explaining any of them. `.claude/` is gitignored, so that skill may not exist in
+a fresh clone — the checked-in fallbacks are `RUN-OF-SHOW.md` (attendee commands
+in lab order), `WORKSHOP-GUIDE.md` (organizer lifecycle), and the `[project.scripts]`
+table in `pyproject.toml` (every entry point).
 
 ---
 
@@ -188,11 +66,9 @@ applied per attendee (by `wsa`, or once by `deploy.py`). The `aws` tier consumes
 `aws-shared` outputs as variables (injected by wsa, or by `deploy.py` reading the
 shared state). `self-service` stands alone.
 
-| Tier | Path | What it creates |
-|------|------|-----------------|
-| shared | `terraform/aws-shared/` | Default VPC/subnets lookup, shared Postgres (N replication slots, seeded `driver_race_history`), ECR repo + simulator image build |
-| per-attendee | `terraform/aws/` | CC environment, cluster, SR, Flink pool + keys, `modules/llm` (Bedrock connections + `CREATE MODEL`), topics (`car_telemetry`, `race_standings`), per-attendee Postgres CDC connector, ECS cluster + task def + **service** running the simulator |
-| self-service | `terraform/self-service/` | Confluent-**only**: CC environment, cluster, SR, Flink pool, topics, `modules/llm`, and an empty `driver_race_history` table. **No** AWS (Postgres/CDC/ECS/ECR). `uv run selfservice up` seeds `driver_race_history` with a bounded Flink INSERT and the local `f1-race` simulator feeds the topics. |
+`terraform/self-service/` is Confluent-**only** — no AWS (Postgres/CDC/ECS/ECR),
+and its `driver_race_history` table starts empty: `uv run selfservice up` seeds it
+with a bounded Flink INSERT and the local `f1-race` simulator feeds the topics.
 
 The Bedrock connections + `CREATE MODEL` statements live in the shared
 `terraform/modules/llm/` module, consumed by both `terraform/aws` and
@@ -222,20 +98,25 @@ since `wsa` injects them by that naming convention as `TF_VAR_shared_X`.
 
 ## Kafka Topics
 
-| Topic | Created by | Notes |
-|-------|-----------|-------|
-| `car_telemetry` | Terraform (Flink CREATE TABLE) | AVRO, no PRIMARY KEY, string message key. **RTCE-enabled** |
-| `race_standings` | Terraform (Flink CREATE TABLE) | AVRO, PRIMARY KEY(car_number), upsert — produced directly by the simulator. **RTCE-enabled** |
-| `driver_race_history` | per-attendee CDC connector | 198 historical rows |
-| `car_state` | LAB 3 Flink statement | one record per 10s window. RTCE is the attendee's optional Console toggle (LAB 3 Step 3) |
-| `pit_decisions` | LAB 4 Flink statement | agent output |
+| Topic | Notes |
+|-------|-------|
+| `car_telemetry` | AVRO, no PRIMARY KEY, string message key. **RTCE-enabled** |
+| `race_standings` | AVRO, PRIMARY KEY(car_number), upsert — produced directly by the simulator. Not RTCE-enabled: this org/region rejects compacted-topic queries with `MT_UPSERT_NOT_SUPPORTED`. |
+| `driver_race_history` | 198 historical rows, from the per-attendee CDC connector |
+| `car_state` | LAB 3 output, one record per 10s window. RTCE is the attendee's optional Console toggle (LAB 3 Step 4) |
+| `pit_decisions` | LAB 4 output — agent decisions |
 
-Topic schemas (CREATE TABLE SQL): `terraform/modules/topics/main.tf`.
+The first three are created by Terraform (Flink CREATE TABLE, except
+`driver_race_history` which the CDC connector creates); `car_state` and
+`pit_decisions` do not exist until the attendee writes LAB 3 / LAB 4. Topic
+schemas (CREATE TABLE SQL): `terraform/modules/topics/main.tf`.
 
 **Real-Time Context Engine (attendee-facing).** `confluent_rtce_topic` in
-`modules/topics` enables RTCE on the two source topics at build time, so an
-attendee's MCP client can query the live race with no Kafka client and no consumer
-group. Four things that are easy to get wrong:
+`modules/topics` enables RTCE on `car_telemetry` at build time, so an attendee's
+MCP client can query the sensor stream with no Kafka client and no consumer group.
+`race_standings` is intentionally excluded: although enablement reaches `online`,
+every query against the compacted topic fails with `MT_UPSERT_NOT_SUPPORTED`, even
+with raw VARCHAR and BYTES keys. Four things that are easy to get wrong:
 
 - **Enablement is per topic and needs a registered schema** — hence the
   `depends_on` the CREATE TABLE statements. `car_state` can't be in Terraform at
@@ -253,7 +134,7 @@ group. Four things that are easy to get wrong:
   the SA's existing Global keys before creating, because a secret can't be re-read —
   so regenerating cards invalidates RTCE on any already handed out.
 
-`TF_VAR_enable_rtce=false` skips both resources for an org or region without RTCE
+`TF_VAR_enable_rtce=false` skips the resource for an org or region without RTCE
 (`confluent rtce region list` — 11 AWS regions as of 2026-08).
 
 ---
@@ -444,56 +325,15 @@ smoke-test flow (`terraform output -json attendee_credentials`, `deploy.py`).
 
 ## WSA (organizer provisioning)
 
-Provisioning and teardown are owned by `wsa` (confluentinc/workshop-setup-accelerator),
-not a repo-local orchestrator. It still lives in a **sibling checkout**
-(`workshop-setup-accelerator/`, per that repo's `ONBOARDING.md` "Local layout"), but
-you no longer invoke it from there: `uv run workshop spec-validate|build|clean`
-(`scripts/workshop/wsa.py`) finds the binary and injects `-w <this-repo>/wsa-spec-aws.yaml`.
-
-- **Binary discovery:** four candidates in order — `$WSA_HOME/bin/wsa`, a sibling
-  `../workshop-setup-accelerator/bin/wsa`, one on `$PATH`, and (because this repo is
-  often worked on inside `.claude/worktrees/<name>/`) a sibling of the **main**
-  checkout rather than of the worktree. Set `$WSA_HOME` if yours is elsewhere.
-- **One command, not two:** `workshop build` runs `wsa build` and then feeds that
-  run's `build-output.csv` into `workshop creds` in-process, so the run-id is never
-  copied by hand. `workshop clean` resolves the newest non-cleaned run from
-  `wsa-output/` instead of taking a `--run-id`.
-- **Spec:** `wsa-spec-aws.yaml` (repo root) — `account_count: 5`, but only as the
-  interactive default. `create-workshop --attendees N` is authoritative: it writes
-  `account_count: N` into the derived spec and exports `TF_VAR_attendee_count=N` for
-  the shared apply (`wsa` forwards a fixed variable list, but its Terraform runner
-  inherits the environment), so no file needs editing to grow a workshop. The old
-  ceiling that refused `--attendees > account_count` is gone; the real guard is
-  `_check_console_accounts`, which verifies each Console password exists in 1Password
-  and now bails after 3 misses. `account_count` reaches wsa only as its `>= 1` check,
-  the "(N accounts)" banner, and the default account list `--accounts` supersedes.
-- **Terraform contract:** `shared_infra_path: terraform/aws-shared/`,
-  `terraform_path: terraform/aws/`. Every `credentials:` field with
-  `source: terraform` must match a flat root `output` in
-  `terraform/aws/outputs.tf` by name.
-- **Secrets:** Terraform inputs (Confluent + Bedrock keys) are plain `.env`/shell
-  `TF_VAR_*` exports — not the TMM 1Password vault. But `op` **is** in
-  `tools_required`, because the attendee Console passwords live in wsa's
-  `Workshop Setup Accelerator Users` vault (see "Attendee Console access").
-- **Dispenser:** attendees can claim via `wsa dispenser-upload` (Google
-  Form/Sheet) and self-serve `uv run f1-onboard` their claim-email values
-  into a local `credentials.env`, or an instructor can run
-  `uv run workshop creds --csv <run>/build-output.csv --name <name>` and hand
-  out `runs/<name>/credentials/<prefix>.{env,md}` directly — same downstream
-  tools either way.
-- **Clean:** `wsa clean -w wsa-spec-aws.yaml` — pass `--no-password-reset
-  --no-dispenser-clear` if this run never used the dispenser/Gmail reset.
-  `workshop clean` decides that for you, and the reason matters: **wsa only warns
-  when the Google OAuth client is missing** (`main.go:1432,1507`), so a teardown
-  that reports success can leave every attendee's password live and their
-  credentials sitting in the dispenser sheet. `find_google_credentials` resolves
-  one JSON for both flags (`--google-credentials`, `$WSA_GOOGLE_CREDENTIALS`,
-  `~/.wsa/gmail-credentials.json`, wsa checkout root — an explicit path that
-  doesn't exist is fatal, never a fallback), and `dispenser_configured` treats a
-  missing or `<placeholder>` `WSA_DISPENSER_SPREADSHEET_ID` as "no dispenser".
-  Whatever can't run is skipped *explicitly*, with the consequence named on
-  stderr. That env var belongs in **this** repo's gitignored `wsa.env`: wsa reads
-  `wsa.env` from its CWD, which the wrapper pins here.
+Provisioning and teardown are owned by `wsa`
+(confluentinc/workshop-setup-accelerator) in a **sibling checkout**, wrapped by
+`uv run workshop spec-validate|build|clean`. Binary discovery, the
+`wsa-spec-aws.yaml` contract, `account_count` vs `--attendees`, the dispenser
+upload, and the teardown gotcha where a missing Google OAuth client leaves
+attendee passwords live are all in the **`wsa-provisioning`** skill
+(`.claude/skills/wsa-provisioning/SKILL.md`). `.claude/` is gitignored, so that
+skill may not exist in a fresh clone — the checked-in fallbacks are
+`WORKSHOP-GUIDE.md`, `wsa-spec-aws.yaml` itself, and `scripts/workshop/wsa.py`.
 
 ---
 
@@ -534,22 +374,13 @@ in `demo-reference/enrichment_anomaly_ai.sql` and the collapsed `<details>` bloc
 | `scripts/pitwall/` | `f1-pitwall` live web dashboard — Kafka consumer → FastAPI/websocket → animated browser view; progressive reveal of LAB 3/4 panels; `--mock` offline feed |
 | `scripts/social_feed/` | `f1-social-feed` shared HTTP service for LAB 5 — tails each attendee's Kafka topics, serves `GET /race-feed/{prefix}` + auto OpenAPI spec for the watsonx Orchestrate tool; reuses pitwall consumer; `--mock` offline feed |
 | `scripts/social_feed_rtce/` | `f1-social-feed-rtce` — same OpenAPI tool, but an MCP client to the Real-Time Context Engine (RTCE) instead of Kafka. Reuses `social_feed`'s `FeedState`+`create_app`; new bits are the RTCE MCP client + poller. Global API key via `RTCE_API_KEY/SECRET`; per-attendee endpoint from card `F1_RTCE_MCP_ENDPOINT`; `--probe` validates the live contract |
-| `scripts/instructor/` | Fan-out start/stop of all attendee race feeds |
-| `scripts/common/` | Shared utils: terraform, credentials, UI |
 | `datagen/simulator.py` | Race simulator — produces telemetry + standings to Kafka, RACE_LOOP |
-| `datagen/config.py` | Simulator env vars |
-| `terraform/aws-shared/` | Shared infra (VPC, Postgres, ECR image) |
-| `terraform/aws/` | Per-attendee CC env + ECS simulator service |
-| `terraform/modules/topics/main.tf` | `car_telemetry` + `race_standings` CREATE TABLE |
-| `wsa-spec-aws.yaml` | wsa orchestration spec — read by `wsa build`/`clean`/`validate` |
 | `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md`; `--resolve-op` pulls Console passwords from 1Password; `--rtce-keys` mints each attendee's RTCE Global API key (`_mint_rtce_key`, replace-not-accumulate) and prints the `claude mcp add` line. Also appends `Real-Time Context Engine / MCP Setup Command` back into build-output.csv so dispenser claim emails carry it (`_add_dispenser_column`, `--no-dispenser-column`) — the `" / "` in that header is what makes the dispenser's Apps Script email it |
 | `terraform/modules/environment/main.tf` | The environment, plus the `grant_console_access`-gated `confluent_user` lookup + EnvironmentAdmin binding that makes an attendee login useful |
 | `scripts/workshop/onboard.py` | `f1-onboard` — self-serve: wsa claim-email values → local `credentials.env` |
 | `scripts/workshop/validate.py` | `workshop validate` — API-key health checks against one or many cards |
-| `labs/` | Attendee lab guides |
 | `RUN-OF-SHOW.md` | In-room command sheet: every attendee command LAB 1→6 in order + presenter talk track; inlines LAB 3/4 SQL (in the File Sync set) |
 | `WORKSHOP-GUIDE.md` | Organizer-facing lifecycle guide: create → hand out → run → reset → teardown |
-| `demo-reference/*.sql` | Canonical lab SQL |
 | `demo-reference/enrichment_anomaly_ai.sql` | LAB 3's Granite/`AI_DETECT_ANOMALIES` variant — `F1_ANOMALY_FN=ai`. EAP-gated, and currently never flags an anomaly (docs/technical-discoveries.md 13b) |
 | `demo-reference/orchestrate_social_agent.md` | Canonical LAB 5 Orchestrate agent config (persona, tool, prompts) |
 

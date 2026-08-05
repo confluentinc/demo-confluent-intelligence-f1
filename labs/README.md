@@ -51,6 +51,7 @@ Shared Postgres ─ CDC Debezium ─ driver_race_history (per-attendee connector
                               LAB 3 — Flink SQL (you write this)
                               10s tumbling window + temporal join
                               ML_DETECT_ANOMALIES(tire_temp_fl_c)
+                              + Granite AI_FORECAST exploration
                                              │
                                          car_state
                                              │
@@ -77,7 +78,7 @@ seeded once by Flink. Labs 3–5 are byte-for-byte the same either way.
 |-----|------|-------------|
 | [LAB 1 — Open your environment](instructor-led/LAB1_claim_account/LAB1.md) | 5 min | Sign in to Confluent Cloud and open a SQL workspace |
 | [LAB 2 — Explore the environment](instructor-led/LAB2_explore_environment/LAB2.md) | 10 min | Inspect the tables, the live feed, and the pre-deployed models — all in SQL |
-| [LAB 3 — Stream processing](instructor-led/LAB3_stream_processing/LAB3.md) | 15 min | Window + temporal join + `ML_DETECT_ANOMALIES` → `car_state` |
+| [LAB 3 — Stream processing](instructor-led/LAB3_stream_processing/LAB3.md) | 20 min | Window + temporal join + `ML_DETECT_ANOMALIES` → `car_state`, then forecast with Granite `AI_FORECAST` |
 | [LAB 4 — Streaming agent](instructor-led/LAB4_streaming_agent/LAB4.md) | 20 min | `CREATE AGENT` + `AI_RUN_AGENT` → `pit_decisions` |
 | [LAB 5 — Social media agent](instructor-led/LAB5_orchestrate_integration/LAB5.md) | 15 min | Build a no-code **IBM watsonx Orchestrate** agent that drafts posts from the live feed |
 | [LAB 6 — Wrap-up](instructor-led/LAB6_wrap_up/LAB6.md) | 5 min | Query the agent's calls and review the outcome |

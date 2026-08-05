@@ -36,6 +36,7 @@ import logging
 import os
 import sys
 import threading
+from builtins import BaseExceptionGroup
 from pathlib import Path
 
 import uvicorn
@@ -106,21 +107,39 @@ def _load_jobs(args, store: FeedStore, token: str) -> list[tuple[RTCEClient, Fee
     return jobs
 
 
+def _root_causes(exc: BaseException) -> list[str]:
+    """Flatten nested ExceptionGroups to their leaf messages.
+
+    The ``mcp`` SDK runs each session inside two nested ``anyio`` task groups, so
+    every real error — a wrong tool name, a rejected key — reaches us as
+    ``ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)``.
+    Printing ``str(exc)`` therefore prints that sentence and nothing else, which
+    is how a plain ``unknown tool "queryData"`` stayed invisible through a whole
+    debugging session. Always report the leaves.
+    """
+    if isinstance(exc, BaseExceptionGroup):
+        return [msg for sub in exc.exceptions for msg in _root_causes(sub)]
+    return [f"{type(exc).__name__}: {exc}"]
+
+
 async def _probe(client: RTCEClient) -> None:
     """Connect to one endpoint, list tools/topics, and dump a sample query."""
     print(f"Probing RTCE endpoint: {client.endpoint}")
     try:
         topics = await client.list_topics()
-        print("\nlist_topics →")
+        print("\nlistTopics →")
         for block in getattr(topics, "content", None) or []:
             print(" ", getattr(block, "text", block))
-        rows = await client.query("race_standings", "SELECT *")
-        print(f"\nquery_data race_standings → {len(rows)} row(s)")
+        rows = await client.query("race_standings")
+        print(f"\nqueryData race_standings → {len(rows)} row(s)")
         print(json.dumps(rows[:3], indent=2, default=str))
     except Exception as e:
+        causes = "\n".join(f"  - {c}" for c in _root_causes(e))
         sys.exit(
-            f"\nProbe failed: {e}\n"
-            "Check the endpoint URL, the Global API key, and that RTCE is enabled on the topic."
+            f"\nProbe failed:\n{causes}\n"
+            "Check the endpoint URL, the Global API key, and that RTCE is enabled on the topic.\n"
+            'An `unknown tool "..."` here means the tool names in rtce_client.py drifted — '
+            "list them with session.list_tools() against the live endpoint."
         )
 
 

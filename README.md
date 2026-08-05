@@ -111,15 +111,19 @@ Unlike `uv run deploy`, this path leaves Postgres at the `t3.large` module defau
 from this repo — the wrapper finds the binary and passes `wsa-spec-aws.yaml` for you:
 
 ```bash
-op run --env-file=.env.tpl -- uv run workshop spec-validate       # pre-flight the spec + tooling
-op run --env-file=.env.tpl -- uv run workshop build --accounts 1-20 --concurrency 4
-op run --env-file=.env.tpl -- uv run workshop clean               # newest run, resolved for you
+uv run workshop spec-validate                     # pre-flight the spec + tooling
+uv run workshop build --accounts 1-20 --concurrency 4
+uv run workshop clean                             # newest run, resolved for you
 ```
+
+`build` and `clean` collect the `TF_VAR_*` secrets themselves — from the environment,
+then `credentials.env`, then a prompt — so there is nothing to inject by hand. Exported
+values still win, so `op run --env-file=<your-template> -- uv run workshop build` works
+unchanged if you keep them in a vault.
 
 `workshop build` provisions **and** writes every attendee's credential card from the
 run's `build-output.csv`, so there is no run-id to copy. Pass the attendee count on the
-command line — `create-workshop --attendees N`, or `workshop build --accounts 1-N` — and
-export the shared Confluent/Bedrock secrets as `TF_VAR_*` (see the spec's `env_vars:`).
+command line — `create-workshop --attendees N`, or `workshop build --accounts 1-N`.
 `account_count` in [`wsa-spec-aws.yaml`](wsa-spec-aws.yaml) is only the default. Each attendee
 gets an isolated Confluent environment, a CDC connector with its own replication slot,
 the LLM models, and an always-on race feed.
@@ -134,9 +138,9 @@ uv run workshop stop-races      # scale every attendee simulator to 0
 uv run workshop start-races     # ...and back to 1 (synchronized restart)
 ```
 
-Attendees who claimed through the dispenser
-(`<sibling>/bin/wsa dispenser-upload --sheets-credentials sheets-credentials.json`)
-build their own card from the claim email:
+Attendees who claimed through the dispenser (whose accounts `create-workshop` uploads
+to the Google Sheet automatically, right after it writes the cards) build their own
+card from the claim email:
 
 ```bash
 uv run f1-onboard   # prompts field-by-field, or --paste to parse a pasted email

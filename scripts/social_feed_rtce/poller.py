@@ -7,12 +7,29 @@ are reused unchanged. Re-feeding the standings each tick lets ``FeedState`` deri
 the ``headline_events`` (position changes, anomaly onset, new pit calls) exactly as
 it does live.
 
-``race_standings`` is a keyed upsert table — RTCE's native case, so ``SELECT *``
-returns the current row per car. ``car_state`` and ``pit_decisions`` are *append*
-topics with no primary key; RTCE may not materialize them the same way, so those
-two queries are **best-effort** — if they error or return nothing, the digest still
-stands on ``race_standings`` (which itself carries position, gaps, compound, tire
-age, and pit count).
+**RTCE cannot query upsert topics, which inverts what you would expect here.**
+``race_standings`` is a keyed upsert table, and every ``queryData`` against it
+fails with ``MT_UPSERT_NOT_SUPPORTED: Upsert (compacted) topics are not supported
+in RTCE`` — verified live 2026-08-03. It is not a permissions or schema problem
+and no query shape avoids it: ``listTopics`` still reports the topic ``online``
+and ``getMetadata`` still returns its columns, so the failure only appears at
+query time. ``race_standings`` therefore cannot be a source here at all, and it
+is not polled — a call that can only ever fail is not worth a round trip per
+attendee per tick.
+
+That leaves the *append* topics, which are exactly the ones the old comment here
+guessed might not work: ``car_telemetry``, and the two an attendee creates,
+``car_state`` (LAB 3) and ``pit_decisions`` (LAB 4). ``car_state`` is the useful
+one — it is the temporal join's output, so it already carries ``position``,
+``gap_to_leader_sec``, ``gap_to_ahead_sec``, ``pit_stops``, ``tire_compound`` and
+``tire_age_laps`` for our car alongside the telemetry and the anomaly flag. It is
+fed to ``update_standing`` as well as ``update_car_state`` so ``FeedState`` can
+still derive position-change headlines.
+
+Consequences to know before demoing: the digest covers **car #88 only** (no rival
+gaps, no driver/team names — those live only in ``race_standings``), and it is
+**empty until the attendee has run LAB 3**, since ``car_state`` does not exist
+before then. Both queries stay best-effort for that reason.
 """
 
 from __future__ import annotations
@@ -25,7 +42,6 @@ from scripts.social_feed_rtce.rtce_client import RTCEClient
 
 logger = logging.getLogger("f1-social-feed-rtce.poller")
 
-STANDINGS_TOPIC = "race_standings"
 CAR_STATE_TOPIC = "car_state"
 PIT_DECISIONS_TOPIC = "pit_decisions"
 
@@ -36,15 +52,9 @@ def _latest_by_lap(rows: list[dict]) -> dict | None:
 
 async def poll_once(client: RTCEClient, feed: FeedState, seen: dict) -> None:
     """One RTCE refresh of a single attendee's feed."""
-    try:
-        for row in await client.query(STANDINGS_TOPIC, "SELECT *"):
-            feed.update_standing(row)
-    except Exception as e:
-        logger.debug("[%s] %s query failed: %s", feed.prefix, STANDINGS_TOPIC, e)
-
     # Append topics — best-effort latest row for our car.
     try:
-        latest = _latest_by_lap(await client.query(CAR_STATE_TOPIC, f"SELECT * WHERE car_number = {OUR_CAR_NUMBER}"))
+        latest = _latest_by_lap(await client.query(CAR_STATE_TOPIC, f'"CAR_NUMBER" = {OUR_CAR_NUMBER}'))
         if latest is not None:
             feed.update_car_state(latest)
     except Exception as e:
@@ -52,7 +62,7 @@ async def poll_once(client: RTCEClient, feed: FeedState, seen: dict) -> None:
 
     try:
         latest = _latest_by_lap(
-            await client.query(PIT_DECISIONS_TOPIC, f"SELECT * WHERE car_number = {OUR_CAR_NUMBER}")
+            await client.query(PIT_DECISIONS_TOPIC, f'"CAR_NUMBER" = {OUR_CAR_NUMBER}')
         )
         # Only add a decision when it's for a newer lap, so re-polling the same
         # latest row doesn't fill the decisions buffer with duplicates.

@@ -8,9 +8,13 @@
 # annotated reference. This file is read by `wsa build`, `wsa clean`, and
 # `wsa validate`.
 #
-#   op run --env-file=.env.tpl -- ./bin/wsa validate -w wsa-spec-aws.yaml
-#   op run --env-file=.env.tpl -- ./bin/wsa build -w wsa-spec-aws.yaml \
-#     --accounts 1-2 --concurrency 2
+#   set -a; . ./credentials.env; set +a      # wsa does not collect TF_VAR_* itself
+#   ./bin/wsa validate -w wsa-spec-aws.yaml
+#   ./bin/wsa build -w wsa-spec-aws.yaml --accounts 1-2 --concurrency 2
+#
+# Or skip the export and use the wrappers, which collect the secrets for you:
+#   uv run workshop spec-validate
+#   uv run workshop build --accounts 1-2 --concurrency 2
 #
 # Run from a sibling `workshop-setup-accelerator` checkout (see that repo's
 # ONBOARDING.md "Local layout"). Attendees don't run Terraform: they claim an

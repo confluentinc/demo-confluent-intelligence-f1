@@ -12,9 +12,23 @@ mkdir -p /opt/postgres-init
 
 echo "${driver_race_history_seed_b64}" | base64 -d | gunzip > /opt/postgres-init/01_driver_race_history.sql
 
-# Start Postgres with CDC-ready config
+# Start Postgres with CDC-ready config.
+#
+# `--restart unless-stopped` is load-bearing, not hygiene. cloud-init runs
+# user_data once per instance *id*, so it is skipped entirely on a stop/start —
+# and any change to this file or to max_replication_slots is an in-place
+# `user_data` update, which stops and starts the instance. Without a restart
+# policy Docker comes back on boot and this container does not, leaving every
+# attendee's CDC connector failing with "Connection to <host>:5432 refused"
+# and no way in (no SSH key, no SSM role) to `docker start` it by hand.
+#
+# The database lives in the container's writable layer (only /opt/postgres-init
+# is bind-mounted), so this preserves the container across reboots but a
+# container *replacement* still reseeds from scratch. That is fine here: the
+# 198-row driver_race_history seed is the only data, and it is reproducible.
 docker run -d \
   --name postgres \
+  --restart unless-stopped \
   -p 5432:5432 \
   -e POSTGRES_DB=f1demo \
   -e POSTGRES_USER=f1user \

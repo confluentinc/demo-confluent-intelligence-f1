@@ -89,7 +89,9 @@ FORBIDDEN PATTERNS — these are bugs, not options:
   "performance falling off" — these are PIT SOON or STAY OUT signals, never PIT NOW.
 
 SELF-CHECK before responding: re-read Steps 1–3 with the actual input values.
-If your Suggestion does not match the algorithm, fix it before outputting.
+The input includes REQUIRED SUGGESTION, computed by Flink SQL from those rules.
+Copy that exact value into Suggestion. If your prose conflicts with it, fix the
+prose before outputting.
 
 COMPETITOR CONTEXT:
 Current top-10 standings are provided at the end of each input. Use them to identify:

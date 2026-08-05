@@ -25,10 +25,13 @@ into `./wsa.env` (`main.go:1055-1060`) — harmless, and this module never reads
 it, preferring the build report (see `clean`).
 
 This wraps `wsa`; it does not replace it. Anything beyond the flags exposed
-below is still a direct `wsa` invocation. Secrets stay the caller's business —
-if your Confluent/Bedrock keys live in 1Password, prefix the whole command:
+below is still a direct `wsa` invocation. `build` and `clean` collect the
+`TF_VAR_*` secrets themselves (`ensure_secrets`), because Terraform needs them
+for both the apply and the destroy. Exported values win over `credentials.env`,
+so a 1Password wrapper still works — write your own template, there is none in
+this repo:
 
-    op run --env-file=.env.tpl -- uv run workshop build --accounts 1-20
+    op run --env-file=<your-template> -- uv run workshop build --accounts 1-20
 
 Note the subcommand name: `workshop validate` is the *attendee card* health
 check (`validate.py`), which long predates this module. `wsa`'s spec-and-
@@ -54,6 +57,7 @@ import yaml
 
 from scripts.common.terraform import get_project_root
 from scripts.workshop import creds as creds_mod
+from scripts.workshop.secrets import ensure_secrets
 
 # This repo's wsa spec — `-w/--workshop-spec` is required by every wsa
 # subcommand that reads it (cmd/wsa/main.go), and the answer is always this.
@@ -191,6 +195,41 @@ def _spec_account_count(root: Path) -> int | None:
     spec = yaml.safe_load(_spec_path(root).read_text()) or {}
     raw = spec.get("account_count")
     return None if raw is None else int(raw)
+
+
+def _export_attendee_count(root: Path, args: argparse.Namespace) -> None:
+    """Pin ``TF_VAR_attendee_count`` before wsa's shared-infra apply.
+
+    ``terraform/aws-shared`` sizes Postgres with ``max_replication_slots =
+    attendee_count + 10``, and that number is baked into the EC2 ``user_data``.
+    Leaving it unset does not merely under-provision — it silently *changes* the
+    value, because Terraform then falls back to its own ``default = 50``. A
+    workshop created with ``--attendees 2`` (slots 12) followed by a bare
+    ``workshop build`` (slots 60) rewrites ``user_data``, which is an in-place
+    update that stops and starts the instance. That is exactly how a live
+    Postgres went unreachable mid-build.
+
+    Resolution order, most authoritative first:
+
+    1. An existing ``TF_VAR_attendee_count`` — ``create-workshop`` exports the
+       real ``--attendees`` value before calling here, and it wins.
+    2. ``--account-count``, when passed directly to ``workshop build``.
+    3. The committed spec's ``account_count``.
+
+    Deliberately NOT derived from ``--accounts``: that is a slice of the
+    workshop (``1-2`` while running a 50-person event), not its size, and
+    sizing Postgres from it would under-provision every CDC slot.
+    """
+    var = "TF_VAR_attendee_count"
+    if os.environ.get(var, "").strip():
+        return
+
+    count = getattr(args, "account_count", None) or _spec_account_count(root)
+    if count is None:
+        # No spec value and none passed: leave it unset rather than invent one.
+        # Terraform's default applies, and at least it applies consistently.
+        return
+    os.environ[var] = str(count)
 
 
 def _derive_spec(root: Path, prefix: str = "", account_count: int | None = None) -> Path:
@@ -386,10 +425,116 @@ def _write_cards(root: Path, run: Run, args: argparse.Namespace) -> None:
     print(f"Hand out <prefix>.env + <prefix>.md, or upload the dispenser CSV: {run.csv}")
 
 
+def _is_full_workshop(accounts: str) -> bool:
+    """True when this build covers the whole workshop, not a subset.
+
+    The dispenser sheet is replaced wholesale on every upload, so only a build that
+    accounts for every attendee may upload automatically. Empty (wsa's own default
+    list) and `1-N` are whole workshops; `21-25` is a top-up.
+    """
+    return not accounts.strip() or re.fullmatch(r"1(-\d+)?", accounts.strip()) is not None
+
+
+def _upload_dispenser(
+    root: Path, run: Run, binary: Path, skip: bool = False, full_workshop: bool = True
+) -> None:
+    """Push this run's ``build-output.csv`` into the dispenser Google Sheet.
+
+    Must run *after* `_write_cards`: `creds.py`'s `_add_dispenser_column` appends
+    the RTCE setup command to the same CSV, and the upload is what carries it into
+    each claim email.
+
+    Four ways this does nothing, and none of them are quiet — a skipped upload means
+    the sheet still lists the *previous* workshop's accounts, so attendees claim
+    credentials that no longer exist. Every branch names what is missing and how to
+    fix it.
+
+    Never fatal. The build succeeded and the cards are on disk; a failed upload is
+    one command to retry, not a reason to exit nonzero.
+    """
+    manual = (
+        f"  {binary} dispenser-upload --run-id {run.run_id} "
+        f"--sheets-credentials <oauth-client.json> --yes"
+    )
+    stale = (
+        "  Attendees claiming from the sheet would get the previous workshop's\n"
+        "  credentials, which no longer exist."
+    )
+    if not dispenser_configured(root):
+        print(
+            f"\nnote: no {DISPENSER_ID_ENV} set — skipping the dispenser upload. Hand the cards\n"
+            f"  in runs/ out directly, or set {DISPENSER_ID_ENV}=<spreadsheet-id> in {root}/wsa.env\n"
+            f"  and run:\n{manual}",
+            file=sys.stderr,
+        )
+        return
+    if skip:
+        print(
+            f"\nSkipping the dispenser upload (--no-dispenser-upload).\n{stale}\n"
+            f"  When you want it:\n{manual}",
+            file=sys.stderr,
+        )
+        return
+    if not full_workshop:
+        # An upload is a whole-sheet replace: wsa's ClearAndWrite wipes `Claimed By`
+        # and `Timestamp` along with the rows. Doing that automatically behind
+        # `build -a 21-25` would leave the sheet holding five accounts and erase every
+        # claim already made against the other twenty. Partial builds print the
+        # command instead and let the operator decide.
+        print(
+            "\nSkipping the dispenser upload: this build covers only part of the workshop, "
+            "and an\n  upload replaces the whole sheet (clearing any claims already made). "
+            f"To do it anyway:\n{manual}",
+            file=sys.stderr,
+        )
+        return
+
+    google_creds = find_google_credentials("", binary)
+    if google_creds is None:
+        print(
+            f"\nwarning: no {GOOGLE_CREDS_NAME} found — skipping the dispenser upload.\n{stale}\n"
+            f"  Fix: put the OAuth client JSON at ~/.wsa/{GOOGLE_CREDS_NAME}, then:\n{manual}",
+            file=sys.stderr,
+        )
+        return
+
+    print(f"\n=== Dispenser upload (run {run.run_id}) ===\n")
+    cmd = [
+        str(binary),
+        "dispenser-upload",
+        "--run-id",
+        run.run_id,
+        "--sheets-credentials",
+        str(google_creds),
+        # The sheet is rewritten every workshop by design; without --yes wsa stops
+        # to ask Overwrite?/Append? and a non-interactive create-workshop hangs.
+        "--yes",
+    ]
+    print(f"$ {' '.join(cmd)}\n", flush=True)
+    try:
+        code = subprocess.run(cmd, cwd=root).returncode
+    except KeyboardInterrupt:
+        code = 130
+    if code != 0:
+        print(
+            f"\nwarning: dispenser upload failed (exit {code}). Cards are written and valid; "
+            f"the sheet is not updated. Retry:\n{manual}",
+            file=sys.stderr,
+        )
+
+
 def build(args: argparse.Namespace) -> None:
     """`wsa build` against this repo's spec, then write the credential cards."""
     root = get_project_root()
     binary = find_wsa(root)
+
+    # Terraform needs the TF_VAR_* secrets in the environment. `create-workshop`
+    # collects them before calling here; a bare `workshop build` did not, and
+    # every account failed on "No value for required variable". Collecting here
+    # covers both callers — for the `op run` path it is a no-op, since
+    # `collect_secrets` reads os.environ first and only persists what it prompted for.
+    ensure_secrets(root)
+    _export_attendee_count(root, args)
 
     extra: list[str] = []
     if args.accounts:
@@ -468,6 +613,13 @@ def build(args: argparse.Namespace) -> None:
         print(f"\nSkipping card generation (--no-cards). When you want them:\n  {follow_up}")
         return
     _write_cards(root, run, args)
+    _upload_dispenser(
+        root,
+        run,
+        binary,
+        skip=getattr(args, "no_dispenser_upload", False),
+        full_workshop=_is_full_workshop(args.accounts or ""),
+    )
 
 
 def spec_validate(args: argparse.Namespace) -> None:
@@ -575,7 +727,18 @@ def clean(args: argparse.Namespace) -> None:
     root = get_project_root()
     binary = find_wsa(root)
 
+    # Resolve the run *before* asking for secrets, so "nothing to clean" stays a
+    # one-line error instead of a prompt followed by one.
     run_id = args.run_id or _require_run(root, "clean").run_id
+
+    # `terraform destroy` requires the same TF_VAR_* secrets the apply did.
+    # Without them every account dies on "No value for required variable"
+    # before a single resource is touched — and wsa retries that
+    # non-retryable error twice more. `teardown-workshop` already collects
+    # them; doing it here covers a bare `workshop clean` too (the second call
+    # is a no-op).
+    ensure_secrets(root)
+
     extra = ["--run-id", run_id]
     if args.accounts:
         extra += ["--accounts", args.accounts]
@@ -624,11 +787,14 @@ def clean(args: argparse.Namespace) -> None:
 
 BUILD_EPILOG = """\
 Wraps `wsa build`, then feeds the run's build-output.csv straight into
-`workshop creds` — no run-id to copy. Secrets are still yours to inject:
+`workshop creds` — no run-id to copy. Secrets come from the environment, then
+credentials.env, then a prompt, so there is nothing to inject:
 
-  op run --env-file=.env.tpl -- uv run workshop build --accounts 1-20 --concurrency 4
+  uv run workshop build --accounts 1-20 --concurrency 4
 
-For flags this wrapper does not expose, call wsa directly (fully supported):
+For flags this wrapper does not expose, call wsa directly (fully supported) —
+but export the TF_VAR_* secrets first, wsa does not collect them:
+  set -a; . ./credentials.env; set +a
   <sibling>/bin/wsa build -w wsa-spec-aws.yaml ...
 """
 
@@ -678,6 +844,12 @@ def add_build_arguments(p: argparse.ArgumentParser) -> None:
         "--no-cards",
         action="store_true",
         help="Build only; print the `workshop creds` command instead of running it",
+    )
+    p.add_argument(
+        "--no-dispenser-upload",
+        action="store_true",
+        help="Skip pushing this run's accounts into the dispenser Google Sheet "
+        "(already a no-op when WSA_DISPENSER_SPREADSHEET_ID is unset)",
     )
     p.add_argument(
         "--no-rtce-keys",

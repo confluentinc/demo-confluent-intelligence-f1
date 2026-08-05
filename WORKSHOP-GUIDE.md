@@ -18,11 +18,17 @@ How to deploy, run, and reset a multi-participant F1 Pit Wall AI workshop.
   currently signed in" the moment a session expires mid-run.
 
 You'll be prompted for any missing secrets on first run and they're saved to
-`credentials.env` for the next one, so there's nothing to inject by hand. If you'd
-rather keep them in 1Password, write your own `.env.tpl` and use `op run --env-file`.
-There is no `.env.tpl` in this repo — the one in the `wsa` checkout resolves against
-the TMM-owned `Workshop Setup Accelerator` vault, which most people can't read, so
-copying that command is a dead end.
+`credentials.env` for the next one, so there's nothing to inject by hand. That applies
+to `workshop build` and `workshop clean` as well as `create-workshop` / `teardown-workshop`
+— **`terraform destroy` needs the same secrets the apply did**, and without them every
+account fails with "No value for required variable" before a single resource is touched.
+
+If you'd rather keep them in 1Password, write your own `.env.tpl` and use
+`op run --env-file` — exported values take precedence. There is no `.env.tpl` in this
+repo; the one in the `wsa` checkout resolves against the TMM-owned `Workshop Setup
+Accelerator` vault, which most people can't read, so copying that command is a dead end.
+Calling the `wsa` binary directly also skips the collection — export first:
+`set -a; . ./credentials.env; set +a`.
 
 ---
 
@@ -35,9 +41,15 @@ and refuses to build without them.
 Do this **once, ever** — not per workshop. `wsa clean` rotates the passwords at
 teardown but never deletes the users, so the next workshop reuses them.
 
-> **Already done for accounts 1-40** (`bheintz+f1wp1..40@confluent.io`, prepped
-> 2026-08-03). Skip this section unless you're adding account 41 or higher, or a
+> **Already done for accounts 1-50** (`bheintz+f1wp1..50@confluent.io`, prepped
+> 2026-08-03). Skip this section unless you're adding account 51 or higher, or a
 > different organizer is running the workshop from a different `email_pattern`.
+>
+> A second organizer's users live in the same org under their own alias
+> (`dmarsh+f1wpN@`) and their own 1Password vault. They are inert here — wsa
+> resolves accounts from `email_pattern` exactly. What *is* shared is the resource
+> `prefix` (`f1wp{NNN}`): two simultaneous builds would fight over
+> `RIVER-RACING-f1wp001-ENV`. Check `confluent environment list` before building.
 
 ```bash
 # 1. Invite one user per account number, matching wsa-spec-aws.yaml's email_pattern.
@@ -58,7 +70,9 @@ done
 
 # 4. Verify before you ever run a build. An unaccepted user fails
 #    terraform/modules/environment's confluent_user lookup at PLAN time.
-confluent iam user list -o json | grep -c 'f1wp'   # expect your account count
+#    Match your OWN plus-alias, not bare 'f1wp' — a second organizer running this
+#    workshop in the same org (e.g. dmarsh+f1wpN@) inflates the loose count.
+confluent iam user list -o json | grep -c 'bheintz+f1wp'   # expect your account count
 op read "op://Workshop Setup Accelerator Users/Account 040/confluent-cloud/password" >/dev/null && echo ok
 ```
 
@@ -162,8 +176,9 @@ runs/<name>/credentials/f1wp001.env   <- companion API keys, for f1-pitwall
 The `.md` is what an attendee reads: it leads with their Confluent Cloud sign-in
 details, then the environment/compute-pool IDs they need in the SQL workspace.
 The `.env` holds the Kafka, Schema Registry, and Flink API keys. Hand out both,
-or use the wsa dispenser for self-serve claim (`wsa dispenser-upload` resolves
-the same passwords from 1Password and mails them to the claimant).
+or use the wsa dispenser for self-serve claim (the upload happens automatically at
+the end of `create-workshop`; wsa resolves the same passwords from 1Password and
+mails them to the claimant).
 
 > **Dispenser attendees and the RTCE command.** A dispenser claimant never sees
 > the `.md` card, so `workshop creds` appends a
@@ -180,9 +195,15 @@ Skip this entirely if you hand out `.md` cards — everything else in this guide
 works without a dispenser. Set it up once if you'd rather attendees self-serve:
 they submit a Google Form and the Apps Script emails them one unclaimed account.
 
+The Form and Sheet for a given workshop are **not recorded here** — keep the Form
+link and spreadsheet ID out of the repo. The ID belongs in the gitignored `wsa.env`;
+share the Form link out of band. Leave the Form's **Accepting responses** off until
+workshop day, and run `clearClaims()` from the Apps Script editor between test runs
+to wipe `Claimed By` / `Timestamp` and reset the resend counters.
+
 The Form + Sheet + Apps Script steps are documented in the repo that owns
 `Code.gs` — follow **`<wsa>/account-dispenser/SETUP.md`** and don't copy it here.
-Four things that guide gets wrong or doesn't cover for this workshop:
+Five things that guide gets wrong or doesn't cover for this workshop:
 
 1. **Skip the step that has you add headers and paste account data.** `wsa dispenser-upload`
    creates the `AccountInventory` tab if it's missing and overwrites the header row
@@ -199,16 +220,27 @@ Four things that guide gets wrong or doesn't cover for this workshop:
    upload opens a fresh consent flow and caches to `~/.wsa/sheets-token.json`. Enable
    the **Google Sheets API** in the same GCP project as that OAuth client first, or
    consent fails with an API-disabled error.
-4. **Upload after the cards, never instead of them.** `workshop creds` is what adds
-   the RTCE `MCP Setup Command` column to `build-output.csv`, so uploading a CSV from
-   a raw `wsa build` (rather than `create-workshop` / `workshop build`, which write
-   cards automatically) emails attendees everything except their RTCE key.
+4. **You don't run the upload yourself.** Once `wsa.env` has the ID,
+   `create-workshop` (and `workshop build`) uploads that run's accounts right after
+   it writes the cards — that order matters, because `workshop creds` is what adds
+   the RTCE `MCP Setup Command` column to `build-output.csv`. Every way it can skip —
+   no ID, no OAuth client JSON, `--no-dispenser-upload`, or a partial `--accounts`
+   range — prints what is missing and the command to run by hand, because a quiet
+   skip reads as success and leaves you with a stale sheet on workshop morning. Opt
+   out with `--no-dispenser-upload`.
+5. **The Form's response tab must have a header row.** `onFormSubmit` keys
+   `e.namedValues` off it and falls back to positional columns when it's blank,
+   which claims a row against the attendee's *name* and then dies with
+   `Invalid email: <name>`. Row 1 of the response tab must read exactly
+   `Timestamp` | `First Name` | `Email Address`, matching the Form's question titles.
+   Google normally creates it; a manually created tab won't have one.
 
 ```bash
-# One-time, after the Sheet/Form/script exist and wsa.env has the ID:
-<wsa>/bin/wsa dispenser-upload --sheets-credentials ~/.wsa/gmail-credentials.json
+# Nothing to run per workshop. To do it by hand anyway (e.g. after a raw `wsa build`):
+<wsa>/bin/wsa dispenser-upload --sheets-credentials ~/.wsa/gmail-credentials.json --yes
 
-# Then share the FORM link with attendees — never the Sheet.
+# Share the FORM link with attendees — never the Sheet. The link is permanent;
+# each upload replaces the account rows behind it (and clears any earlier claims).
 ```
 
 > **Order matters.** Cards are only valid for the password that was current when
