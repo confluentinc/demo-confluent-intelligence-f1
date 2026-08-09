@@ -461,7 +461,7 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
         "spec's account_count; shared Postgres already supports up to 95 accounts "
         "(default: prompted, or the spec's account_count)",
     )
-    p.add_argument("-c", "--concurrency", type=int, default=4, help="Parallel Terraform runs (default: 4)")
+    p.add_argument("-c", "--concurrency", type=int, default=10, help="Parallel Terraform runs (default: 10)")
     p.add_argument(
         "-n", "--name", default="", help="Card directory label — runs/<name>/credentials/ (default: the run-id)"
     )

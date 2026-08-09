@@ -182,3 +182,4 @@ api-key-*.txt
 # Local validation notes can include internal product behavior and live-run
 # observations. Keep them available to organizers without publishing them.
 /docs/technical-discoveries.md
+/docs/QR Code - Elevate Demo Accounts.png

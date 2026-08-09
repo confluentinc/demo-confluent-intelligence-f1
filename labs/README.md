@@ -1,5 +1,11 @@
 # F1 Pit Wall AI Workshop — Labs
 
+The attendee-facing workshop now lives in the single-file
+[`Walkthrough.md`](../Walkthrough.md). It includes all six labs, required SQL,
+the watsonx Orchestrate agent instructions, and troubleshooting. The files under
+`labs/instructor-led/` remain temporarily as source copies while the repository
+cleanup is reviewed.
+
 Build a real-time AI pit-strategy system for **River Racing** at the Silverstone
 Grand Prix. Live car telemetry and race standings stream into Confluent Cloud,
 where you'll use **Flink SQL** to detect tire anomalies and run an **AI Streaming

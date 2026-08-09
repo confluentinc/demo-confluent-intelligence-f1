@@ -28,8 +28,9 @@ The organizer lifecycle has six phases:
 | Teardown | `uv run teardown-workshop` |
 
 [WORKSHOP-GUIDE.md](WORKSHOP-GUIDE.md) covers the complete organizer lifecycle.
-Use [RUN-OF-SHOW.md](RUN-OF-SHOW.md) during delivery, and send attendees to
-[labs/README.md](labs/README.md).
+Use [RUN-OF-SHOW.md](RUN-OF-SHOW.md) during delivery, and send attendees to the
+single-file [Walkthrough.md](Walkthrough.md). If the pre-provisioned attendee
+environments fail, switch to the [local self-service backup guide](docs/backup/LOCAL-SELF-SERVICE.md).
 
 ## What attendees build
 
@@ -47,8 +48,8 @@ Shared Postgres -> per-attendee CDC connector -> driver_race_history
 ```
 
 The canonical Flink SQL lives in [`demo-reference/`](demo-reference/) and is
-reproduced in the lab guides. Keep those SQL files, the matching lab sections,
-and `RUN-OF-SHOW.md` synchronized.
+reproduced in `Walkthrough.md`, the modular lab copies, and `RUN-OF-SHOW.md`.
+Keep those copies synchronized until the modular lab files are retired.
 
 For the scenario, data sources, and intended pit-wall outcome, see
 [docs/USE-CASE.md](docs/USE-CASE.md).
