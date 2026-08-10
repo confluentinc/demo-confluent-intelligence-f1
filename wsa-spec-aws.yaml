@@ -25,7 +25,7 @@
 # PREREQUISITE — the logins are NOT created by this spec. Each email_pattern
 # address must already be an accepted Confluent Cloud user with a password in
 # 1Password before `wsa build` runs, or terraform/aws's confluent_user lookup
-# fails at plan time. One-time per account number; see WORKSHOP-GUIDE.md.
+# fails at plan time. One-time per account number; see docs/organizer/WORKSHOP-GUIDE.md.
 # =============================================================================
 
 name: confluent-intelligence-f1

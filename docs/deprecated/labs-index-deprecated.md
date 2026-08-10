@@ -1,10 +1,12 @@
-# F1 Pit Wall AI Workshop — Labs
+# F1 Pit Wall AI Workshop — Labs (deprecated)
+
+> This split lab index is retained for reference. Attendees should use the
+> canonical [`Walkthrough.md`](../../Walkthrough.md).
 
 The attendee-facing workshop now lives in the single-file
-[`Walkthrough.md`](../Walkthrough.md). It includes all six labs, required SQL,
-the watsonx Orchestrate agent instructions, and troubleshooting. The files under
-`labs/instructor-led/` remain temporarily as source copies while the repository
-cleanup is reviewed.
+[`Walkthrough.md`](../../Walkthrough.md). It includes all six labs, required SQL,
+the watsonx Orchestrate agent instructions, and troubleshooting. The former
+`labs/instructor-led/` files are archived here for reference.
 
 Build a real-time AI pit-strategy system for **River Racing** at the Silverstone
 Grand Prix. Live car telemetry and race standings stream into Confluent Cloud,
@@ -27,18 +29,18 @@ needed for the SQL itself. The card's companion `.env` (API keys) is only for
 the live Pit Wall dashboard.
 
 Labs 1–4 happen in that workspace; LAB 5 is a no-code agent you build in the IBM
-watsonx Orchestrate web UI. [LAB 1](instructor-led/LAB1_claim_account/LAB1.md)
+watsonx Orchestrate web UI. [LAB 1](LAB1-open-your-environment-deprecated.md)
 walks you through signing in.
 
 > **Running solo?** These same labs apply to an environment you provisioned
 > yourself, with a couple of differences depending on which way you did it:
 >
-> - **`uv run selfservice up`** ([self-service guide](../docs/tracks/SELF-SERVICE.md)) —
+> - **`uv run selfservice up`** ([self-service guide](../backup/LOCAL-SELF-SERVICE.md)) —
 >   Confluent Cloud only. Start your own live feed with `uv run f1-race` instead of
 >   relying on an instructor's simulator. There is no CDC connector, so
 >   `driver_race_history` is an **Avro** table seeded by a bounded Flink `INSERT`
 >   rather than JSON arriving from Postgres.
-> - **`uv run deploy`** ([standalone guide](../docs/tracks/STANDALONE-DEMO.md)) —
+> - **`uv run deploy`** ([standalone guide](../tracks/STANDALONE-DEMO.md)) —
 >   the same AWS shape as the workshop below (ECS simulator, Postgres CDC, JSON
 >   `driver_race_history`); you control your own feed with `uv run race start|stop`.
 >
@@ -82,11 +84,11 @@ seeded once by Flink. Labs 3–5 are byte-for-byte the same either way.
 
 | Lab | Time | What you do |
 |-----|------|-------------|
-| [LAB 1 — Open your environment](instructor-led/LAB1_claim_account/LAB1.md) | 5 min | Sign in to Confluent Cloud and open a SQL workspace |
-| [LAB 2 — Explore the environment](instructor-led/LAB2_explore_environment/LAB2.md) | 10 min | Inspect the tables, the live feed, and the pre-deployed models — all in SQL |
-| [LAB 3 — Stream processing](instructor-led/LAB3_stream_processing/LAB3.md) | 20 min | Window + temporal join + `ML_DETECT_ANOMALIES` → `car_state`, then forecast with Granite `AI_FORECAST` |
-| [LAB 4 — Streaming agent](instructor-led/LAB4_streaming_agent/LAB4.md) | 20 min | `CREATE AGENT` + `AI_RUN_AGENT` → `pit_decisions` |
-| [LAB 5 — Social media agent](instructor-led/LAB5_orchestrate_integration/LAB5.md) | 15 min | Build a no-code **IBM watsonx Orchestrate** agent that drafts posts from the live feed |
-| [LAB 6 — Wrap-up](instructor-led/LAB6_wrap_up/LAB6.md) | 5 min | Query the agent's calls and review the outcome |
+| [LAB 1 — Open your environment](LAB1-open-your-environment-deprecated.md) | 5 min | Sign in to Confluent Cloud and open a SQL workspace |
+| [LAB 2 — Explore the environment](LAB2-explore-the-environment-deprecated.md) | 10 min | Inspect the tables, the live feed, and the pre-deployed models — all in SQL |
+| [LAB 3 — Stream processing](LAB3-stream-processing-deprecated.md) | 20 min | Window + temporal join + `ML_DETECT_ANOMALIES` → `car_state`, then forecast with Granite `AI_FORECAST` |
+| [LAB 4 — Streaming agent](LAB4-streaming-agent-deprecated.md) | 20 min | `CREATE AGENT` + `AI_RUN_AGENT` → `pit_decisions` |
+| [LAB 5 — Social media agent](LAB5-social-media-agent-deprecated.md) | 15 min | Build a no-code **IBM watsonx Orchestrate** agent that drafts posts from the live feed |
+| [LAB 6 — Wrap-up](LAB6-wrap-up-deprecated.md) | 5 min | Query the agent's calls and review the outcome |
 
-Stuck? See the [troubleshooting guide](shared/troubleshooting.md).
+Stuck? See the [troubleshooting guide](troubleshooting-deprecated.md).

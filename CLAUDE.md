@@ -24,8 +24,9 @@ Every `uv run` command in this repo — organizer provisioning, credential cards
 race control, reset, standalone deploy, self-service, pitwall, social feed,
 setup-mcp, tests and lint — is in the **`f1-workshop-commands`** skill
 (`.claude/skills/f1-workshop-commands/SKILL.md`). Load it before running or
-explaining any of them. The checked-in references are `RUN-OF-SHOW.md` (attendee
-commands in lab order), `WORKSHOP-GUIDE.md` (organizer lifecycle), and the
+explaining any of them. The checked-in references are `Walkthrough.md` (attendee
+steps), `docs/organizer/RUN-OF-SHOW.md` (presenter cues),
+`docs/organizer/WORKSHOP-GUIDE.md` (organizer lifecycle), and the
 `[project.scripts]` table in `pyproject.toml` (every entry point).
 
 ---
@@ -122,7 +123,7 @@ with raw VARCHAR and BYTES keys. Four things that are easy to get wrong:
 ## Flink Jobs (the labs)
 
 Jobs 1 & 2 are **not** pre-deployed — attendees write them in LAB 3 / LAB 4. The
-canonical SQL is in `demo-reference/` and reproduced in the lab guides.
+canonical SQL is in `demo-reference/` and reproduced in `Walkthrough.md`.
 
 | Job | SQL file | Input → Output |
 |-----|----------|----------------|
@@ -248,26 +249,24 @@ Provisioning and teardown are owned by `wsa`
 upload, and the teardown gotcha where a missing Google OAuth client leaves
 attendee passwords live are all in the **`wsa-provisioning`** skill
 (`.claude/skills/wsa-provisioning/SKILL.md`). The checked-in references are
-`WORKSHOP-GUIDE.md`, `wsa-spec-aws.yaml` itself, and `scripts/workshop/wsa.py`.
+`docs/organizer/WORKSHOP-GUIDE.md`, `wsa-spec-aws.yaml` itself, and
+`scripts/workshop/wsa.py`.
 
 ---
 
 ## File Sync Rule
 
-`demo-reference/*.sql` and the lab guides under `labs/instructor-led/` must stay
-in sync — when you change the SQL in one, update the other in the same pass. The
-same applies to `demo-reference/orchestrate_social_agent.md` ↔ the LAB 5 guide
-(`labs/instructor-led/LAB5_orchestrate_integration/LAB5.md`). The root
-`RUN-OF-SHOW.md` (presenter/attendee command sheet) inlines the LAB 3/4 SQL
-verbatim, so it is part of the same sync set — update it too when the SQL changes.
+`demo-reference/*.sql`, `demo-reference/orchestrate_social_agent.md`, and the
+corresponding examples in `Walkthrough.md` must stay in sync. The organizer
+run-of-show links to the walkthrough and must not duplicate attendee SQL.
 
-LAB 3 has **two** implementations, so its sync set is doubled. The default ARIMA
-`ML_DETECT_ANOMALIES` version lives in `demo-reference/enrichment_anomaly.sql`,
-`LAB3.md`, and `RUN-OF-SHOW.md` — change one and change the other two. The only guard
-is a manual diff: extract the `CREATE TABLE car_state` … `WHERE lap > 0;` span from
-each of the three and compare. The opt-in Granite `AI_DETECT_ANOMALIES` version lives
-in `demo-reference/enrichment_anomaly_ai.sql` and the collapsed `<details>` block in
-`LAB3.md` (RUN-OF-SHOW just links the file); those two share only the `anomaly` CTE.
+The split lab files under `docs/deprecated/` are historical references, not part
+of the sync set. Do not restore `labs/instructor-led/` or copy SQL into organizer
+docs. The default ARIMA `ML_DETECT_ANOMALIES` and optional 20-step Granite
+`AI_FORECAST` examples each have a checked-in source under `demo-reference/`
+and an attendee copy in `Walkthrough.md`. The experimental Granite
+`AI_DETECT_ANOMALIES` query is maintainer-only and must not be added to the
+attendee walkthrough.
 
 ---
 

@@ -24,7 +24,7 @@ variable "owner_email" {
 }
 
 variable "grant_console_access" {
-  description = "Give the attendee EnvironmentAdmin on their own environment so they can log in to the Confluent Cloud Console and use the Flink SQL workspace. Requires owner_email to already exist as an accepted CC user — see WORKSHOP-GUIDE.md's one-time org prep."
+  description = "Give the attendee EnvironmentAdmin on their own environment so they can log in to the Confluent Cloud Console and use the Flink SQL workspace. Requires owner_email to already exist as an accepted CC user — see docs/organizer/WORKSHOP-GUIDE.md's one-time org prep."
   type        = bool
   default     = false
 }

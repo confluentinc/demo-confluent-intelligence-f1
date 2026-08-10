@@ -1,11 +1,13 @@
-# LAB 3 — Stream Processing: Enrichment + Anomaly Detection
+# LAB 3 — Stream Processing: Enrichment + Anomaly Detection (deprecated)
+
+> Retained for reference. Use the canonical [`Walkthrough.md`](../../Walkthrough.md).
 
 ## Overview
 
 Build the intelligence layer. You'll combine the live telemetry and standings
 into a single `car_state` stream and detect the front-left tire-temperature
 anomaly that signals a failing tire — using Flink's built-in
-`ML_DETECT_ANOMALIES` — then use IBM Granite to forecast the next three
+`ML_DETECT_ANOMALIES` — then optionally use IBM Granite to forecast the next 20
 tire-temperature windows.
 
 ### What you'll accomplish
@@ -18,7 +20,7 @@ tire-temperature windows.
 
 ### Prerequisites
 
-[LAB 2](../LAB2_explore_environment/LAB2.md) — data is flowing, models exist.
+[LAB 2](LAB2-explore-the-environment-deprecated.md) — data is flowing, models exist.
 
 ## Steps
 
@@ -190,13 +192,13 @@ spikes to ~145°C. (Ctrl-C to stop the query.)
 > (`minTrainingSize`) — 20 × 10 seconds, so about 3½ minutes of live data — and it
 > won't flag anything before then. If
 > `car_state` stays empty, see
-> [troubleshooting](../../shared/troubleshooting.md).
+> [troubleshooting](troubleshooting-deprecated.md).
 
-### Step 3: Forecast tire temperature with IBM Granite
+### Step 3 (optional): Forecast tire temperature with IBM Granite
 
 Open a new SQL cell and run the query below. It uses the same 10-second tire
 temperature windows, but asks the built-in `AI_FORECAST` function for the next
-three values. The `model` option selects IBM Granite TinyTimeMixer directly;
+20 values. The `model` option selects IBM Granite TinyTimeMixer directly;
 there is no connection or model to register.
 
 ```sql
@@ -218,7 +220,7 @@ forecasted AS (
       window_time,
       JSON_OBJECT(
         'model' VALUE 'ttm',
-        'horizon' VALUE 3,
+        'horizon' VALUE 20,
         'minContextSize' VALUE 20,
         'maxContextSize' VALUE 50,
         'rmseWindowSize' VALUE 5
@@ -234,21 +236,26 @@ SELECT
   lap,
   window_time AS forecast_generated_at,
   tire_temp_fl_c AS current_tire_temperature_c,
-  forecast_result.forecast AS tire_temperature_forecast,
+  forecast_result.forecast[0].`timestamp` AS next_point_at,
+  forecast_result.forecast[0].mean AS next_point_c,
+  forecast_result.forecast[9].`timestamp` AS hundred_seconds_out_at,
+  forecast_result.forecast[9].mean AS hundred_seconds_out_c,
+  forecast_result.forecast[19].`timestamp` AS two_hundred_seconds_out_at,
+  forecast_result.forecast[19].mean AS two_hundred_seconds_out_c,
+  forecast_result.forecast AS full_forecast,
   forecast_result.metadata AS forecast_metadata
 FROM forecasted
 WHERE CARDINALITY(forecast_result.forecast) > 0;
 ```
 
-Each result contains a three-element forecast array. Each element has a future
-timestamp and predicted mean. The metadata identifies `ttm`, confirming that
-Granite served the forecast. `minContextSize = 20` means the model needs about
-3½ minutes of 10-second windows before it can forecast.
+Each result contains a 20-element forecast array. With 10-second windows, that
+projects about 200 seconds, or 3 minutes 20 seconds, into the future. The metadata
+identifies `ttm`, confirming that Granite served the forecast.
 
 This SELECT is only an experiment. After you see forecast rows, stop the
 statement in the SQL workspace so LAB 4 has the full compute pool available.
 The checked-in copy is
-[`granite_tire_forecast.sql`](granite_tire_forecast.sql).
+[`granite_tire_forecast.sql`](../../demo-reference/granite_tire_forecast.sql).
 
 ### Step 4 (optional): Publish `car_state` to the Real-Time Context Engine
 
@@ -286,4 +293,4 @@ tools (`list_topics`, `get_metadata`, `query_data`) pick it up automatically.
 `car_state` is the live, enriched, anomaly-aware view of the car, and Granite
 can forecast its source telemetry without changing that proven anomaly path.
 Feed `car_state` to the AI agent in
-[LAB 4 — Streaming agent](../LAB4_streaming_agent/LAB4.md).
+[LAB 4 — Streaming agent](LAB4-streaming-agent-deprecated.md).

@@ -1,4 +1,6 @@
-# LAB 1 — Open Your Environment
+# LAB 1 — Open Your Environment (deprecated)
+
+> Retained for reference. Use the canonical [`Walkthrough.md`](../../Walkthrough.md).
 
 ## Overview
 
@@ -14,7 +16,7 @@ browser's SQL workspace.
 3. Confirm your environment is live
 4. Open your live **Pit Wall** dashboard
 
-> **Heads-up for LAB 5:** [LAB 5](../LAB5_orchestrate_integration/LAB5.md) uses
+> **Heads-up for LAB 5:** [LAB 5](LAB5-social-media-agent-deprecated.md) uses
 > **IBM watsonx Orchestrate**. Your instructor provides access during the
 > workshop — there's nothing to sign up for or set up in advance.
 
@@ -61,7 +63,7 @@ Keep both private — between them they grant full access to your environment.
 
 > **LAB 5** also needs a **race-feed base URL**, but that's *not* on your card —
 > it's one shared service your instructor gives you the URL for. See
-> [LAB 5](../LAB5_orchestrate_integration/LAB5.md).
+> [LAB 5](LAB5-social-media-agent-deprecated.md).
 
 > Your prefix (`f1wp###` above) is unique to you.
 
@@ -101,7 +103,7 @@ You'll see 22 cars with live positions. It's a streaming query, so it keeps
 running — use **Stop** when you've seen enough.
 
 > If `SHOW TABLES` errors or returns nothing, check the catalog/database
-> dropdowns first — see [troubleshooting](../../shared/troubleshooting.md) or ask
+> dropdowns first — see [troubleshooting](troubleshooting-deprecated.md) or ask
 > your instructor.
 
 ### Step 4: Open your Pit Wall dashboard
@@ -130,4 +132,4 @@ dashboard open in a window you can watch as you work.
 ## Conclusion
 
 You're connected to your environment, data is flowing, and your Pit Wall is live.
-Continue to [LAB 2 — Explore the environment](../LAB2_explore_environment/LAB2.md).
+Continue to [LAB 2 — Explore the environment](LAB2-explore-the-environment-deprecated.md).

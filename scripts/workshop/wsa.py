@@ -341,7 +341,7 @@ def _check_console_accounts(
         "  Accounts never set up?   invite them, then run:\n"
         f"      <wsa>/bin/wsa accept-account-invitation -w {effective_spec.name} \\\n"
         f"        --accounts {requested} --gmail-credentials ~/.wsa/gmail-credentials.json\n"
-        "  See PREREQUISITES.md sections 4-5. Attendees can't log in without this."
+        "  See docs/organizer/PREREQUISITES.md sections 4-5. Attendees can't log in without this."
     )
 
 

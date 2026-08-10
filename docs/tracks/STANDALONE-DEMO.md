@@ -515,7 +515,7 @@ import the public URL. It can't consume RTCE's MCP endpoint directly — it supp
 *local* MCP servers, which is the whole reason this REST shim exists. Agent
 configuration (persona, prompts, tool wiring):
 [`demo-reference/orchestrate_social_agent.md`](../../demo-reference/orchestrate_social_agent.md)
-and the [LAB 5 guide](../../labs/instructor-led/LAB5_orchestrate_integration/LAB5.md).
+and [Lab 5 in the walkthrough](../../Walkthrough.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
 
 ---
 

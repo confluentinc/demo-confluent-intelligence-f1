@@ -1,4 +1,6 @@
-# LAB 2 — Explore the Environment
+# LAB 2 — Explore the Environment (deprecated)
+
+> Retained for reference. Use the canonical [`Walkthrough.md`](../../Walkthrough.md).
 
 ## Overview
 
@@ -14,7 +16,7 @@ the SQL workspace you opened in LAB 1.
 
 ### Prerequisites
 
-[LAB 1](../LAB1_claim_account/LAB1.md) — you're signed in with a SQL workspace open.
+[LAB 1](LAB1-open-your-environment-deprecated.md) — you're signed in with a SQL workspace open.
 
 ## Steps
 
@@ -93,4 +95,4 @@ yourself.
 ## Conclusion
 
 Source data is flowing and the AI models are ready. Now build the intelligence
-layer in [LAB 3 — Stream processing](../LAB3_stream_processing/LAB3.md).
+layer in [LAB 3 — Stream processing](LAB3-stream-processing-deprecated.md).

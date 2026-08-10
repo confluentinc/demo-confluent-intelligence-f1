@@ -1,4 +1,6 @@
-# LAB 6 — Wrap-Up
+# LAB 6 — Wrap-Up (deprecated)
+
+> Retained for reference. Use the canonical [`Walkthrough.md`](../../Walkthrough.md).
 
 ## Overview
 
@@ -6,8 +8,8 @@ Review what your pipeline produced and reflect on what you built.
 
 ### Prerequisites
 
-[LAB 5](../LAB5_orchestrate_integration/LAB5.md) — your Orchestrate social agent
-is drafting posts (and `pit_decisions` from [LAB 4](../LAB4_streaming_agent/LAB4.md)
+[LAB 5](LAB5-social-media-agent-deprecated.md) — your Orchestrate social agent
+is drafting posts (and `pit_decisions` from [LAB 4](LAB4-streaming-agent-deprecated.md)
 is populating).
 
 ## Steps

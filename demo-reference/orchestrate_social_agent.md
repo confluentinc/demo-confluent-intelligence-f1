@@ -1,7 +1,7 @@
 # Reference — River Racing Social-Media Agent (IBM watsonx Orchestrate)
 
 Canonical configuration for the **LAB 5** no-code agent. Keep this in sync with
-`labs/instructor-led/LAB5_orchestrate_integration/LAB5.md` (see the File Sync Rule
+`Walkthrough.md` (see the File Sync Rule
 in `CLAUDE.md`). Nothing here is Flink SQL — the agent is built entirely in the
 watsonx Orchestrate **Agent Builder** UI and reads live race data from the
 `f1-social-feed` service via an OpenAPI tool.

@@ -1,12 +1,14 @@
-# Backup workshop path: local self-service
+# Local self-service and backup workshop path
 
-Use this path only if the pre-provisioned attendee environments can't be made
-usable before the workshop. Each attendee clones the repository, provisions one
-Confluent Cloud environment, and runs the race simulator on their own computer.
+Use this path for a solo Confluent-only run or when pre-provisioned attendee
+environments can't be made usable before a workshop. Each attendee clones the
+repository, provisions one Confluent Cloud environment, and runs the race
+simulator on their own computer.
 The setup creates Confluent resources only. It doesn't create EC2, ECS, ECR, a
 VPC, Postgres, or a CDC connector, and it doesn't need Docker.
 
-The workshop owner must confirm the credential plan before sending attendees to
+This is also the canonical guide for a solo Confluent-only run. The workshop
+owner must confirm the credential plan before sending attendees to
 this guide. Every attendee needs permission to create resources in a Confluent
 Cloud organization and credentials that can invoke the workshop's AWS Bedrock
 model. Don't send one shared administrator secret to the room.
@@ -55,7 +57,7 @@ With Homebrew:
 brew install git uv
 brew tap hashicorp/tap
 brew install hashicorp/tap/terraform
-brew install confluentinc/tap/cli
+brew install --cask confluent-cli
 ```
 
 If you don't use Homebrew, install `uv` with its signed standalone installer and
@@ -205,6 +207,12 @@ your environment, writes a credential card under
 Flink pool can make the first seed check time out. If setup says the environment
 exists but seeding is incomplete, run the same command once more.
 
+For a solo demo where the lab objects should be built automatically, use:
+
+```bash
+uv run selfservice up --with-labs
+```
+
 Verify the generated card and tables:
 
 ```bash
@@ -224,6 +232,14 @@ Start the simulator in its own terminal:
 
 ```bash
 uv run f1-race
+```
+
+It uses the pacing saved during provisioning (20 seconds per lap by default).
+For a slower race or a single non-looping run:
+
+```bash
+uv run f1-race --seconds-per-lap 60
+uv run f1-race --once
 ```
 
 Open another terminal in the repository and start the Pit Wall:
@@ -264,6 +280,29 @@ uv run f1-race
 
 Continue through Labs 3, 4, and 6. Lab 5 remains optional because it needs IBM
 watsonx Orchestrate and a public race-feed service.
+
+### Optional Lab 5
+
+Run the race-feed service against the generated credential card:
+
+```bash
+uv run f1-social-feed --creds runs/selfservice/credentials/<prefix>.env
+```
+
+Expose `http://localhost:8080/openapi.json` through an approved tunnel, import
+that public OpenAPI URL into watsonx Orchestrate, and follow
+[Lab 5 in `Walkthrough.md`](../../Walkthrough.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
+
+### Optional MCP access
+
+To connect a supported coding client to this environment with the generated
+credential card:
+
+```bash
+uv run setup-mcp
+uv run setup-mcp --client codex
+uv run setup-mcp --client both
+```
 
 ## 7. Stop or reset your local workshop
 
@@ -315,3 +354,9 @@ anomaly function collects its first 20 windows.
 Confirm the AWS key can invoke Bedrock in `us-east-1`. If you use temporary
 credentials, check that `TF_VAR_aws_session_token` is present in
 `credentials.env` and hasn't expired.
+
+## Navigation
+
+- **Overview:** [Main README](../../README.md)
+- **Workshop:** [Attendee walkthrough](../../Walkthrough.md)
+- **Backup:** [Local self-service guide](#local-self-service-and-backup-workshop-path)

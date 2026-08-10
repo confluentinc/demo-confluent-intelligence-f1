@@ -22,7 +22,7 @@ configured plus-address pattern** (for example,
 1. **The users.** Invited by hand (`confluent iam user invitation create`), then
    accepted + first password set by `wsa accept-account-invitation` (headless browser
    + Gmail API). One-time per account number, **forever** — `wsa clean` rotates
-   passwords but never deletes users. See `PREREQUISITES.md`.
+   passwords but never deletes users. See `docs/organizer/PREREQUISITES.md`.
 2. **The password.** Lives only in the 1Password vault `Workshop Setup Accelerator
    Users`, item `Account NNN`, field `confluent-cloud/password`. Terraform never sees
    it; wsa writes the literal `(from 1Password)` into `build-output.csv`.

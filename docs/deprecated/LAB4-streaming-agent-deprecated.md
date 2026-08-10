@@ -1,4 +1,6 @@
-# LAB 4 — Streaming Agent: Pit Decisions
+# LAB 4 — Streaming Agent: Pit Decisions (deprecated)
+
+> Retained for reference. Use the canonical [`Walkthrough.md`](../../Walkthrough.md).
 
 ## Overview
 
@@ -16,7 +18,7 @@ required.
 
 ### Prerequisites
 
-[LAB 3](../LAB3_stream_processing/LAB3.md) — `car_state` is running and shows the
+[LAB 3](LAB3-stream-processing-deprecated.md) — `car_state` is running and shows the
 lap-32 anomaly.
 
 ## Steps
@@ -24,7 +26,7 @@ lap-32 anomaly.
 ### Step 1: Create the agent
 
 The agent's full prompt lives in
-[`demo-reference/streaming_agent_create_agent.sql`](../../../demo-reference/streaming_agent_create_agent.sql).
+[`demo-reference/streaming_agent_create_agent.sql`](../../demo-reference/streaming_agent_create_agent.sql).
 Open it and paste the whole file into a workspace cell — comment header and
 all — as one statement, then run it.
 
@@ -50,7 +52,7 @@ SHOW AGENTS;
 ### Step 2: Produce `pit_decisions`
 
 Run the second statement, from
-[`demo-reference/streaming_agent_pit_decisions.sql`](../../../demo-reference/streaming_agent_pit_decisions.sql).
+[`demo-reference/streaming_agent_pit_decisions.sql`](../../demo-reference/streaming_agent_pit_decisions.sql).
 It formats each `car_state` row into a prompt, calls `AI_RUN_AGENT`, and parses
 the agent's labeled response into columns:
 
@@ -141,4 +143,4 @@ LATERAL TABLE(AI_RUN_AGENT(
 
 You've built an end-to-end real-time AI pit strategist. Next, put that live feed
 in front of a business user: build a social-media agent in
-[LAB 5 — Social agent](../LAB5_orchestrate_integration/LAB5.md).
+[LAB 5 — Social agent](LAB5-social-media-agent-deprecated.md).

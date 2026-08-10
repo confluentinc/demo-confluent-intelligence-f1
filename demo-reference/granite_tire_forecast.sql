@@ -1,7 +1,7 @@
--- LAB 3 extension: forecast front-left tire temperature with IBM Granite TTM.
+-- Optional LAB 3 extension: forecast front-left tire temperature with IBM Granite TTM.
 --
 -- This is a temporary SELECT, not a CREATE TABLE. Run it after car_state is
--- producing rows, inspect the three-step forecasts, then stop the statement in
+-- producing rows, inspect the 20-step forecasts, then stop the statement in
 -- the SQL workspace so it does not consume compute during LAB 4.
 --
 -- AI_FORECAST is a built-in function. Granite is selected by the `model`
@@ -28,7 +28,7 @@ forecasted AS (
       window_time,
       JSON_OBJECT(
         'model' VALUE 'ttm',
-        'horizon' VALUE 3,
+        'horizon' VALUE 20,
         'minContextSize' VALUE 20,
         'maxContextSize' VALUE 50,
         'rmseWindowSize' VALUE 5
@@ -44,7 +44,13 @@ SELECT
   lap,
   window_time AS forecast_generated_at,
   tire_temp_fl_c AS current_tire_temperature_c,
-  forecast_result.forecast AS tire_temperature_forecast,
+  forecast_result.forecast[0].`timestamp` AS next_point_at,
+  forecast_result.forecast[0].mean AS next_point_c,
+  forecast_result.forecast[9].`timestamp` AS hundred_seconds_out_at,
+  forecast_result.forecast[9].mean AS hundred_seconds_out_c,
+  forecast_result.forecast[19].`timestamp` AS two_hundred_seconds_out_at,
+  forecast_result.forecast[19].mean AS two_hundred_seconds_out_c,
+  forecast_result.forecast AS full_forecast,
   forecast_result.metadata AS forecast_metadata
 FROM forecasted
 WHERE CARDINALITY(forecast_result.forecast) > 0;

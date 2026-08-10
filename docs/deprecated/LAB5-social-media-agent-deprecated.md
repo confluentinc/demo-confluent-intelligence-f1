@@ -1,4 +1,6 @@
-# LAB 5 — Social Media Agent (IBM watsonx Orchestrate)
+# LAB 5 — Social Media Agent (IBM watsonx Orchestrate) (deprecated)
+
+> Retained for reference. Use the canonical [`Walkthrough.md`](../../Walkthrough.md).
 
 ## Overview
 
@@ -20,7 +22,7 @@ UI and point it at a race-feed tool your instructor is hosting.
 
 ### Prerequisites
 
-- [LAB 4](../LAB4_streaming_agent/LAB4.md) — `car_state` and `pit_decisions` exist
+- [LAB 4](LAB4-streaming-agent-deprecated.md) — `car_state` and `pit_decisions` exist
   and a race is running, so the feed has tire/anomaly and pit-call data to post
   about. (Standings alone work even before LAB 3/4 — those fields just stay empty.)
 - **IBM watsonx Orchestrate access** — provided by your instructor during the
@@ -29,7 +31,7 @@ UI and point it at a race-feed tool your instructor is hosting.
   service that serves everyone; you select your own race with your prefix.
 
 > The canonical agent persona, instructions, and example prompts also live in
-> [`demo-reference/orchestrate_social_agent.md`](../../../demo-reference/orchestrate_social_agent.md).
+> [`demo-reference/orchestrate_social_agent.md`](../../demo-reference/orchestrate_social_agent.md).
 
 ## Steps
 
@@ -56,7 +58,7 @@ status, the latest pit recommendation, and a list of recent **headline events**.
 
 **Agents → Create agent.** Name it `River Racing Social`, and paste the
 instructions from
-[`demo-reference/orchestrate_social_agent.md`](../../../demo-reference/orchestrate_social_agent.md)
+[`demo-reference/orchestrate_social_agent.md`](../../demo-reference/orchestrate_social_agent.md)
 into the agent's instructions field. The short version of what they tell the agent:
 
 - You're the social-media manager for River Racing — John Doe, car #88, at
@@ -104,10 +106,10 @@ Iterate on the instructions — tone, emoji, hashtags — and watch the drafts c
 
 > If the agent says the feed is quiet, the race may not be running or LAB 3/4
 > aren't built yet — standings post fine, but tire/pit content needs the full
-> pipeline live. See [troubleshooting](../../shared/troubleshooting.md).
+> pipeline live. See [troubleshooting](troubleshooting-deprecated.md).
 
 ## Conclusion
 
 You've taken a real-time streaming pipeline all the way to a business user: a
 no-code agent that turns live race data into publishable content. Wrap up in
-[LAB 6 — Wrap-up](../LAB6_wrap_up/LAB6.md).
+[LAB 6 — Wrap-up](LAB6-wrap-up-deprecated.md).

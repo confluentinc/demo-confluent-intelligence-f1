@@ -1,4 +1,4 @@
-# Workshop guide
+# Organizer workshop guide
 
 This guide covers the organizer lifecycle for a multi-attendee F1 Pit Wall AI
 workshop. Complete [PREREQUISITES.md](PREREQUISITES.md) first. Use
@@ -28,7 +28,7 @@ Useful options:
 | `--attendees N` | Create N attendee environments |
 | `--prefix PREFIX` | Override the resource prefix |
 | `--email-pattern PATTERN` | Override the accepted-user address pattern |
-| `--concurrency N` | Set parallel Terraform workers; default is 4 |
+| `--concurrency N` | Set parallel Terraform workers; default is 10 |
 | `--name NAME` | Name the credential-card directory |
 | `--yes` | Skip prompts; missing values and placeholders cause an early failure |
 | `--force` | Allow a build when another live run exists |
@@ -150,17 +150,9 @@ Reset performs these operations:
 Wait for `=== Reset complete ===`. If the command reports `Reset INCOMPLETE`, keep
 the races stopped, repair the named environment, and rerun reset.
 
-After reset, submit LAB 3 before restarting the race:
-
-```text
-Attendees submit LAB 3
-Instructor runs: uv run workshop start-races
-Attendees continue to LAB 4
-```
-
-`race_standings` uses the latest startup mode. Starting it before LAB 3 can lose
-the earliest versions needed by the temporal join. Use `--keep-source` only when
-the existing source data should remain.
+`race_standings` uses the latest startup mode, so race timing must be coordinated
+with the Lab 3 window. The attendee walkthrough intentionally contains no fleet
+controls. Use `--keep-source` only when the existing source data should remain.
 
 ## 6. Tear down
 
@@ -175,7 +167,7 @@ Console passwords, clears the dispenser when configured, and offers to delete th
 local card directory. The accepted Confluent user identities remain for reuse.
 
 If you are migrating an existing shared deployment to the generated Postgres
-password, follow [the targeted migration runbook](terraform/aws-shared/POSTGRES-PASSWORD-MIGRATION.md).
+password, follow [the targeted migration runbook](../../terraform/aws-shared/POSTGRES-PASSWORD-MIGRATION.md).
 The managed CDC connector needs public access to port 5432 because it runs outside
 the workshop VPC. The generated password is no longer committed to the repository,
 but it is present in Terraform state and EC2 user data; restrict both Terraform

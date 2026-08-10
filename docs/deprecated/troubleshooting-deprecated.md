@@ -1,4 +1,7 @@
-# Troubleshooting
+# Troubleshooting (deprecated)
+
+> Retained for reference. Use the canonical
+> [`Walkthrough.md#troubleshooting`](../../Walkthrough.md#troubleshooting).
 
 ## Can't sign in to Confluent Cloud
 
@@ -26,9 +29,9 @@ workspace pointed somewhere else runs fine and shows nothing.
 The race simulator runs as an always-on service that replays the race
 back-to-back (`RACE_LOOP=true`). Between races there's a short pause, and laps
 arrive at the configured pace (default 60s/lap). Re-run your `SELECT` after a
-few seconds. If nothing arrives for several minutes, tell your instructor — only
-they can inspect or restart the simulators (`uv run workshop start-races`, run
-from the organizer's machine with AWS access; you have Confluent API keys only).
+few seconds. If nothing arrives for several minutes, tell your instructor. Race
+controls are managed from the organizer's machine; attendee credentials do not
+include AWS access.
 
 > Tip: a streaming `SELECT` keeps running until you hit **Stop**.
 

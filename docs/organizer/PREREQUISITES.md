@@ -1,4 +1,4 @@
-# Workshop prerequisites
+# Organizer prerequisites
 
 Complete these steps before provisioning attendee environments.
 
@@ -37,7 +37,7 @@ If the checkout lives elsewhere, set `WSA_HOME` to its root.
 
 ## 3. Workshop secrets
 
-Copy [credentials.env.example](credentials.env.example) to `credentials.env` and
+Copy [credentials.env.example](../../credentials.env.example) to `credentials.env` and
 fill in the five required values, or export them from a secret manager. Values in
 the process environment take precedence over `credentials.env`.
 

@@ -1,5 +1,5 @@
 -- Job 1: Enrichment + Anomaly Detection
--- Attendees write this by hand in LAB 3 (labs/instructor-led/LAB3_stream_processing/).
+-- Attendees write this by hand in LAB 3 of Walkthrough.md.
 -- `uv run reset --with-labs`, `uv run deploy --with-labs`, and
 -- `uv run selfservice up --with-labs` submit this exact file instead. There is no
 -- dbt in this repo.

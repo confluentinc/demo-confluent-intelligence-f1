@@ -2,9 +2,9 @@
 
 The classification behaviors guard one failure: a `CREATE` statement that the
 shell mistakes for a throwaway query gets deleted moments after submission, so
-the lab object never exists and nothing says why. Every file in `demo-reference/`
-opens with a `--` header, and one of them has commented-out blocks whose lines
-end in `');'`.
+the lab object never exists and nothing says why. Canonical durable jobs and
+temporary reference queries both open with a `--` header, and one file has
+commented-out blocks whose lines end in `');'`.
 
 `--file` reuses that same rule via `split_statements`, so the tests import the
 real splitter rather than mirroring it — a mirror can agree with itself while
@@ -27,11 +27,13 @@ from scripts.workshop.sql_shell import (
 
 REFERENCE_DIR = Path(__file__).resolve().parents[1] / "demo-reference"
 REFERENCE_SQL = sorted(REFERENCE_DIR.glob("*.sql"))
+TEMPORARY_REFERENCE_SQL = {"granite_tire_forecast.sql"}
+DURABLE_REFERENCE_SQL = [path for path in REFERENCE_SQL if path.name not in TEMPORARY_REFERENCE_SQL]
 
 
-@pytest.mark.parametrize("path", REFERENCE_SQL, ids=lambda p: p.name)
+@pytest.mark.parametrize("path", DURABLE_REFERENCE_SQL, ids=lambda p: p.name)
 def test_reference_sql_is_left_running(path: Path) -> None:
-    """Every canonical lab file must survive being pasted or --exec'd whole.
+    """Every durable lab file must survive being pasted or --exec'd whole.
 
     The video-only RTCE setup and feed are each one durable statement too.
     """
@@ -43,7 +45,7 @@ def test_reference_sql_is_one_statement(path: Path) -> None:
     """A ';' inside a comment must not split the file into fragments."""
     stmts = split_statements(path.read_text())
     assert len(stmts) == 1
-    assert is_durable(stmts[0])
+    assert is_durable(stmts[0]) is (path.name not in TEMPORARY_REFERENCE_SQL)
 
 
 @pytest.mark.parametrize(

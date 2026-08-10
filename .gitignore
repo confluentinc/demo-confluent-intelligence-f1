@@ -179,7 +179,11 @@ package-lock.json
 # the key id. Pattern, not one exact filename, so the next one is covered too.
 api-key-*.txt
 /RTCE-UPSERT+LIGHTNING-QUERIES.md
+/RTCE-UPSERT-DEMO.postman_collection.json
 # Local validation notes can include internal product behavior and live-run
 # observations. Keep them available to organizers without publishing them.
 /docs/technical-discoveries.md
 /docs/QR Code - Elevate Demo Accounts.png
+
+# Internal recording script and early-access launch notes.
+/TIGHT-5MIN-DEMO.md
