@@ -167,15 +167,48 @@ class LifecycleBehaviorTests(unittest.TestCase):
 
     @patch.object(lifecycle, "_latest_telemetry")
     @patch.object(lifecycle, "_event_age", return_value=1.0)
-    def test_fresh_race_rejects_the_pre_start_race_id(self, age, latest):
-        latest.side_effect = [
-            {"race_id": "old", "event_time": 1},
-            {"race_id": "new", "event_time": 1},
-        ]
+    def test_fresh_race_reuses_one_consumer_until_new_race_arrives(self, age, latest):
+        def read_once(_account, wait_seconds, accept):
+            self.assertEqual(wait_seconds, 60)
+            self.assertFalse(accept({"race_id": "old", "event_time": 1}))
+            event = {"race_id": "new", "event_time": 1}
+            self.assertTrue(accept(event))
+            return event
+
+        latest.side_effect = read_once
         with patch.object(lifecycle.time, "time", return_value=1_005.0):
-            event = lifecycle._fresh_race(account(50), "old", 1_000.0, timeout=1)
+            event = lifecycle._fresh_race(account(50), "old", 1_000.0)
         self.assertEqual(event["race_id"], "new")
-        self.assertEqual(latest.call_count, 2)
+        self.assertEqual(latest.call_count, 1)
+
+    @patch.object(lifecycle, "_set_preparation")
+    @patch.object(lifecycle, "_fresh_race", return_value={"race_id": "new"})
+    @patch.object(lifecycle, "_wait_count", return_value=True)
+    @patch.object(lifecycle, "_scale")
+    @patch.object(lifecycle, "_latest_telemetry", return_value={"race_id": "old"})
+    @patch.object(lifecycle, "_card", return_value={})
+    @patch.object(lifecycle, "describe_exact", return_value={"runningCount": 0})
+    def test_start_allows_ecs_cold_start_without_extending_fresh_telemetry_wait(
+        self, describe, card_mock, latest, scale, wait_count, fresh_race, set_preparation
+    ):
+        target = account(50)
+
+        def run_inline(accounts, action, workers):
+            return {item.number: action(item) for item in accounts}
+
+        with (
+            patch.object(
+                lifecycle,
+                "_selection",
+                return_value=(self.manifest, [target], False),
+            ),
+            patch.object(lifecycle, "_parallel", side_effect=run_inline),
+        ):
+            lifecycle.start_races(argparse.Namespace(run_id="run1", accounts="50"))
+
+        wait_count.assert_called_once_with(target, 1, 180)
+        fresh_race.assert_called_once()
+        self.assertEqual(lifecycle.FRESH_TELEMETRY_TIMEOUT, 60)
 
     @patch.object(lifecycle, "_card", return_value={})
     @patch.object(lifecycle, "describe_exact", return_value={"runningCount": 0})
@@ -381,7 +414,7 @@ class RaceContractMigrationTests(unittest.TestCase):
                 `event_time` TIMESTAMP(3)
                 PRIMARY KEY (`race_id`, `car_number`) NOT ENFORCED
                 DISTRIBUTED BY (`race_id`, `car_number`)
-                'kafka.cleanup-policy' = 'compact,delete'
+                'kafka.cleanup-policy' = 'delete-compact'
                 'kafka.retention.time' = '24 h'
                 'key.format' = 'avro-registry'
                 'scan.startup.mode' = 'earliest-offset'
@@ -404,13 +437,29 @@ class RaceContractMigrationTests(unittest.TestCase):
                 `event_time` TIMESTAMP(3)
                 PRIMARY KEY (`race_id`, `car_number`) NOT ENFORCED
                 DISTRIBUTED BY HASH (`race_id`, `car_number`) INTO 1 BUCKETS
-                'kafka.cleanup-policy' = 'delete,compact'
+                'kafka.cleanup-policy' = 'delete-compact'
                 'kafka.retention.time' = '1 d'
                 'key.format' = 'avro-registry'
                 'scan.startup.mode' = 'earliest-offset'
             """,
         }
         self.assertEqual(lifecycle._validate_race_contract(creates), [])
+
+    def test_migration_preflight_treats_only_missing_table_as_incomplete(self):
+        with patch.object(
+            lifecycle,
+            "_show_create",
+            side_effect=RuntimeError("Cannot find table '`catalog`.`db`.`race_standings`'."),
+        ):
+            self.assertEqual(lifecycle._show_create_before_migration({}, "race_standings"), "")
+
+        with patch.object(
+            lifecycle,
+            "_show_create",
+            side_effect=RuntimeError("Flink authentication failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "authentication failed"):
+                lifecycle._show_create_before_migration({}, "race_standings")
 
     def test_saved_plan_rejects_any_address_outside_allowlist(self):
         shown = argparse.Namespace(
@@ -434,6 +483,40 @@ class RaceContractMigrationTests(unittest.TestCase):
                 lifecycle._validate_saved_plan(
                     Path("/tf"), {}, Path("/plan"), {"allowed.one"}
                 )
+
+    def test_migration_target_sets_cover_known_topic_dependents(self):
+        self.assertIn(
+            "module.topics.confluent_flink_statement.create_car_telemetry_table",
+            lifecycle.MIGRATION_DESTROY_TARGETS,
+        )
+        self.assertIn(
+            "module.topics.confluent_flink_statement.create_race_standings_table",
+            lifecycle.MIGRATION_DESTROY_TARGETS,
+        )
+        self.assertIn("aws_ecs_service.simulator", lifecycle.MIGRATION_DESTROY_TARGETS)
+        self.assertIn("confluent_tag.raw_data", lifecycle.MIGRATION_DESTROY_TARGETS)
+        self.assertTrue(
+            lifecycle.MIGRATION_DESTROY_TARGETS <= lifecycle.MIGRATION_APPLY_TARGETS
+        )
+
+    def test_migration_stop_tolerates_service_removed_by_partial_detach(self):
+        target = account(50)
+        state_path = Path("/tf/terraform.tfstate.d/account-050/terraform.tfstate")
+        with (
+            patch.object(Path, "read_text", return_value=json.dumps({"resources": []})),
+            patch.object(
+                lifecycle,
+                "describe_exact",
+                return_value={"serviceName": target.ecs_service, "status": "INACTIVE"},
+            ),
+            patch.object(lifecycle, "_stop_accounts") as stop,
+        ):
+            self.assertEqual(lifecycle._stop_for_migration(Path("/tf"), target), [])
+        self.assertEqual(
+            state_path,
+            Path("/tf/terraform.tfstate.d/account-050/terraform.tfstate"),
+        )
+        stop.assert_not_called()
 
     def test_target_plan_selects_exact_workspace_and_saves_every_target(self):
         calls = []
@@ -460,6 +543,25 @@ class RaceContractMigrationTests(unittest.TestCase):
             self.assertIn(f"-target={target}", calls[2])
         self.assertEqual(plan.name, "account-050-race-contract-detach.tfplan")
 
+    def test_target_destroy_plan_allows_an_allowlisted_partial_retry(self):
+        calls = []
+
+        def run(_tf_dir, _env, args):
+            calls.append(args)
+            return argparse.Namespace(stdout="account-050\n")
+
+        remaining = {"module.topics.confluent_rtce_topic.car_telemetry[0]"}
+        with (
+            patch.object(lifecycle, "_run_tf", side_effect=run),
+            patch.object(lifecycle, "_validate_saved_plan", return_value=remaining),
+        ):
+            plan = lifecycle._saved_target_plan(
+                Path("/tf"), {}, account(50), lifecycle.MIGRATION_DESTROY_TARGETS, destroy=True
+            )
+
+        self.assertEqual(plan.name, "account-050-race-contract-detach.tfplan")
+        self.assertIn("-destroy", calls[2])
+
     def test_old_contract_is_cleaned_rebuilt_verified_and_left_stopped(self):
         target = account(50)
         manifest = lifecycle.RunManifest("run1", Path("/manifest.json"), (target,), "ready")
@@ -470,7 +572,7 @@ class RaceContractMigrationTests(unittest.TestCase):
             "'scan.startup.mode' = 'earliest-offset'",
             "race_standings": "`race_id` STRING `event_time` TIMESTAMP(3) "
             "PRIMARY KEY (`race_id`, `car_number`) NOT ENFORCED "
-            "DISTRIBUTED BY (`race_id`, `car_number`) 'kafka.cleanup-policy' = 'compact,delete' "
+            "DISTRIBUTED BY (`race_id`, `car_number`) 'kafka.cleanup-policy' = 'delete-compact' "
             "'kafka.retention.time' = '24 h' 'key.format' = 'avro-registry' "
             "'scan.startup.mode' = 'earliest-offset'",
         }
@@ -495,11 +597,12 @@ class RaceContractMigrationTests(unittest.TestCase):
                 return_value=(Path("/tf"), {"F1_ENVIRONMENT_ID": "env", "F1_CLUSTER_ID": "cluster"},
                               {"environment_id": "env", "cluster_id": "cluster"}, {}),
             ),
-            patch.object(lifecycle, "describe_exact", return_value={"runningCount": 0}),
-            patch.object(lifecycle, "_show_create", side_effect=shows),
+            patch.object(lifecycle, "_migration_service", return_value={"runningCount": 0}),
+            patch.object(lifecycle, "_show_create_before_migration", side_effect=shows[:2]),
+            patch.object(lifecycle, "_show_create", side_effect=shows[2:]),
             patch.object(lifecycle, "_saved_target_plan", side_effect=target_plan),
             patch.object(lifecycle, "_apply_saved_plan") as apply,
-            patch.object(lifecycle, "_stop_accounts", return_value=[]) as stop,
+            patch.object(lifecycle, "_stop_for_migration", return_value=[]) as stop,
             patch.object(lifecycle, "_set_preparation") as preparation,
             patch.object(lifecycle, "delete_flink_statements", return_value=[]),
             patch.object(lifecycle, "_delete_lab_rtce", return_value=[]),
@@ -537,7 +640,7 @@ class RaceContractMigrationTests(unittest.TestCase):
             "`event_time` TIMESTAMP(3) "
             "PRIMARY KEY (`race_id`, `car_number`) NOT ENFORCED "
             "DISTRIBUTED BY HASH (`race_id`, `car_number`) "
-            "'kafka.cleanup-policy' = 'compact,delete' 'kafka.retention.time' = '24 h' "
+            "'kafka.cleanup-policy' = 'delete-compact' 'kafka.retention.time' = '24 h' "
             "'key.format' = 'avro-registry' 'scan.startup.mode' = 'earliest-offset'",
         }
         shows = [
@@ -555,11 +658,12 @@ class RaceContractMigrationTests(unittest.TestCase):
                 "_migration_preflight",
                 return_value=(Path("/tf"), {}, {}, {}),
             ),
-            patch.object(lifecycle, "describe_exact", return_value={"runningCount": 0}),
-            patch.object(lifecycle, "_show_create", side_effect=shows),
+            patch.object(lifecycle, "_migration_service", return_value={"runningCount": 0}),
+            patch.object(lifecycle, "_show_create_before_migration", side_effect=shows[:2]),
+            patch.object(lifecycle, "_show_create", side_effect=shows[2:]),
             patch.object(lifecycle, "_saved_target_plan", return_value=Path("/rebuild")) as plan,
             patch.object(lifecycle, "_apply_saved_plan"),
-            patch.object(lifecycle, "_stop_accounts", return_value=[]),
+            patch.object(lifecycle, "_stop_for_migration", return_value=[]),
             patch.object(lifecycle, "_set_preparation"),
             patch.object(lifecycle, "delete_flink_statements") as delete_statements,
             patch.object(lifecycle, "drop_flink_objects") as drop_objects,
@@ -573,6 +677,63 @@ class RaceContractMigrationTests(unittest.TestCase):
         delete_statements.assert_not_called()
         drop_objects.assert_not_called()
         delete_topics.assert_not_called()
+
+    def test_migration_pacing_override_is_scoped_to_target_plan_environment(self):
+        target = account(50)
+        manifest = lifecycle.RunManifest("run1", Path("/manifest.json"), (target,), "ready")
+        current = {
+            "car_telemetry": "`race_id` STRING `event_time` TIMESTAMP(3) "
+            "'kafka.cleanup-policy' = 'delete' 'kafka.retention.time' = '24 h' "
+            "'scan.startup.mode' = 'earliest-offset'",
+            "race_standings": "`race_id` STRING `event_time` TIMESTAMP(3) "
+            "PRIMARY KEY (`race_id`, `car_number`) NOT ENFORCED "
+            "DISTRIBUTED BY (`race_id`, `car_number`) "
+            "'kafka.cleanup-policy' = 'delete-compact' 'kafka.retention.time' = '24 h' "
+            "'key.format' = 'avro-registry' 'scan.startup.mode' = 'earliest-offset'",
+        }
+        plan_envs = []
+
+        def target_plan(_dir, env, _account, _targets, *, destroy):
+            plan_envs.append((dict(env), destroy))
+            return Path("/rebuild")
+
+        with (
+            patch.object(lifecycle, "get_project_root", return_value=Path("/repo")),
+            patch("scripts.common.login_checks.ensure_confluent_login", return_value=True),
+            patch.object(lifecycle, "_selection", return_value=(manifest, [target], False)),
+            patch.object(
+                lifecycle,
+                "_migration_preflight",
+                return_value=(Path("/tf"), {}, {}, {"TF_VAR_seconds_per_lap": "60"}),
+            ),
+            patch.object(lifecycle, "_migration_service", return_value={"runningCount": 0}),
+            patch.object(
+                lifecycle,
+                "_show_create_before_migration",
+                side_effect=[current["car_telemetry"], current["race_standings"]],
+            ),
+            patch.object(
+                lifecycle,
+                "_show_create",
+                side_effect=[current["car_telemetry"], current["race_standings"]],
+            ),
+            patch.object(lifecycle, "_saved_target_plan", side_effect=target_plan),
+            patch.object(lifecycle, "_apply_saved_plan"),
+            patch.object(lifecycle, "_stop_for_migration", return_value=[]),
+            patch.object(lifecycle, "_set_preparation"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            lifecycle.migrate_race_contract(
+                argparse.Namespace(run_id="run1", accounts="50", seconds_per_lap=20)
+            )
+
+        self.assertEqual(plan_envs, [({"TF_VAR_seconds_per_lap": "20"}, False)])
+
+    def test_migration_rejects_pacing_below_anomaly_minimum(self):
+        with self.assertRaisesRegex(SystemExit, "below the 10s minimum"):
+            lifecycle.migrate_race_contract(
+                argparse.Namespace(run_id="run1", accounts="50", seconds_per_lap=9)
+            )
 
 
 if __name__ == "__main__":

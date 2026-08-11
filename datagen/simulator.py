@@ -285,7 +285,12 @@ def main():
     """Run one race, or loop races back-to-back when RACE_LOOP=true."""
     if not config.RACE_LOOP:
         run_race()
-        return
+        # Fargate services relaunch any exited task to maintain desired_count,
+        # so a single-shot race must idle rather than exit, or ECS would start
+        # a fresh task and silently replay the race from lap 1 anyway.
+        logger.info("RACE_LOOP disabled — race complete, idling until stopped/reset.")
+        while True:
+            time.sleep(3600)
 
     logger.info(f"RACE_LOOP enabled — replaying races with {config.RESTART_DELAY_SEC}s between each.")
     while True:

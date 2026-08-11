@@ -39,20 +39,25 @@ from scripts.reset import (
 MANIFEST_NAME = "manifest.json"
 MAX_SUBSET_ACCOUNTS = 3
 RESET_WORKERS = 8
-START_TIMEOUT = 60
+ECS_START_TIMEOUT = 180
+FRESH_TELEMETRY_TIMEOUT = 60
 STOP_TIMEOUT = 120
 FRESH_SECONDS = 90
 
 MIGRATION_DESTROY_TARGETS = {
+    "module.topics.confluent_flink_statement.create_car_telemetry_table",
+    "module.topics.confluent_flink_statement.create_race_standings_table",
     "module.topics.confluent_rtce_topic.car_telemetry[0]",
+    # Both resources depend on module.topics, so Terraform includes them when
+    # the RTCE topic is targeted for destroy. Keep the exact dependency cascade
+    # explicit so the saved-plan allowlist still rejects anything unrelated.
+    "aws_ecs_service.simulator",
+    "confluent_tag.raw_data",
     "confluent_tag_binding.car_telemetry_raw_data",
 }
 MIGRATION_APPLY_TARGETS = {
-    "module.topics.confluent_flink_statement.create_car_telemetry_table",
-    "module.topics.confluent_flink_statement.create_race_standings_table",
     *MIGRATION_DESTROY_TARGETS,
     "aws_ecs_task_definition.simulator",
-    "aws_ecs_service.simulator",
 }
 SOURCE_DROPS = [
     ("drop-race-standings", "DROP TABLE IF EXISTS `race_standings`"),
@@ -285,8 +290,17 @@ def _card(account: Account) -> dict[str, str]:
     return card
 
 
-def _latest_telemetry(account: Account, wait_seconds: float = 4.0) -> dict | None:
-    """Read recent tail records and return the newest decoded telemetry value."""
+def _latest_telemetry(
+    account: Account,
+    wait_seconds: float = 4.0,
+    accept: Callable[[dict], bool] | None = None,
+) -> dict | None:
+    """Read recent tail records and return the newest matching telemetry value.
+
+    ``accept`` lets lifecycle waits keep one Kafka consumer open until the
+    expected record arrives. Recreating a consumer on every short poll causes
+    a connection storm when the complete workshop cohort starts together.
+    """
     from confluent_kafka import Consumer, TopicPartition
     from confluent_kafka.serialization import MessageField, SerializationContext
 
@@ -328,6 +342,8 @@ def _latest_telemetry(account: Account, wait_seconds: float = 4.0) -> dict | Non
             )
             if isinstance(value, dict):
                 newest = value
+                if accept is not None and accept(value):
+                    return value
     finally:
         consumer.close()
     return newest
@@ -353,22 +369,20 @@ def _fresh_race(
     account: Account,
     previous_race_id: str | None,
     started_at: float,
-    timeout: int = START_TIMEOUT,
+    timeout: int = FRESH_TELEMETRY_TIMEOUT,
 ) -> dict | None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        event = _latest_telemetry(account, wait_seconds=2)
+    def is_fresh(event: dict) -> bool:
         age = _event_age(event)
-        race_id = str((event or {}).get("race_id") or "")
+        race_id = str(event.get("race_id") or "")
         event_time = None if age is None else time.time() - age
-        if (
+        return bool(
             race_id
             and race_id != (previous_race_id or "")
             and event_time is not None
             and event_time >= started_at - 5
-        ):
-            return event
-    return None
+        )
+
+    return _latest_telemetry(account, wait_seconds=timeout, accept=is_fresh)
 
 
 def _parallel(accounts: list[Account], action: Callable[[Account], object], workers: int) -> dict[int, object]:
@@ -448,11 +462,16 @@ def start_races(args: argparse.Namespace) -> None:
 
     def start(account: Account) -> dict:
         _scale(account, 1)
-        if not _wait_count(account, 1, START_TIMEOUT):
-            raise RuntimeError("ECS task did not become running within 60 seconds")
+        if not _wait_count(account, 1, ECS_START_TIMEOUT):
+            raise RuntimeError(
+                f"ECS task did not become running within {ECS_START_TIMEOUT} seconds"
+            )
         event = _fresh_race(account, previous[account.number], started_at)
         if event is None:
-            raise RuntimeError("no fresh telemetry carrying a new race_id within 60 seconds")
+            raise RuntimeError(
+                "no fresh telemetry carrying a new race_id within "
+                f"{FRESH_TELEMETRY_TIMEOUT} seconds"
+            )
         return event
 
     results = _parallel(newly_started, start, len(newly_started))
@@ -588,6 +607,16 @@ def _show_create(tf: dict[str, str], table: str) -> str:
         session.stop(name)
 
 
+def _show_create_before_migration(tf: dict[str, str], table: str) -> str:
+    """Allow an explicitly targeted migration to recover a partially rebuilt table."""
+    try:
+        return _show_create(tf, table)
+    except RuntimeError as exc:
+        if "Cannot find table" in str(exc):
+            return ""
+        raise
+
+
 def _validate_race_contract(creates: dict[str, str]) -> list[str]:
     def has_column(sql: str, name: str) -> bool:
         return bool(re.search(rf"`{name}`\s+(?:STRING|VARCHAR\s*\(\s*\d+\s*\))", sql, re.IGNORECASE))
@@ -633,7 +662,7 @@ def _validate_race_contract(creates: dict[str, str]) -> list[str]:
     if not has_retention(standings):
         problems.append("race_standings is missing 24-hour retention")
     if not re.search(
-        r"'kafka\.cleanup-policy'\s*=\s*'(?:compact,delete|delete,compact)'",
+        r"'kafka\.cleanup-policy'\s*=\s*'delete-compact'",
         standings,
         re.IGNORECASE,
     ):
@@ -733,13 +762,50 @@ def _migration_preflight(
     return tf_dir, card, _card_to_tf(card), env
 
 
+def _migration_service(tf_dir: Path, account: Account) -> dict | None:
+    """Return the live service, tolerating a prior partial Terraform delete."""
+    state_path = (
+        tf_dir
+        / "terraform.tfstate.d"
+        / f"account-{account.number:03d}"
+        / "terraform.tfstate"
+    )
+    state = json.loads(state_path.read_text())
+    managed = any(
+        resource.get("type") == "aws_ecs_service" and resource.get("name") == "simulator"
+        for resource in state.get("resources", [])
+    )
+    try:
+        service = describe_exact(account)
+    except RuntimeError:
+        if not managed:
+            return None
+        raise
+    if service.get("status") == "INACTIVE":
+        if managed:
+            raise RuntimeError(
+                f"account {account.number}: ECS service is INACTIVE but remains in Terraform state"
+            )
+        return None
+    return service
+
+
+def _stop_for_migration(tf_dir: Path, account: Account) -> list[str]:
+    if _migration_service(tf_dir, account) is None:
+        return []
+    return _stop_accounts([account], announce=False)
+
+
 def _run_tf(tf_dir: Path, env: dict[str, str], args: list[str]) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         ["terraform", *args], cwd=tf_dir, env=env, capture_output=True, text=True, timeout=1800
     )
     if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip().splitlines()
-        raise RuntimeError(f"terraform {' '.join(args[:2])} failed: {detail[-1] if detail else 'unknown error'}")
+        raw_detail = (result.stderr or result.stdout).strip()
+        clean_detail = re.sub(r"\x1b\[[0-9;]*m", "", raw_detail)
+        detail = [line for line in clean_detail.splitlines() if line.strip()]
+        tail = "\n".join(detail[-20:]) if detail else "unknown error"
+        raise RuntimeError(f"terraform {' '.join(args[:2])} failed:\n{tail}")
     return result
 
 
@@ -781,10 +847,10 @@ def _saved_target_plan(
         args.append(f"-target={target}")
     args.append(f"-out={plan}")
     _run_tf(tf_dir, env, args)
-    changed = _validate_saved_plan(tf_dir, env, plan, targets)
-    if destroy and changed != targets:
-        missing = targets - changed
-        raise RuntimeError("detach plan is missing managed resources: " + ", ".join(sorted(missing)))
+    _validate_saved_plan(tf_dir, env, plan, targets)
+    # A provider failure can remove only part of a saved destroy plan. A retry
+    # is safe when the remaining changes are a subset of the same exact
+    # allowlist; _validate_saved_plan still rejects every unrelated address.
     return plan
 
 
@@ -820,6 +886,13 @@ def migrate_race_contract(args: argparse.Namespace) -> None:
     """Destructively rebuild the race source contract for one to three exact accounts."""
     if not str(getattr(args, "accounts", "") or "").strip():
         raise SystemExit("migrate-race-contract requires an explicit --accounts selection (maximum three)")
+    seconds_per_lap = getattr(args, "seconds_per_lap", None)
+    if seconds_per_lap is not None:
+        from scripts.common.deployment_meta import validate_seconds_per_lap
+
+        seconds_per_lap, problem = validate_seconds_per_lap(seconds_per_lap)
+        if problem:
+            raise SystemExit(problem)
     root = get_project_root()
     manifest, accounts, _ = _selection(args)
     from scripts.common.login_checks import ensure_confluent_login
@@ -835,8 +908,10 @@ def migrate_race_contract(args: argparse.Namespace) -> None:
     try:
         for account in accounts:
             tf_dir, card, tf, env = _migration_preflight(root, manifest, account)
-            describe_exact(account)
-            before = {table: _show_create(tf, table) for table in SOURCE_TOPICS}
+            if seconds_per_lap is not None:
+                env["TF_VAR_seconds_per_lap"] = str(seconds_per_lap)
+            _migration_service(tf_dir, account)
+            before = {table: _show_create_before_migration(tf, table) for table in SOURCE_TOPICS}
             if _validate_race_contract(before):
                 detach = _saved_target_plan(
                     tf_dir, env, account, MIGRATION_DESTROY_TARGETS, destroy=True
@@ -848,7 +923,7 @@ def migrate_race_contract(args: argparse.Namespace) -> None:
         raise SystemExit(f"Migration preflight failed; nothing changed:\n  {exc}") from exc
 
     for account, tf_dir, card, tf, env, detach in prepared:
-        errors = _stop_accounts([account], announce=False)
+        errors = _stop_for_migration(tf_dir, account)
         _set_preparation(manifest, {account.number}, False, "migration_failed")
         if errors:
             raise SystemExit("Migration stopped before table changes:\n  " + "\n  ".join(errors))
@@ -878,11 +953,11 @@ def migrate_race_contract(args: argparse.Namespace) -> None:
             if problems:
                 raise RuntimeError("post-migration contract check failed: " + "; ".join(problems))
         except Exception as exc:
-            _stop_accounts([account], announce=False)
+            _stop_for_migration(tf_dir, account)
             raise SystemExit(
                 f"Account {account.number} migration failed; it remains stopped and unprepared:\n  {exc}"
             ) from exc
-        final_errors = _stop_accounts([account], announce=False)
+        final_errors = _stop_for_migration(tf_dir, account)
         if final_errors:
             raise SystemExit("Migration applied but final stop failed:\n  " + "\n  ".join(final_errors))
         print(f"  {account.number:03d} {account.prefix}: race contract migrated; stopped and unprepared")
@@ -1041,4 +1116,10 @@ def add_migration_arguments(parser: argparse.ArgumentParser) -> None:
         "--accounts",
         required=True,
         help="One to three exact account numbers/ranges, for example 50 or 48-50",
+    )
+    parser.add_argument(
+        "--seconds-per-lap",
+        type=int,
+        default=None,
+        help="Optional simulator pacing override for only the selected accounts (minimum 10)",
     )

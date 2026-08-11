@@ -128,7 +128,7 @@ resource "confluent_flink_statement" "create_race_standings_table" {
     WITH (
       'changelog.mode' = 'upsert',
       'connector' = 'confluent',
-      'kafka.cleanup-policy' = 'compact,delete',
+      'kafka.cleanup-policy' = 'delete-compact',
       'kafka.compaction.time' = '6 h',
       'kafka.max-message-size' = '2097164 bytes',
       'kafka.message-timestamp-type' = 'create-time',

@@ -82,7 +82,7 @@ resource "aws_ecs_task_definition" "simulator" {
       { name = "SR_URL", value = module.cluster.schema_registry_rest_endpoint },
       { name = "SR_API_KEY", value = module.cluster.sr_api_key },
       { name = "SR_API_SECRET", value = module.cluster.sr_api_secret },
-      { name = "RACE_LOOP", value = "true" },
+      { name = "RACE_LOOP", value = tostring(var.race_loop) },
       { name = "RACE_SEED", value = "42" },
       { name = "PRE_RACE_WARMUP_LAPS", value = "0" },
       { name = "SECONDS_PER_LAP", value = tostring(var.seconds_per_lap) },

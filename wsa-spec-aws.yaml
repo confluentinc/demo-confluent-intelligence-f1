@@ -72,7 +72,7 @@ terraform_vars:
   region: "us-east-1"
   flink_max_cfu: "10"
   seconds_per_lap: "60" # 60s/lap -> 60-minute race
-  race_loop: "true"
+  race_loop: "false"
   # Bind {email} to their environment as EnvironmentAdmin so the Console login
   # actually shows them something. Requires the user to exist — see the
   # PREREQUISITE note in the header.

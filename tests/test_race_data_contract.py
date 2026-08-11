@@ -15,7 +15,7 @@ def test_source_topics_carry_race_id_event_time_and_explicit_replay_modes() -> N
     assert TOPICS.count("`event_time` TIMESTAMP(3)") >= 2
     assert TOPICS.count("'scan.startup.mode' = 'earliest-offset'") >= 2
     assert "'kafka.retention.time' = '24 h'" in TOPICS
-    assert "'kafka.cleanup-policy' = 'compact,delete'" in TOPICS
+    assert "'kafka.cleanup-policy' = 'delete-compact'" in TOPICS
     assert "'kafka.compaction.time' = '6 h'" in TOPICS
 
 
