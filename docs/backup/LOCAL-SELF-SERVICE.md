@@ -344,10 +344,10 @@ Don't choose a new prefix while the first deployment still exists. Run
 
 ### `car_state` stays empty
 
-Confirm Lab 3 was running before you restarted `f1-race`. The standings table
-starts at the latest offset, so earlier standings versions aren't available to
-the temporal join. Leave the new race running for a few minutes while the
-anomaly function collects its first 20 windows.
+Check that both source tables are receiving records with the same `race_id`.
+Lab 3 replays from the earliest offset, so it may start after `f1-race`. Leave it
+running for a few minutes while the anomaly function collects its first 20
+windows for the current race.
 
 ### The Bedrock model fails
 

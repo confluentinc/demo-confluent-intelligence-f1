@@ -118,15 +118,13 @@ class SectionTests(unittest.TestCase):
         fields.update(overrides)
         return fields
 
-    def test_token_is_base64_of_key_colon_secret(self):
-        import base64
-
+    def test_values_are_separately_copyable(self):
         section = creds_mod._rtce_section(self.base())
-        expected = base64.b64encode(b"K1:S1").decode()
-        self.assertIn(f'Authorization: Basic {expected}"', section)
-        # The raw secret must never appear on its own — the attendee copies the
-        # encoded header, not the pair.
-        self.assertNotIn("K1:S1", section)
+        self.assertIn("`F1_RTCE_MCP_ENDPOINT`", section)
+        self.assertIn("`F1_RTCE_API_KEY`", section)
+        self.assertIn("`F1_RTCE_API_SECRET`", section)
+        self.assertIn("`K1`", section)
+        self.assertIn("`S1`", section)
 
     def test_omitted_without_a_key(self):
         self.assertEqual(creds_mod._rtce_section(self.base(rtce_api_key="")), "")
@@ -170,8 +168,15 @@ class DispenserColumnTests(unittest.TestCase):
         ]
         filled, headers, out = self._roundtrip(rows, {"f1wp001": "claude mcp add ..."})
         self.assertEqual(filled, 1)
-        self.assertEqual(headers[-1], creds_mod.DISPENSER_RTCE_COLUMN)
+        self.assertEqual(headers[-1], creds_mod.DISPENSER_WATSONX_COLUMN)
         self.assertEqual(out[0][creds_mod.DISPENSER_RTCE_COLUMN], "claude mcp add ...")
+        self.assertIn(creds_mod.DISPENSER_RTCE_ENDPOINT_COLUMN, headers)
+        self.assertIn(creds_mod.DISPENSER_RTCE_KEY_COLUMN, headers)
+        self.assertIn(creds_mod.DISPENSER_RTCE_SECRET_COLUMN, headers)
+        self.assertEqual(
+            out[0][creds_mod.DISPENSER_WATSONX_COLUMN],
+            creds_mod.WATSONX_TOOL_URL,
+        )
         # wsa resolves this placeholder itself at upload time; overwriting it with
         # the password we resolved into the cards would leak it into the sheet.
         self.assertEqual(out[0]["Confluent Cloud / Console Password"], "(from 1Password)")
@@ -195,6 +200,7 @@ class DispenserColumnTests(unittest.TestCase):
                 reader = csv.DictReader(fh)
                 headers, out = reader.fieldnames, list(reader)
         self.assertEqual(headers.count(creds_mod.DISPENSER_RTCE_COLUMN), 1)
+        self.assertEqual(headers.count(creds_mod.DISPENSER_WATSONX_COLUMN), 1)
         self.assertEqual(out[0][creds_mod.DISPENSER_RTCE_COLUMN], "new")
 
     def test_header_shape_is_what_the_apps_script_requires(self):
@@ -206,6 +212,28 @@ class DispenserColumnTests(unittest.TestCase):
         # Code.gs hard-throws without a Claimed By column.
         self.assertNotIn("claimed by", header.lower())
         self.assertNotIn("timestamp", header.lower())
+
+    def test_watsonx_column_is_added_without_rtce(self):
+        rows = [{"Account": "1", self.PREFIX_COL: "f1wp001"}]
+        filled, headers, out = self._roundtrip(rows, {})
+        self.assertEqual(filled, 0)
+        self.assertIn(creds_mod.DISPENSER_WATSONX_COLUMN, headers)
+        self.assertEqual(out[0][creds_mod.DISPENSER_WATSONX_COLUMN], creds_mod.WATSONX_TOOL_URL)
+
+    def test_added_columns_stay_left_of_dispenser_tracking_columns(self):
+        rows = [
+            {
+                "Account": "1",
+                self.PREFIX_COL: "f1wp001",
+                "Claimed By": "",
+                "Timestamp": "",
+            }
+        ]
+        _, headers, _ = self._roundtrip(rows, {})
+        self.assertLess(
+            headers.index(creds_mod.DISPENSER_WATSONX_COLUMN),
+            headers.index("Claimed By"),
+        )
 
 
 if __name__ == "__main__":

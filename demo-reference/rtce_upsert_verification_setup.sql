@@ -3,6 +3,7 @@
 -- data-provider state for that lifecycle.
 CREATE TABLE IF NOT EXISTS `race_standings_rtce` (
   `key` STRING NOT NULL,
+  `race_id` STRING,
   `car_number` INT,
   `driver` STRING,
   `team` STRING,

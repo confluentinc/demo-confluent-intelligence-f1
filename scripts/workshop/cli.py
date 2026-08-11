@@ -26,10 +26,8 @@ from __future__ import annotations
 
 import argparse
 
-from scripts.instructor import start_all_races as start_mod
-from scripts.instructor import stop_all_races as stop_mod
 from scripts.workshop import creds as creds_mod
-from scripts.workshop import reset as reset_mod
+from scripts.workshop import lifecycle as lifecycle_mod
 from scripts.workshop import validate as validate_mod
 from scripts.workshop import wsa as wsa_mod
 
@@ -62,16 +60,31 @@ def main() -> None:
     p_validate.set_defaults(func=validate_mod.validate)
 
     p_start = sub.add_parser("start-races", help="Scale every attendee race simulator up")
-    start_mod.add_arguments(p_start)
-    p_start.set_defaults(func=start_mod.start_races)
+    lifecycle_mod.add_lifecycle_arguments(p_start)
+    p_start.set_defaults(func=lifecycle_mod.start_races)
 
     p_stop = sub.add_parser("stop-races", help="Scale every attendee race simulator to zero")
-    stop_mod.add_arguments(p_stop)
-    p_stop.set_defaults(func=stop_mod.stop_races)
+    lifecycle_mod.add_lifecycle_arguments(p_stop)
+    p_stop.set_defaults(func=lifecycle_mod.stop_races)
 
     p_reset = sub.add_parser("reset-races", help="Reset all attendee environments for a new race")
-    reset_mod.add_arguments(p_reset)
-    p_reset.set_defaults(func=reset_mod.reset_races)
+    lifecycle_mod.add_lifecycle_arguments(p_reset)
+    p_reset.set_defaults(func=lifecycle_mod.reset_races)
+
+    p_status = sub.add_parser("race-status", help="Report lifecycle and data health for a workshop run")
+    lifecycle_mod.add_lifecycle_arguments(p_status)
+    p_status.set_defaults(func=lifecycle_mod.race_status)
+
+    p_prepare = sub.add_parser("prepare-races", help="Smoke-test, reset, and stop a complete workshop run")
+    lifecycle_mod.add_lifecycle_arguments(p_prepare, allow_accounts=False)
+    p_prepare.set_defaults(func=lifecycle_mod.prepare_races)
+
+    p_social = sub.add_parser(
+        "prepare-social-feed",
+        help="Build Lab 3/4 for organizer-controlled account 50 and leave its race stopped",
+    )
+    lifecycle_mod.add_prepare_social_feed_arguments(p_social)
+    p_social.set_defaults(func=lifecycle_mod.prepare_social_feed)
 
     args = parser.parse_args()
     args.func(args)

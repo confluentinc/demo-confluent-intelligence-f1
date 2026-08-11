@@ -29,6 +29,7 @@ MAX_DECISIONS = 20
 class RaceState:
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self._race_id: str | None = None
         self._telemetry: dict | None = None
         self._standings: dict[int, dict] = {}
         self._car_state: dict | None = None
@@ -37,6 +38,26 @@ class RaceState:
         self.seen_pit_decisions = False
         self._last_msg_ts = 0.0
         self._connection_error: dict | None = None
+
+    def _accept_race_locked(self, record: dict) -> bool:
+        """Switch atomically to a newer race and reject delayed older records."""
+        race_id = record.get("race_id")
+        if not race_id:
+            return self._race_id is None
+        if self._race_id is not None and race_id < self._race_id:
+            return False
+        if race_id == self._race_id:
+            return True
+
+        self._race_id = race_id
+        self._telemetry = None
+        self._standings.clear()
+        self._car_state = None
+        self._decisions.clear()
+        self.seen_car_state = False
+        self.seen_pit_decisions = False
+        self._last_msg_ts = 0.0
+        return True
 
     def record_error(self, code: str, detail: str) -> None:
         """Publish the reason the feed isn't flowing, for ``snapshot()``/``/healthz``.
@@ -60,6 +81,8 @@ class RaceState:
 
     def update_telemetry(self, record: dict) -> None:
         with self._lock:
+            if not self._accept_race_locked(record):
+                return
             self._telemetry = record
             self._last_msg_ts = time.time()
 
@@ -68,17 +91,23 @@ class RaceState:
         if car is None:
             return
         with self._lock:
+            if not self._accept_race_locked(record):
+                return
             self._standings[car] = record
             self._last_msg_ts = time.time()
 
     def update_car_state(self, record: dict) -> None:
         with self._lock:
+            if not self._accept_race_locked(record):
+                return
             self._car_state = record
             self.seen_car_state = True
             self._last_msg_ts = time.time()
 
     def add_decision(self, record: dict) -> None:
         with self._lock:
+            if not self._accept_race_locked(record):
+                return
             self._decisions.append(record)
             self.seen_pit_decisions = True
             self._last_msg_ts = time.time()
@@ -95,6 +124,7 @@ class RaceState:
                 default=(self._telemetry or {}).get("lap", 0),
             )
             return {
+                "race_id": self._race_id,
                 "our_car": OUR_CAR_NUMBER,
                 "lap": lap,
                 "telemetry": self._telemetry,

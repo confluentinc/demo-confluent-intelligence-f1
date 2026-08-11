@@ -19,7 +19,7 @@ def test_warmup_log_reports_production_time_wait_and_total_cadence(caplog) -> No
         patch.object(simulator.time, "sleep"),
     ):
         with caplog.at_level("INFO", logger=simulator.__name__):
-            simulator._run_warmup_laps(producer, Mock())
+            simulator._run_warmup_laps(producer, Mock(), "race-1")
 
     assert producer.flush.call_args.kwargs == {"timeout": 5}
     assert "produced over 20s (2 telemetry readings); waiting 15s before the next window (35s cadence)." in caplog.text

@@ -7,16 +7,11 @@ RTCE serves materialized topic data to AI agents over an MCP endpoint:
 
 Auth is HTTP Basic with a **Global** Confluent Cloud API key:
 ``Authorization: Basic base64(<KEY>:<SECRET>)``. Once connected, RTCE exposes
-three MCP tools — ``queryData`` (SQL-ish ``SELECT … WHERE …`` over a topic),
-``listTopics``, and ``getMetadata``.
+three MCP tools. Current endpoints expose ``query_data``, ``list_topics``, and
+``get_metadata``; older endpoints used camelCase names. The client calls
+``list_tools`` when it connects and maps either spelling at runtime.
 
-**The tool names are camelCase; their arguments are snake_case.** That mix is easy
-to get wrong in both directions, and getting it wrong is invisible until a live
-call: RTCE answers an unknown name with ``McpError: unknown tool "<name>"`` only
-at ``call_tool`` time, and the ``mcp`` SDK wraps that in two nested
-``TaskGroup`` ``ExceptionGroup``s, so the message you actually see is
-"unhandled errors in a TaskGroup (1 sub-exception)" with the real cause buried.
-``--probe`` unwraps it. ``queryData`` additionally *requires*
+``query_data`` additionally *requires*
 ``max_result_rows`` (see ``MAX_RESULT_ROWS``) — it is not optional, and omitting
 it fails the same opaque way. Ask a live endpoint what it exposes with
 ``session.list_tools()`` rather than trusting any of these names, including
@@ -177,6 +172,41 @@ class RTCEClient:
     def __init__(self, endpoint: str, token: str) -> None:
         self.endpoint = endpoint
         self._headers = {"Authorization": f"Basic {token}"}
+        self._tools: dict[str, str] = {}
+
+    @staticmethod
+    def _tool_kind(name: str) -> str:
+        """Map either current snake_case or older camelCase names to one operation."""
+        folded = "".join(ch for ch in name.lower() if ch.isalnum())
+        aliases = {
+            "listtopics": "list_topics",
+            "getmetadata": "get_metadata",
+            "querydata": "query_data",
+        }
+        return aliases.get(folded, "")
+
+    async def discover_tools(self) -> dict[str, str]:
+        """Ask the endpoint for its tool names instead of pinning a naming era."""
+        async with streamablehttp_client(self.endpoint, headers=self._headers) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.list_tools()
+        discovered: dict[str, str] = {}
+        for tool in getattr(result, "tools", None) or []:
+            name = getattr(tool, "name", "")
+            kind = self._tool_kind(name)
+            if kind:
+                discovered[kind] = name
+        missing = {"list_topics", "get_metadata", "query_data"} - discovered.keys()
+        if missing:
+            raise RuntimeError(f"RTCE MCP endpoint is missing expected tool operation(s): {', '.join(sorted(missing))}")
+        self._tools = discovered
+        return dict(discovered)
+
+    async def _tool_name(self, kind: str) -> str:
+        if not self._tools:
+            await self.discover_tools()
+        return self._tools[kind]
 
     async def _call(self, name: str, arguments: dict) -> Any:
         async with streamablehttp_client(self.endpoint, headers=self._headers) as (read, write, _):
@@ -184,27 +214,53 @@ class RTCEClient:
                 await session.initialize()
                 return await session.call_tool(name=name, arguments=arguments)
 
-    async def query(self, topic: str, where: str = "", max_rows: int = MAX_RESULT_ROWS) -> list[dict]:
-        """Run ``queryData`` against ``topic`` and return parsed rows.
-
-        Callers pass only the predicate (``'"CAR_NUMBER" = 88'``, or "" for all
-        rows); the ``SELECT * FROM`` is built here. RTCE rejects a bare
-        ``SELECT *`` with ``FE_SQL_VALIDATION_ERROR: SELECT * requires a FROM
-        clause``, and the topic name has to appear in the SQL as well as in
-        ``topic_name`` — assembling it in one place is what keeps every call site
-        from having to remember that.
-        """
+    async def query(
+        self,
+        topic: str,
+        where: str = "",
+        max_rows: int = MAX_RESULT_ROWS,
+        *,
+        order_by: str = "",
+        limit: int | None = None,
+    ) -> list[dict]:
+        """Query a topic with a bounded result contract and optional event-time ordering."""
         sql = f'SELECT * FROM "{topic}"'
         if where:
             sql += f" WHERE {where}"
+        if order_by:
+            sql += f" ORDER BY {order_by}"
+        if limit is not None:
+            sql += f" LIMIT {max(1, min(limit, MAX_RESULT_ROWS))}"
         result = await self._call(
-            "queryData",
+            await self._tool_name("query_data"),
             {"topic_name": topic, "query": sql, "max_result_rows": min(max_rows, MAX_RESULT_ROWS)},
         )
         return _rows_from_result(result)
 
     async def list_topics(self) -> Any:
-        return await self._call("listTopics", {})
+        return await self._call(await self._tool_name("list_topics"), {})
 
     async def get_metadata(self, topic: str) -> Any:
-        return await self._call("getMetadata", {"topic_name": topic})
+        return await self._call(await self._tool_name("get_metadata"), {"topic_name": topic})
+
+    @staticmethod
+    def topic_names(result: Any) -> list[str]:
+        """Extract topic names from list_topics text blocks without logging secrets."""
+        names: list[str] = []
+        for block in getattr(result, "content", None) or []:
+            raw = getattr(block, "text", "")
+            try:
+                payload = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            rows = payload if isinstance(payload, list) else payload.get("topics", payload.get("data", []))
+            if isinstance(rows, dict):
+                rows = rows.get("data", [])
+            for row in rows if isinstance(rows, list) else []:
+                if isinstance(row, str):
+                    names.append(row)
+                elif isinstance(row, dict):
+                    name = row.get("topic_name") or row.get("name") or row.get("topicName")
+                    if name:
+                        names.append(str(name))
+        return sorted(set(names))

@@ -2,9 +2,8 @@
 
 Exposes one read-only endpoint, ``GET /race-feed/{prefix}``, returning a digest of
 the live race for that attendee. The Pydantic response models give FastAPI's
-auto-generated OpenAPI 3.0 spec (``GET /openapi.json``) clean field names and
-descriptions — that spec is what attendees import as a tool in the watsonx
-Orchestrate no-code Agent Builder.
+internal OpenAPI document clean field names and descriptions. Attendees download
+a separate OpenAPI 3.0 file with one fixed, no-input account-50 operation.
 
 There is no auth beyond the path ``prefix``; this is a workshop convenience
 service and the data is non-sensitive race telemetry. Front it with HTTPS when
@@ -13,14 +12,19 @@ hosting it where a cloud Orchestrate agent can reach it.
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from scripts.social_feed.state import FeedStore
 
 
 class StandingEntry(BaseModel):
+    race_id: str | None = Field(None, description="Unique identifier for this race loop")
+    event_time: str | None = Field(None, description="Standing event time (ISO 8601, UTC)")
     position: int | None = Field(None, description="Current race position, 1 = leader")
     car_number: int | None = Field(None, description="Car number")
     driver: str | None = Field(None, description="Driver full name")
@@ -32,6 +36,8 @@ class StandingEntry(BaseModel):
 
 
 class TireStatus(BaseModel):
+    race_id: str | None = Field(None, description="Unique identifier for this race loop")
+    event_time: str | None = Field(None, description="Car-state event time (ISO 8601, UTC)")
     compound: str | None = Field(None, description="Current tire compound on our car")
     age_laps: int | None = Field(None, description="Laps run on the current set of tires")
     front_left_temp_c: float | None = Field(None, description="Front-left tire temperature, °C")
@@ -39,6 +45,8 @@ class TireStatus(BaseModel):
 
 
 class PitDecision(BaseModel):
+    race_id: str | None = Field(None, description="Unique identifier for this race loop")
+    event_time: str | None = Field(None, description="Decision event time (ISO 8601, UTC)")
     lap: int | None = Field(None, description="Lap the recommendation was made on")
     suggestion: str | None = Field(None, description="PIT NOW, PIT SOON, or STAY OUT")
     reasoning: str | None = Field(None, description="The AI strategist's natural-language reasoning")
@@ -47,6 +55,7 @@ class PitDecision(BaseModel):
 
 class RaceFeed(BaseModel):
     prefix: str = Field(description="Attendee prefix this feed belongs to")
+    race_id: str | None = Field(None, description="Unique identifier for the newest race loop")
     lap: int = Field(description="Current lap number (of 60)")
     driver: str = Field(description="Our driver")
     team: str = Field(description="Our team")
@@ -66,7 +75,33 @@ class RaceFeed(BaseModel):
     updated_at: str = Field(description="When this snapshot was taken (ISO 8601, UTC)")
 
 
-def create_app(store: FeedStore) -> FastAPI:
+WATSONX_SPEC_PATH = "/watsonx/f1-race-feed-openapi.json"
+WATSONX_SPEC_FILENAME = "f1-watsonx-race-feed.json"
+
+
+def _openapi_30(value):
+    """Convert Pydantic's simple nullable JSON schemas to OpenAPI 3.0 form."""
+    if isinstance(value, list):
+        return [_openapi_30(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    converted = {key: _openapi_30(item) for key, item in value.items()}
+    variants = converted.get("anyOf")
+    if isinstance(variants, list):
+        non_null = [item for item in variants if item != {"type": "null"}]
+        if len(non_null) == 1 and len(non_null) != len(variants):
+            converted.pop("anyOf")
+            converted.update(non_null[0])
+            converted["nullable"] = True
+    return converted
+
+
+def create_app(
+    store: FeedStore,
+    *,
+    public_base_url: str | None = None,
+    fixed_prefix: str | None = None,
+) -> FastAPI:
     app = FastAPI(
         title="F1 Race Feed",
         version="1.0.0",
@@ -83,8 +118,13 @@ def create_app(store: FeedStore) -> FastAPI:
     )
 
     @app.get("/healthz")
-    async def healthz() -> dict:
-        return {"status": "ok", "feeds": store.prefixes()}
+    async def healthz() -> JSONResponse:
+        feeds = store.health()
+        ready = bool(feeds) and all(feed["status"] == "ready" for feed in feeds)
+        return JSONResponse(
+            {"status": "ok" if ready else "unavailable", "feeds": feeds},
+            status_code=200 if ready else 503,
+        )
 
     @app.get(
         "/race-feed/{prefix}",
@@ -97,5 +137,41 @@ def create_app(store: FeedStore) -> FastAPI:
         if feed is None:
             raise HTTPException(status_code=404, detail=f"No race feed for prefix '{prefix}'")
         return feed.snapshot()
+
+    if public_base_url and fixed_prefix:
+        dynamic_path = "/race-feed/{prefix}"
+        fixed_path = f"/race-feed/{fixed_prefix}"
+
+        @app.get(WATSONX_SPEC_PATH, include_in_schema=False)
+        async def watsonx_openapi() -> JSONResponse:
+            generated = app.openapi()
+            operation = deepcopy(generated["paths"][dynamic_path]["get"])
+            operation.pop("parameters", None)
+            operation["summary"] = "Get the live shared race feed"
+            operation["description"] = (
+                "Returns the organizer-controlled shared race feed used by every attendee. "
+                "When live is false, the race is paused or stopped; retained records are "
+                "historical and must not be described as live."
+            )
+            schema = _openapi_30({
+                "openapi": "3.0.3",
+                "info": {
+                    "title": "F1 Shared Race Feed",
+                    "version": "1.0.0",
+                    "description": (
+                        "Read-only shared River Racing feed for watsonx Orchestrate. "
+                        "No connection, authentication, or attendee input is required."
+                    ),
+                },
+                "servers": [{"url": public_base_url}],
+                "paths": {fixed_path: {"get": operation}},
+                "components": deepcopy(generated.get("components", {})),
+            })
+            return JSONResponse(
+                schema,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{WATSONX_SPEC_FILENAME}"'
+                },
+            )
 
     return app

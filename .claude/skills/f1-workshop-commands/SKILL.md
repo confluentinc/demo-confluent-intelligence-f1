@@ -60,7 +60,11 @@ uv run f1-pitwall                                           # → http://localho
 uv run f1-pitwall --mock                                    # offline demo/dev, no Confluent env
 
 # Organizer: shared race-feed service for LAB 5 (OpenAPI tool for watsonx Orchestrate)
-uv run f1-social-feed --creds-glob 'runs/*/credentials/*.env'   # → :8080, serves /race-feed/{prefix}
+uv run workshop prepare-social-feed --run-id <run-id> --account 50
+uv run f1-social-feed --creds runs/<run-id>/credentials/f1wp050.env \
+  --public-base-url https://small-underpass-refinery.ngrok-free.dev \
+  --fixed-prefix f1wp050
+# → :8080; Watsonx download at /watsonx/f1-race-feed-openapi.json
 uv run f1-social-feed --mock                                    # offline demo/dev, no Confluent env
 # Same OpenAPI tool, but sourced from the Real-Time Context Engine (MCP) instead of Kafka:
 RTCE_API_KEY=... RTCE_API_SECRET=... uv run f1-social-feed-rtce --creds-glob 'runs/*/credentials/*.env'

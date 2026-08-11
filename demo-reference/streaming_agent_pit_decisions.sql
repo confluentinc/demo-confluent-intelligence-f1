@@ -18,15 +18,40 @@
 -- raw_response preserves the full agent output for debugging when parsed fields are null.
 --
 -- DEPLOYMENT ORDER: Run CREATE AGENT first (streaming_agent_create_agent.sql),
--- then start the race simulator, then run this CREATE TABLE.
--- Uses earliest-offset so it processes all race laps.
+-- then run this file at any point after the continuous race feed has started.
+-- car_state uses latest-offset so the agent begins with the next current state
+-- instead of replaying old races through the LLM.
 
-CREATE TABLE `pit_decisions`
-WITH ('changelog.mode' = 'append')
-AS
+CREATE TABLE IF NOT EXISTS `pit_decisions` (
+  `race_id` STRING,
+  `car_number` INT,
+  `lap` INT,
+  `event_time` TIMESTAMP(3),
+  `position` INT,
+  `tire_compound_current` STRING,
+  `tire_age_laps` INT,
+  `anomaly_tire_temp_fl` BOOLEAN,
+  `suggestion` STRING,
+  `condition_summary` STRING,
+  `race_context` STRING,
+  `recommended_tire_compound` STRING,
+  `recommended_stint_laps` INT,
+  `recommended_reason` STRING,
+  `reasoning` STRING,
+  `raw_response` STRING
+) DISTRIBUTED INTO 1 BUCKETS
+WITH (
+  'changelog.mode' = 'append',
+  'connector' = 'confluent',
+  'value.format' = 'avro-registry'
+);
+
+INSERT INTO `pit_decisions`
 SELECT
+  cs.race_id,
   cs.car_number,
   cs.lap,
+  cs.event_time,
   cs.`position`,
   cs.tire_compound AS tire_compound_current,
   cs.tire_age_laps,
@@ -43,7 +68,7 @@ SELECT
   NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Reason:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS recommended_reason,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Reasoning:\*{0,2}\s*([\s\S]+?)$', 1)) AS reasoning,
   CAST(response AS STRING) AS raw_response
-FROM `car_state` /*+ OPTIONS('scan.startup.mode'='earliest-offset') */ cs,
+FROM `car_state` cs,
 LATERAL TABLE(AI_RUN_AGENT(
   `pit_strategy_agent`,
   CONCAT(

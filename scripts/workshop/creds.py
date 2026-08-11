@@ -36,7 +36,6 @@ and a raw terraform-output dict be treated identically.
 from __future__ import annotations
 
 import argparse
-import base64
 import csv
 import json
 import subprocess
@@ -100,6 +99,8 @@ CSV_HEADERS = [
     "social_feed_url",
     "cluster_id",
     "rtce_mcp_endpoint",
+    "rtce_api_key",
+    "rtce_api_secret",
 ]
 
 # --- Real-Time Context Engine keys -------------------------------------------
@@ -225,7 +226,11 @@ def _card_fields(
     ac = out.get("attendee_credentials", {})
     cluster_id = ac.get("cluster_id", "") or out.get("cluster_id", "")
     sa_id = out.get("service_account_id", "") or ac.get("service_account_id", "")
-    rtce_key, rtce_secret = _mint_rtce_key(sa_id, prefix) if (rtce_keys and sa_id) else ("", "")
+    rtce_key, rtce_secret = (
+        _mint_rtce_key(sa_id, prefix)
+        if (rtce_keys and sa_id)
+        else (out.get("rtce_api_key", ""), out.get("rtce_api_secret", ""))
+    )
     return {
         "prefix": prefix,
         "email": email,
@@ -236,9 +241,8 @@ def _card_fields(
         "console_password": out.get("console_password", ""),
         "social_feed_url": social_feed_url,
         "cluster_id": cluster_id,
-        "rtce_mcp_endpoint": _rtce_endpoint(
-            region, out.get("organization_id", ""), out.get("environment_id", ""), cluster_id
-        ),
+        "rtce_mcp_endpoint": out.get("rtce_mcp_endpoint", "")
+        or _rtce_endpoint(region, out.get("organization_id", ""), out.get("environment_id", ""), cluster_id),
         "rtce_api_key": rtce_key,
         "rtce_api_secret": rtce_secret,
         "environment_id": out.get("environment_id", ""),
@@ -332,19 +336,10 @@ def _write_env(creds_dir: Path, f: dict[str, str]) -> None:
 
 
 def _rtce_command(f: dict[str, str]) -> str:
-    """The one-line `claude mcp add` command, or "" when there's no key.
-
-    The Basic token is pre-computed so the attendee copies one line instead of
-    base64-encoding a secret by hand. Deliberately not a `uv run` script: the
-    attendee never clones this repo.
-    """
+    """Participant helper command, or "" when RTCE credentials are incomplete."""
     if not (f.get("rtce_api_key") and f.get("rtce_mcp_endpoint")):
         return ""
-    token = base64.b64encode(f"{f['rtce_api_key']}:{f['rtce_api_secret']}".encode()).decode()
-    return (
-        f"claude mcp add --transport http rtce {f['rtce_mcp_endpoint']} "
-        f'--header "Authorization: Basic {token}"'
-    )
+    return "uv run f1-rtce --creds credentials.env probe"
 
 
 def _rtce_section(f: dict[str, str]) -> str:
@@ -352,39 +347,37 @@ def _rtce_section(f: dict[str, str]) -> str:
     command = _rtce_command(f)
     if not command:
         return ""
-    # Wrapped for the card's fixed width; `claude mcp add` takes it either way.
-    wrapped = command.replace(' --header ', ' \\\n  --header ')
     return f"""
-## Ask an AI agent about the live race (Real-Time Context Engine)
+## Real-Time Context Engine
 
-`car_telemetry` is already published to Confluent's Real-Time Context Engine,
-so an AI agent can query the live sensor stream directly — no Kafka client and
-no consumer group.
+These values are for the optional direct RTCE exercise, not LAB 5:
 
-Register it with Claude Code (one line, run it anywhere):
+| Field | Value |
+|--|--|
+| `F1_RTCE_MCP_ENDPOINT` | `{f["rtce_mcp_endpoint"]}` |
+| `F1_RTCE_API_KEY` | `{f["rtce_api_key"]}` |
+| `F1_RTCE_API_SECRET` | `{f["rtce_api_secret"]}` |
+
+Check the endpoint and discover its current tool names:
 
 ```bash
-{wrapped}
+{command}
 ```
 
-Then just ask, in plain English:
-
-- "What are car 88's front-left tire temperatures over the last few laps?"
-- "How did car 88's tire temperatures change around lap 32?"
-
-Three tools come with it: `list_topics`, `get_metadata`, and `query_data`.
+LAB 5 uses the shared OpenAPI download below and does not use these credentials.
 """
 
 
 def _write_md(creds_dir: Path, f: dict[str, str]) -> None:
-    lab5 = ""
-    if f.get("social_feed_url"):
-        lab5 = (
-            "\n## LAB 5 — Social media agent (watsonx Orchestrate)\n\n"
-            "In the Orchestrate Agent Builder, import this OpenAPI spec as a tool, "
-            f"then set the tool's `prefix` to `{f['prefix']}`:\n\n"
-            f"```\n{f['social_feed_url']}/openapi.json\n```\n"
-        )
+    base_url = str(f.get("social_feed_url") or WATSONX_PUBLIC_BASE_URL).rstrip("/")
+    tool_url = f"{base_url}/watsonx/f1-race-feed-openapi.json"
+    lab5 = (
+        "\n## LAB 5 — Social media agent (watsonx Orchestrate)\n\n"
+        "Download the shared F1 Race Feed OpenAPI file below. In Orchestrate, choose "
+        "**Add tool -> OpenAPI**, upload the JSON file, select only **Get the live "
+        "shared race feed**, and add it to your agent. No prefix, connection, or "
+        f"authentication is required.\n\n```\n{tool_url}\n```\n"
+    )
     # The standalone and self-service tracks don't grant Console access (see
     # modules/environment's grant_console_access) — those cards keep the
     # API-key-and-shell story instead of printing an empty login table.
@@ -471,10 +464,28 @@ full access to your environment.
 # `ensureDispenserColumns` substring-matches on those to decide whether to append
 # its own two tracking columns, and Code.gs assumes Timestamp sits immediately
 # right of Claimed By.
-DISPENSER_RTCE_COLUMN = "Real-Time Context Engine / MCP Setup Command"
+DISPENSER_RTCE_ENDPOINT_COLUMN = "Real-Time Context Engine / F1_RTCE_MCP_ENDPOINT"
+DISPENSER_RTCE_KEY_COLUMN = "Real-Time Context Engine / F1_RTCE_API_KEY"
+DISPENSER_RTCE_SECRET_COLUMN = "Real-Time Context Engine / F1_RTCE_API_SECRET"
+DISPENSER_RTCE_COLUMN = "Real-Time Context Engine / Probe Command"
+WATSONX_PUBLIC_BASE_URL = "https://small-underpass-refinery.ngrok-free.dev"
+WATSONX_TOOL_URL = f"{WATSONX_PUBLIC_BASE_URL}/watsonx/f1-race-feed-openapi.json"
+DISPENSER_WATSONX_COLUMN = "Watsonx Orchestrate / Download F1 Race Feed Tool"
+DISPENSER_RTCE_COLUMNS = (
+    DISPENSER_RTCE_ENDPOINT_COLUMN,
+    DISPENSER_RTCE_KEY_COLUMN,
+    DISPENSER_RTCE_SECRET_COLUMN,
+    DISPENSER_RTCE_COLUMN,
+)
+DISPENSER_ADDED_COLUMNS = (*DISPENSER_RTCE_COLUMNS, DISPENSER_WATSONX_COLUMN)
 
 
-def _add_dispenser_column(csv_in: Path, rows: list[dict[str, str]], commands: dict[str, str]) -> int:
+def _add_dispenser_column(
+    csv_in: Path,
+    rows: list[dict[str, str]],
+    commands: dict[str, str],
+    fields_by_prefix: dict[str, dict[str, str]] | None = None,
+) -> int:
     """Append (or refresh) the RTCE command column in wsa's build-output.csv.
 
     Rewrites the file in place, since `wsa dispenser-upload` reads it by a fixed
@@ -487,11 +498,29 @@ def _add_dispenser_column(csv_in: Path, rows: list[dict[str, str]], commands: di
     """
     if not rows:
         return 0
-    fieldnames = [k for k in rows[0] if k != DISPENSER_RTCE_COLUMN] + [DISPENSER_RTCE_COLUMN]
+    original = [k for k in rows[0] if k not in DISPENSER_ADDED_COLUMNS]
+    tracking_index = next(
+        (
+            index
+            for index, header in enumerate(original)
+            if "claimed by" in header.lower() or "timestamp" in header.lower()
+        ),
+        len(original),
+    )
+    fieldnames = [
+        *original[:tracking_index],
+        *DISPENSER_ADDED_COLUMNS,
+        *original[tracking_index:],
+    ]
     filled = 0
     for row in rows:
         command = commands.get(row.get(COLUMNS["prefix"], ""), "")
+        values = (fields_by_prefix or {}).get(row.get(COLUMNS["prefix"], ""), {})
+        row[DISPENSER_RTCE_ENDPOINT_COLUMN] = values.get("rtce_mcp_endpoint", "")
+        row[DISPENSER_RTCE_KEY_COLUMN] = values.get("rtce_api_key", "")
+        row[DISPENSER_RTCE_SECRET_COLUMN] = values.get("rtce_api_secret", "")
         row[DISPENSER_RTCE_COLUMN] = command
+        row[DISPENSER_WATSONX_COLUMN] = WATSONX_TOOL_URL
         if command:
             filled += 1
     with csv_in.open("w", newline="") as fh:
@@ -517,6 +546,7 @@ def creds(args: argparse.Namespace) -> None:
     # Kept verbatim so the RTCE column can be written back into wsa's CSV below.
     raw_rows: list[dict[str, str]] = []
     rtce_commands: dict[str, str] = {}
+    rtce_fields: dict[str, dict[str, str]] = {}
     with csv_in.open(newline="") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
@@ -544,6 +574,7 @@ def creds(args: argparse.Namespace) -> None:
             if args.rtce_keys and not fields["rtce_api_key"]:
                 no_rtce.append(prefix)
             rtce_commands[prefix] = _rtce_command(fields)
+            rtce_fields[prefix] = fields
             _write_env(creds_dir, fields)
             _write_md(creds_dir, fields)
             rows.append(fields)
@@ -559,11 +590,11 @@ def creds(args: argparse.Namespace) -> None:
     else:
         print("\nNo attendee rows with a resolved prefix found in the CSV.")
 
-    if args.dispenser_column and any(rtce_commands.values()):
-        filled = _add_dispenser_column(csv_in, raw_rows, rtce_commands)
+    if args.dispenser_column:
+        filled = _add_dispenser_column(csv_in, raw_rows, rtce_commands, rtce_fields)
         print(
-            f'\nDispenser: added "{DISPENSER_RTCE_COLUMN}" to {csv_in.name} ({filled} row(s)).\n'
-            "  `wsa dispenser-upload` will carry it into each attendee's claim email."
+            f"\nDispenser: added the Watsonx tool URL and available RTCE fields to {csv_in.name} "
+            f"({filled} RTCE row(s)).\n  `wsa dispenser-upload` will carry them into each attendee's claim email."
         )
 
     if unresolved:

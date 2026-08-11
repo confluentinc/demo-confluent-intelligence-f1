@@ -28,6 +28,11 @@ from scripts.workshop.sql_shell import (
 REFERENCE_DIR = Path(__file__).resolve().parents[1] / "demo-reference"
 REFERENCE_SQL = sorted(REFERENCE_DIR.glob("*.sql"))
 TEMPORARY_REFERENCE_SQL = {"granite_tire_forecast.sql"}
+MULTI_STATEMENT_REFERENCE_SQL = {
+    "enrichment_anomaly.sql",
+    "enrichment_anomaly_ai.sql",
+    "streaming_agent_pit_decisions.sql",
+}
 DURABLE_REFERENCE_SQL = [path for path in REFERENCE_SQL if path.name not in TEMPORARY_REFERENCE_SQL]
 
 
@@ -41,11 +46,12 @@ def test_reference_sql_is_left_running(path: Path) -> None:
 
 
 @pytest.mark.parametrize("path", REFERENCE_SQL, ids=lambda p: p.name)
-def test_reference_sql_is_one_statement(path: Path) -> None:
-    """A ';' inside a comment must not split the file into fragments."""
+def test_reference_sql_has_expected_statement_count(path: Path) -> None:
+    """Durable DDL + restartable INSERT files split into exactly two jobs."""
     stmts = split_statements(path.read_text())
-    assert len(stmts) == 1
-    assert is_durable(stmts[0]) is (path.name not in TEMPORARY_REFERENCE_SQL)
+    expected = 2 if path.name in MULTI_STATEMENT_REFERENCE_SQL else 1
+    assert len(stmts) == expected
+    assert all(is_durable(stmt) for stmt in stmts) is (path.name not in TEMPORARY_REFERENCE_SQL)
 
 
 @pytest.mark.parametrize(
@@ -233,4 +239,4 @@ def test_run_file_submits_reference_sql_verbatim(path: Path) -> None:
     session = _FakeSession()
 
     assert run_file(session, path) == 0
-    assert session.submitted == [path.read_text().strip().rstrip(";").strip()]
+    assert session.submitted == split_statements(path.read_text())

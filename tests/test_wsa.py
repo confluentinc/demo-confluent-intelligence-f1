@@ -1031,24 +1031,54 @@ class SpecHeaderContractTests(unittest.TestCase):
         missing = sorted(set(creds_mod.COLUMNS.values()) - headers)
         self.assertEqual(missing, [], f"wsa-spec-aws.yaml has no field for: {missing}")
 
+    def test_watsonx_tool_is_one_shared_literal_url(self):
+        from scripts.common.terraform import get_project_root
+
+        spec = yaml.safe_load((get_project_root() / wsa_mod.SPEC_FILE).read_text())
+        fields = [
+            field
+            for group in spec.get("credentials", [])
+            if group["name"] == "Watsonx Orchestrate"
+            for field in group.get("fields", [])
+        ]
+        self.assertEqual(
+            fields,
+            [
+                {
+                    "label": "Download F1 Race Feed Tool",
+                    "source": "spec",
+                    "value": creds_mod.WATSONX_TOOL_URL,
+                }
+            ],
+        )
+
 
 class RaceControlNamingTests(unittest.TestCase):
     """The organizer namespace is the only race-fan-out command surface."""
 
-    def test_workshop_subcommands_keep_every_flag(self):
+    def test_workshop_subcommands_use_manifest_scope_flags(self):
         from scripts.workshop import cli as cli_mod
 
-        argv = ["workshop", "start-races", "--region", "us-west-2", "--filter", "rr", "--count", "3"]
-        with patch.object(cli_mod.start_mod, "start_races") as started:
+        argv = ["workshop", "start-races", "--run-id", "f7zxf", "--accounts", "48-50"]
+        with patch.object(cli_mod.lifecycle_mod, "start_races") as started:
             with patch("sys.argv", argv):
                 cli_mod.main()
         args = started.call_args.args[0]
-        self.assertEqual((args.region, args.filter, args.count), ("us-west-2", "rr", 3))
+        self.assertEqual((args.run_id, args.accounts), ("f7zxf", "48-50"))
 
-        with patch.object(cli_mod.stop_mod, "stop_races") as stopped:
-            with patch("sys.argv", ["workshop", "stop-races", "--region", "eu-west-1"]):
+        with patch.object(cli_mod.lifecycle_mod, "stop_races") as stopped:
+            with patch("sys.argv", ["workshop", "stop-races", "--run-id", "f7zxf"]):
                 cli_mod.main()
-        self.assertEqual(stopped.call_args.args[0].region, "eu-west-1")
+        self.assertEqual(stopped.call_args.args[0].run_id, "f7zxf")
+
+        with patch.object(cli_mod.lifecycle_mod, "prepare_social_feed") as prepared:
+            with patch(
+                "sys.argv",
+                ["workshop", "prepare-social-feed", "--run-id", "f7zxf", "--account", "50"],
+            ):
+                cli_mod.main()
+        args = prepared.call_args.args[0]
+        self.assertEqual((args.run_id, args.account), ("f7zxf", 50))
 
     def test_race_modules_are_importable_but_not_console_scripts(self):
         from scripts.instructor import start_all_races, stop_all_races

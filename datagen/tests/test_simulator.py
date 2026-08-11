@@ -1,8 +1,11 @@
 """Tests for simulator Avro serialization and direct Kafka production."""
 
 import json
+import random
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+import pytest
 from confluent_kafka.schema_registry.avro import AvroSerializer
 
 from datagen import config
@@ -71,43 +74,98 @@ def test_produce_standings_emits_one_record_per_car_to_standings_topic():
     """All standings are produced to the race_standings topic with an event_time."""
     producer = MagicMock()
     avro_serializer = MagicMock(return_value=b"value-bytes")
-    key_fn = MagicMock(side_effect=lambda cn: f"key-{cn}".encode())
+    key_fn = MagicMock(side_effect=lambda race_id, cn: f"key-{race_id}-{cn}".encode())
     standings = [{"car_number": 44}, {"car_number": 1}]
 
-    sim._produce_standings(producer, avro_serializer, key_fn, standings)
+    sim._produce_standings(producer, avro_serializer, key_fn, standings, "race-1")
 
     assert producer.produce.call_count == 2
     for call in producer.produce.call_args_list:
         assert call.args[0] == config.STANDINGS_TOPIC
     # Every standing gets an epoch-millis event_time stamped in.
     assert all(isinstance(s["event_time"], int) for s in standings)
-    key_fn.assert_any_call(44)
-    key_fn.assert_any_call(1)
+    assert all(s["race_id"] == "race-1" for s in standings)
+    key_fn.assert_any_call("race-1", 44)
+    key_fn.assert_any_call("race-1", 1)
 
 
-def test_standings_key_fn_handles_primitive_schema():
-    """A primitive int key schema yields the raw car_number as payload."""
+def test_standings_key_fn_rejects_legacy_primitive_schema():
+    """A new simulator must never run against the pre-race_id key schema."""
     sr_client = MagicMock()
     sr_client.get_latest_version.return_value.schema.schema_str = json.dumps("int")
     avro_serializer = MagicMock()
 
-    key_fn = sim._build_standings_key_fn(sr_client, avro_serializer)
-    key_fn(44)
+    with pytest.raises(RuntimeError, match="controlled race_standings DROP/CREATE") as exc:
+        sim._build_standings_key_fn(sr_client, avro_serializer)
 
-    payload = avro_serializer.call_args.args[0]
-    assert payload == 44
+    assert "race_id and car_number" in str(exc.value)
+    avro_serializer.assert_not_called()
 
 
-def test_standings_key_fn_handles_record_schema():
-    """A record key schema wraps the car_number in its first field."""
+def test_standings_key_fn_rejects_record_missing_race_id():
     sr_client = MagicMock()
     sr_client.get_latest_version.return_value.schema.schema_str = json.dumps(
         {"type": "record", "name": "Key", "fields": [{"name": "car_number", "type": "int"}]}
     )
+
+    with pytest.raises(RuntimeError, match=r"fields \['car_number'\]"):
+        sim._build_standings_key_fn(sr_client, MagicMock())
+
+
+def test_standings_key_fn_handles_composite_record_schema():
+    """The upsert key contains both race identity and car identity."""
+    sr_client = MagicMock()
+    sr_client.get_latest_version.return_value.schema.schema_str = json.dumps(
+        {
+            "type": "record",
+            "name": "Key",
+            "fields": [
+                {"name": "race_id", "type": "string"},
+                {"name": "car_number", "type": "int"},
+            ],
+        }
+    )
     avro_serializer = MagicMock()
 
     key_fn = sim._build_standings_key_fn(sr_client, avro_serializer)
-    key_fn(44)
+    key_fn("race-1", 44)
 
     payload = avro_serializer.call_args.args[0]
-    assert payload == {"car_number": 44}
+    assert payload == {"race_id": "race-1", "car_number": 44}
+
+
+def test_standings_key_fn_accepts_optional_additional_fields():
+    sr_client = MagicMock()
+    sr_client.get_latest_version.return_value.schema.schema_str = json.dumps(
+        {
+            "type": "record",
+            "name": "Key",
+            "fields": [
+                {"name": "race_id", "type": "string"},
+                {"name": "car_number", "type": "int"},
+                {"name": "source", "type": ["null", "string"], "default": None},
+            ],
+        }
+    )
+    avro_serializer = MagicMock()
+
+    key_fn = sim._build_standings_key_fn(sr_client, avro_serializer)
+    key_fn("race-1", 44)
+
+    assert avro_serializer.call_args.args[0] == {"race_id": "race-1", "car_number": 44}
+
+
+def test_seed_random_resets_each_race(monkeypatch):
+    monkeypatch.setattr(config, "RACE_SEED", 42)
+    sim._seed_random()
+    first = [random.random() for _ in range(5)]
+    sim._seed_random()
+    assert [random.random() for _ in range(5)] == first
+
+
+def test_race_ids_are_sortable_by_utc_start_and_have_unique_suffixes():
+    earlier = sim._new_race_id(datetime(2026, 8, 11, 1, tzinfo=timezone.utc), "aaaaaaaa")
+    later = sim._new_race_id(datetime(2026, 8, 11, 2, tzinfo=timezone.utc), "bbbbbbbb")
+    assert earlier == "20260811T010000000000Z-aaaaaaaa"
+    assert earlier < later
+    assert sim._new_race_id() != sim._new_race_id()

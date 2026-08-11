@@ -60,6 +60,26 @@ class ExportAttendeeCountTests(unittest.TestCase):
             self.assertNotIn("overriding", out.getvalue())
 
 
+class NextStepsTests(unittest.TestCase):
+    def test_reports_stopped_races_and_manifest_scoped_commands(self):
+        out = io.StringIO()
+        with (
+            patch.object(wsa_mod, "dispenser_configured", return_value=False),
+            contextlib.redirect_stdout(out),
+        ):
+            create_mod._print_next_steps(
+                "cards-label",
+                50,
+                Path("/tmp/project"),
+                run_id="f7zxf",
+            )
+        text = out.getvalue()
+        self.assertIn("Every simulator is stopped", text)
+        self.assertIn("workshop start-races --run-id f7zxf", text)
+        self.assertIn("workshop prepare-races --run-id f7zxf", text)
+        self.assertNotIn("already running", text)
+
+
 class ConsoleAccountCheckTests(unittest.TestCase):
     """The password check is now the only guard on an over-large --attendees."""
 

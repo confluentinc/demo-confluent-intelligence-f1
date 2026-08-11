@@ -37,6 +37,7 @@ resource "confluent_flink_statement" "create_car_telemetry_table" {
 
   statement = <<-EOT
     CREATE TABLE IF NOT EXISTS `car_telemetry` (
+      `race_id` STRING COMMENT 'Unique sortable race-loop identifier',
       `car_number` INT COMMENT 'Car number identifier',
       `lap` INT COMMENT 'Current lap number (1-60)',
       `tire_temp_fl_c` DOUBLE COMMENT 'Front-left tire temperature in Celsius',
@@ -68,7 +69,7 @@ resource "confluent_flink_statement" "create_car_telemetry_table" {
       'kafka.max-message-size' = '2097164 bytes',
       'kafka.message-timestamp-type' = 'create-time',
       'kafka.retention.size' = '0 bytes',
-      'kafka.retention.time' = '0 ms',
+      'kafka.retention.time' = '24 h',
       'scan.bounded.mode' = 'unbounded',
       'scan.startup.mode' = 'earliest-offset',
       'value.format' = 'avro-registry'
@@ -107,6 +108,7 @@ resource "confluent_flink_statement" "create_race_standings_table" {
 
   statement = <<-EOT
     CREATE TABLE IF NOT EXISTS `race_standings` (
+      `race_id` STRING COMMENT 'Unique sortable race-loop identifier',
       `car_number` INT COMMENT 'Car number identifier',
       `driver` STRING COMMENT 'Driver full name',
       `team` STRING COMMENT 'Constructor team name',
@@ -121,11 +123,20 @@ resource "confluent_flink_statement" "create_race_standings_table" {
       `in_pit_lane` BOOLEAN COMMENT 'Whether car is currently in the pit lane',
       `event_time` TIMESTAMP(3) COMMENT 'FIA timing feed timestamp',
       WATERMARK FOR `event_time` AS `event_time` - INTERVAL '10' SECOND,
-      PRIMARY KEY (`car_number`) NOT ENFORCED
-    ) DISTRIBUTED BY (`car_number`) INTO 1 BUCKETS
+      PRIMARY KEY (`race_id`, `car_number`) NOT ENFORCED
+    ) DISTRIBUTED BY (`race_id`, `car_number`) INTO 1 BUCKETS
     WITH (
       'changelog.mode' = 'upsert',
       'connector' = 'confluent',
+      'kafka.cleanup-policy' = 'compact,delete',
+      'kafka.compaction.time' = '6 h',
+      'kafka.max-message-size' = '2097164 bytes',
+      'kafka.message-timestamp-type' = 'create-time',
+      'kafka.retention.size' = '0 bytes',
+      'kafka.retention.time' = '24 h',
+      'key.format' = 'avro-registry',
+      'scan.bounded.mode' = 'unbounded',
+      'scan.startup.mode' = 'earliest-offset',
       'value.format' = 'avro-registry'
     );
   EOT

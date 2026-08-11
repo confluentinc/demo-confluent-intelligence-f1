@@ -59,6 +59,12 @@ FIELDS = [
     ("organization_id", "Organization ID"),
 ]
 
+RTCE_FIELDS = [
+    ("rtce_mcp_endpoint", "F1_RTCE_MCP_ENDPOINT"),
+    ("rtce_api_key", "F1_RTCE_API_KEY"),
+    ("rtce_api_secret", "F1_RTCE_API_SECRET"),
+]
+
 
 def _parse_pasted_email(text: str) -> dict[str, str]:
     """Best-effort extraction of "<label>: <value>" pairs from a pasted claim
@@ -74,6 +80,11 @@ def _parse_pasted_email(text: str) -> dict[str, str]:
     for key, label in CONSOLE_FIELDS:
         # ":" only, and capture the rest of the line — see CONSOLE_FIELDS.
         pattern = re.compile(rf"{re.escape(label)}\s*:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
+        m = pattern.search(text)
+        if m:
+            found[key] = m.group(1).strip()
+    for key, label in RTCE_FIELDS:
+        pattern = re.compile(rf"{re.escape(label)}\s*:\s*(\S+)", re.IGNORECASE)
         m = pattern.search(text)
         if m:
             found[key] = m.group(1).strip()
@@ -103,10 +114,10 @@ def _prompt_fields(prefill: dict[str, str]) -> dict[str, str]:
     email = values.get("email", "")
     answer = input(f"Email [{email}]: ").strip()
     values["email"] = answer or email
-    for key, label in FIELDS + CONSOLE_FIELDS:
+    for key, label in FIELDS + CONSOLE_FIELDS + RTCE_FIELDS:
         current = values.get(key, "")
         suffix = f" [{current}]" if current else ""
-        optional = " (optional)" if (key, label) in CONSOLE_FIELDS else ""
+        optional = " (optional)" if (key, label) in CONSOLE_FIELDS + RTCE_FIELDS else ""
         answer = input(f"{label}{optional}{suffix}: ").strip()
         values[key] = answer or current
     return values
@@ -127,6 +138,9 @@ def _to_terraform_shaped_outputs(values: dict[str, str]) -> dict:
         "cluster_bootstrap": values["cluster_bootstrap"],
         "compute_pool_id": values["compute_pool_id"],
         "flink_rest_endpoint": values["flink_rest_endpoint"],
+        "rtce_mcp_endpoint": values.get("rtce_mcp_endpoint", ""),
+        "rtce_api_key": values.get("rtce_api_key", ""),
+        "rtce_api_secret": values.get("rtce_api_secret", ""),
         "attendee_credentials": {
             "environment_url": values["environment_url"],
             "cluster_id": values["cluster_id"],

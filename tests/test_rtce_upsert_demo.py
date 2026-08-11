@@ -14,6 +14,7 @@ FEED = (REFERENCE / "rtce_upsert_verification_feed.sql").read_text()
 RUNBOOK = (REFERENCE / "rtce_upsert_verification.md").read_text()
 
 STANDINGS_FIELDS = (
+    "race_id",
     "car_number",
     "driver",
     "team",
@@ -50,9 +51,9 @@ def test_serving_value_contains_the_complete_standings_schema() -> None:
 
 
 def test_feed_derives_the_same_key_as_the_sink_primary_key() -> None:
-    key_expression = "CAST(`car_number` AS STRING)"
+    key_expression = "CONCAT(`race_id`, ':', CAST(`car_number` AS STRING))"
     assert f"{key_expression} AS `key`" in FEED
-    assert f"GROUP BY {key_expression}" in FEED
+    assert "GROUP BY `race_id`, CAST(`car_number` AS STRING)" in FEED
     assert "INSERT INTO `race_standings_rtce`" in FEED
     assert "PRIMARY KEY (`key`) NOT ENFORCED" in SETUP
 

@@ -286,8 +286,10 @@ def _print_next_steps(
     attendees: int,
     root: Path,
     email_pattern: str = "",
+    run_id: str = "",
 ) -> None:
     cards_dir = f"runs/{name}/credentials/"
+    run_flag = f" --run-id {run_id}" if run_id else ""
 
     print(f"""
 === Workshop Ready ===
@@ -295,11 +297,13 @@ def _print_next_steps(
   Credential cards:  {cards_dir}
   Attendees:         {attendees}
 
-Races are already running (ECS auto-starts each simulator).
+Race preparation passed. Every simulator is stopped and ready for the organizer.
 
-  Stop all races:      uv run workshop stop-races
-  Start all races:     uv run workshop start-races
-  Reset for new run:   uv run workshop reset-races
+  Check race status:    uv run workshop race-status{run_flag}
+  Start all races:      uv run workshop start-races{run_flag}
+  Stop all races:       uv run workshop stop-races{run_flag}
+  Reset for new run:    uv run workshop reset-races{run_flag}
+  Rehearse preparation: uv run workshop prepare-races{run_flag}
   Validate env health: uv run workshop validate --creds-glob '{cards_dir}*.env'
 
   Tear down entirely:  uv run teardown-workshop
@@ -449,7 +453,18 @@ def create(args: argparse.Namespace) -> None:
     # --- 7. Next steps ---
     run = wsa_mod.resolve_run(output_dir, ns.run_id)
     name = args.name or (run.run_id if run else "workshop")
-    _print_next_steps(name, attendees, root, email_pattern=email_pattern)
+    if run is not None and (root / "runs" / run.run_id / "manifest.json").is_file():
+        from scripts.workshop.lifecycle import prepare_races
+
+        print("\n=== Race preparation smoke test ===\n")
+        prepare_races(argparse.Namespace(run_id=run.run_id, accounts=""))
+    _print_next_steps(
+        name,
+        attendees,
+        root,
+        email_pattern=email_pattern,
+        run_id=run.run_id if run else "",
+    )
 
 
 def add_arguments(p: argparse.ArgumentParser) -> None:

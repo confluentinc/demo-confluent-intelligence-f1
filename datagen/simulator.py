@@ -7,16 +7,17 @@ Confluent Cloud — there is no IBM MQ hop):
   - Car telemetry (car #88 only) → topic 'car_telemetry'
   - Race standings (all 22 cars)  → topic 'race_standings', keyed by car_number
 
-The race_standings topic backs a Flink upsert table (PRIMARY KEY car_number),
+The race_standings topic backs a Flink upsert table (PRIMARY KEY race_id,
+car_number),
 so each record's key is Avro-encoded against the registered '<topic>-key'
 subject and the value against '<topic>-value'.
 """
 
 import json
 import logging
-import os
 import random
 import time
+import uuid
 from datetime import datetime, timezone
 
 from confluent_kafka import Producer
@@ -37,15 +38,20 @@ logger = logging.getLogger(__name__)
 
 
 def _seed_random():
-    """Apply RACE_SEED for reproducible telemetry/lap noise, if set.
+    """Reset random state at each race for reproducible incidents and outcomes.
 
     Called at the start of every race so that looped races (RACE_LOOP=true)
     stay reproducible instead of drifting after the first iteration.
     """
-    seed = os.environ.get("RACE_SEED")
-    if seed:
-        random.seed(int(seed))
-        logger.info(f"Deterministic mode: random.seed({seed})")
+    random.seed(config.RACE_SEED)
+    logger.info("Deterministic mode: random.seed(%s)", config.RACE_SEED)
+
+
+def _new_race_id(now: datetime | None = None, suffix: str | None = None) -> str:
+    """Return a unique ID whose lexical order follows its UTC start time."""
+    started_at = now or datetime.now(timezone.utc)
+    random_suffix = suffix or uuid.uuid4().hex[:8]
+    return f"{started_at.astimezone(timezone.utc):%Y%m%dT%H%M%S%fZ}-{random_suffix}"
 
 
 def _now_millis():
@@ -55,19 +61,30 @@ def _now_millis():
 def _build_standings_key_fn(sr_client, avro_serializer):
     """Return a function that Avro-encodes a race_standings message key.
 
-    Confluent Cloud Flink registers the key schema for a single-column
-    PRIMARY KEY either as a primitive ("int") or as a record wrapping the
-    key column. We inspect the registered '<topic>-key' schema once and
-    build the right payload shape for either case.
+    The composite schema is a hard migration boundary. Refusing the legacy
+    primitive/single-column key prevents a new simulator from appearing healthy
+    while silently producing standings that can collide across race loops.
     """
     ctx = SerializationContext(config.STANDINGS_TOPIC, MessageField.KEY)
-    latest = sr_client.get_latest_version(f"{config.STANDINGS_TOPIC}-key")
+    subject = f"{config.STANDINGS_TOPIC}-key"
+    latest = sr_client.get_latest_version(subject)
     parsed = json.loads(latest.schema.schema_str)
     is_record = isinstance(parsed, dict) and parsed.get("type") == "record"
-    field_name = parsed["fields"][0]["name"] if is_record else None
+    fields = parsed.get("fields", []) if is_record else []
+    field_names = {
+        field.get("name") for field in fields if isinstance(field, dict) and field.get("name")
+    }
+    required = {"race_id", "car_number"}
+    if not is_record or not required.issubset(field_names):
+        found = "non-record schema" if not is_record else f"fields {sorted(field_names)}"
+        raise RuntimeError(
+            f"{subject} has an unmigrated standings key ({found}); expected an Avro record "
+            "containing race_id and car_number. Keep the simulator stopped and run the "
+            "controlled race_standings DROP/CREATE schema migration before starting races."
+        )
 
-    def key_fn(car_number):
-        payload = {field_name: car_number} if is_record else car_number
+    def key_fn(race_id, car_number):
+        payload = {"race_id": race_id, "car_number": car_number}
         return avro_serializer(payload, ctx)
 
     return key_fn
@@ -123,21 +140,22 @@ def _produce_telemetry(producer, avro_serializer, telemetry):
     )
 
 
-def _produce_standings(producer, avro_serializer, key_fn, standings):
-    """Produce a race_standings record for every car, keyed by car_number."""
+def _produce_standings(producer, avro_serializer, key_fn, standings, race_id):
+    """Produce standings keyed by the composite (race_id, car_number)."""
     value_ctx = SerializationContext(config.STANDINGS_TOPIC, MessageField.VALUE)
     ts = _now_millis()
     for standing in standings:
+        standing["race_id"] = race_id
         standing["event_time"] = ts
         producer.produce(
             config.STANDINGS_TOPIC,
-            key=key_fn(standing["car_number"]),
+            key=key_fn(race_id, standing["car_number"]),
             value=avro_serializer(standing, value_ctx),
         )
     producer.poll(0)
 
 
-def _run_warmup_laps(producer, avro_serializer):
+def _run_warmup_laps(producer, avro_serializer, race_id):
     """Produce pre-race telemetry windows (lap=0) as a producer/schema smoke test.
 
     These do **not** prime the anomaly function, despite the name. It withholds
@@ -153,6 +171,7 @@ def _run_warmup_laps(producer, avro_serializer):
         for _ in range(readings_per_lap):
             telemetry = generate_telemetry(lap=0, tire_age=0, tire_compound="SOFT", post_pit=False)
             telemetry["car_number"] = config.OUR_CAR_NUMBER
+            telemetry["race_id"] = race_id
             telemetry["lap"] = 0
             telemetry["event_time"] = _now_millis()
             _produce_telemetry(producer, avro_serializer, telemetry)
@@ -179,6 +198,8 @@ def run_race():
     logger.info(f"Our car: #{config.OUR_CAR_NUMBER}")
 
     _seed_random()
+    race_id = _new_race_id()
+    logger.info("Race ID: %s", race_id)
 
     # Initialize Kafka producer + serializers
     producer, sr_client, avro_serializer = _create_kafka_producer()
@@ -193,7 +214,7 @@ def run_race():
     car88_post_pit = False
 
     try:
-        _run_warmup_laps(producer, avro_serializer)
+        _run_warmup_laps(producer, avro_serializer, race_id)
 
         for lap in range(1, config.TOTAL_LAPS + 1):
             lap_start = time.time()
@@ -216,7 +237,9 @@ def run_race():
             )
 
             # Produce race standings to Kafka (all 22 cars, keyed by car_number)
-            _produce_standings(producer, avro_serializer, standings_key_fn, race.get_standings())
+            _produce_standings(
+                producer, avro_serializer, standings_key_fn, race.get_standings(), race_id
+            )
 
             # Produce car telemetry to Kafka (multiple readings per lap)
             readings_per_lap = config.SECONDS_PER_LAP // config.TELEMETRY_INTERVAL_SEC
@@ -228,6 +251,7 @@ def run_race():
                     post_pit=car88_post_pit,
                 )
                 telemetry["car_number"] = config.OUR_CAR_NUMBER
+                telemetry["race_id"] = race_id
                 telemetry["lap"] = lap
                 telemetry["event_time"] = _now_millis()
 

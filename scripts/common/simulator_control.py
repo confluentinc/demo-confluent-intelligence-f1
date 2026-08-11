@@ -210,13 +210,17 @@ def _hint_anomaly_fallback(filename: str) -> None:
 
 
 def create_lab_objects(tf: dict, root: Path) -> bool:
-    """Submit the canonical lab SQL and wait for each statement to come up.
+    """Submit durable lab DDL first, then start the restartable INSERT jobs.
 
-    Waiting matters: ``CREATE AGENT`` must reach COMPLETED and ``car_state`` must
-    exist before the pit_decisions statement will pass validation.
-    Fire-and-forget submission would race and fail with "table does not exist".
+    Waiting matters: every CREATE must reach COMPLETED before any INSERT starts,
+    otherwise a restart can race a downstream statement against a table or agent
+    that does not exist yet.  INSERT statements are successful only at RUNNING;
+    accepting COMPLETED would hide a job that exited instead of tailing the feed.
     """
+    from scripts.workshop.sql_shell import split_statements
+
     session = flink_session(tf)
+    builds: list[tuple[str, str, str, list[str]]] = []
 
     for filename, creates in LAB_BUILDS:
         if filename == ANOMALY_SQL:
@@ -227,26 +231,37 @@ def create_lab_objects(tf: dict, root: Path) -> bool:
             print(f"  {creates}: missing {path}")
             return False
 
-        # Same normalization as `f1-sql --exec`: the trailing ';' in the .sql file
-        # is a shell-shell convention, not part of the statement.
-        sql = path.read_text().strip().rstrip(";").strip()
+        statements = split_statements(path.read_text())
+        if not statements:
+            print(f"  {creates}: no SQL statements in {path}")
+            return False
+        builds.append((filename, creates, statements[0], statements[1:]))
 
+    def submit(sql: str, filename: str, creates: str, label: str, expected: str) -> bool:
         try:
             name = session.submit(sql)
         except Exception as e:
-            print(f"  {creates}: submit failed — {e}")
+            print(f"  {creates}: {label} submit failed — {e}")
             _hint_anomaly_fallback(filename)
             return False
 
         status = session.wait(name, timeout=180)
         phase = status["status"]["phase"]
-        if phase in ("RUNNING", "COMPLETED"):
-            print(f"  {creates}: {phase}  ({filename})")
-            continue
+        if phase != expected:
+            detail = (status.get("status") or {}).get("detail", "").strip()
+            print(f"  {creates}: {label} {phase} — {detail or f'expected {expected}'}")
+            _hint_anomaly_fallback(filename)
+            return False
+        print(f"  {creates}: {label} {phase}  ({filename})")
+        return True
 
-        detail = (status.get("status") or {}).get("detail", "").strip()
-        print(f"  {creates}: {phase} — {detail or 'no detail returned'}")
-        _hint_anomaly_fallback(filename)
-        return False
+    for filename, creates, ddl, _ in builds:
+        if not submit(ddl, filename, creates, "DDL", "COMPLETED"):
+            return False
+
+    for filename, creates, _, inserts in builds:
+        for index, sql in enumerate(inserts, start=1):
+            if not submit(sql, filename, creates, f"INSERT {index}", "RUNNING"):
+                return False
 
     return True

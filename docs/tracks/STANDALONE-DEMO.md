@@ -414,8 +414,8 @@ listed problem and re-run.
 The lab objects have to be rebuilt because `reset` drops them — they're created by the
 LAB B/C statements you ran, not by Terraform. Plain `uv run reset` leaves them dropped on
 purpose: in the instructor-led workshop, building them *is* LAB 3 and LAB 4. It also
-leaves the **race feed stopped** on purpose, and tells you to submit LAB 3 before
-`uv run race start` — same ordering reason as below.
+leaves the **race feed stopped** on purpose. Start the race and submit LAB 3 when
+you're ready; source replay and `race_id` isolation make the order safe.
 
 Reset serves both solo tracks. With a standalone deployment *and* a self-service one in
 the same checkout, name the one you mean: `uv run reset --track standalone` (or
@@ -424,12 +424,9 @@ itself. On the self-service track there's no ECS service to scale, so instead re
 looks for a local `uv run f1-race` that is still producing and refuses rather than
 clearing underneath it — `--force` overrides that.
 
-> The rebuild happens *before* the race restarts, not after — and the order matters
-> because of `race_standings`, not the telemetry. `car_telemetry` sets
-> `scan.startup.mode=earliest-offset` at the table level, so LAB B replays it from the
-> start either way. `race_standings` doesn't, so it starts from `latest`: any standings
-> row produced before the LAB B statement is `RUNNING` is never seen, those laps have no
-> version for the temporal join to match, and `car_state` silently loses its first laps.
+> Both source tables set `scan.startup.mode=earliest-offset`. LAB B can start before
+> or after the race and still replay matching telemetry and standings. Its composite
+> `race_id` and car-number join prevents records from different loops from mixing.
 
 Clearing `car_telemetry` matters more than it looks. The simulator loops races back to
 back, so the topic accumulates finished races — and LAB B reads what's already there.

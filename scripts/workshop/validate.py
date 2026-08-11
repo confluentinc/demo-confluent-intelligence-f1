@@ -105,9 +105,18 @@ def validate_connection(creds: dict[str, str]) -> list[tuple[str, bool, str]]:
             return False, "race_standings-key subject missing"
         if "car_telemetry-key" in subs:
             return False, "unexpected car_telemetry-key subject (string key expected)"
-        schema = requests.get(f"{sr_url}/subjects/race_standings-key/versions/latest", auth=sr_auth, timeout=30).json()
-        ok = "car_number" in schema.get("schema", "")
-        return ok, "key encodes car_number" if ok else "race_standings-key missing car_number"
+        standings_key = requests.get(
+            f"{sr_url}/subjects/race_standings-key/versions/latest", auth=sr_auth, timeout=30
+        ).json().get("schema", "")
+        telemetry_value = requests.get(
+            f"{sr_url}/subjects/car_telemetry-value/versions/latest", auth=sr_auth, timeout=30
+        ).json().get("schema", "")
+        missing = []
+        if not all(field in standings_key for field in ("race_id", "car_number")):
+            missing.append("composite race_standings key")
+        if "race_id" not in telemetry_value:
+            missing.append("car_telemetry race_id")
+        return (not missing), ("race_id schemas present" if not missing else "missing " + ", ".join(missing))
 
     c.run("flink tables", tables)
     c.run("SR key encoding", sr_subjects)

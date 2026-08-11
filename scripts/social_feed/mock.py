@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 
 from scripts.pitwall.mock import (
     ANOMALY_TEMP_THRESHOLD,
@@ -48,6 +49,7 @@ def run_mock(feed: FeedState, stop) -> None:
             post_pit = post_pit or car44["pit_stops"] > 0
 
             for standing in race.get_standings():
+                standing.setdefault("event_time", datetime.now(timezone.utc))
                 feed.update_standing(standing)
 
             last_reading = None
@@ -65,9 +67,13 @@ def run_mock(feed: FeedState, stop) -> None:
 
             anomaly = last_reading["tire_temp_fl_c"] > ANOMALY_TEMP_THRESHOLD
             if lap >= CARSTATE_REVEAL_LAP:
-                feed.update_car_state(_build_car_state(last_reading, car44, anomaly))
+                car_state = _build_car_state(last_reading, car44, anomaly)
+                car_state.setdefault("event_time", datetime.now(timezone.utc))
+                feed.update_car_state(car_state)
             if lap >= PITDEC_REVEAL_LAP:
-                feed.add_decision(_build_decision(car44, anomaly))
+                decision = _build_decision(car44, anomaly)
+                decision.setdefault("event_time", datetime.now(timezone.utc))
+                feed.add_decision(decision)
 
         logger.info("Mock race complete — restarting in 5s")
         _sleep(5, stop)

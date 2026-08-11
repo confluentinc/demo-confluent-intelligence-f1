@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "F1 Pit Wall AI Demo — Real-time pit strategy with Flink Streaming Agents on Confluent Cloud"
 readme = "README.md"
 license = {text = "Apache-2.0"}
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 
 dependencies = [
     "python-dotenv>=1.0.0,<2.0",
@@ -46,6 +46,8 @@ create-workshop = "scripts.workshop.create:main"
 teardown-workshop = "scripts.workshop.teardown:main"
 selfservice = "scripts.selfservice.cli:main"
 f1-race = "scripts.selfservice.race:main"
+f1-reset = "scripts.participant.reset:main"
+f1-rtce = "scripts.participant.rtce:main"
 f1-sql = "scripts.workshop.sql_shell:main"
 f1-onboard = "scripts.workshop.onboard:main"
 f1-pitwall = "scripts.pitwall.app:main"

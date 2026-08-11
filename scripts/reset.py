@@ -19,12 +19,10 @@ deployment's ECS service to zero and waiting for its task to die; on the
 self-service track the producer is the user's own `uv run f1-race`, which this
 command can only detect and refuse to race against (`--force` overrides).
 
-**Plain reset does not restart the race.** `race_standings` has no
-`scan.startup.mode` override (terraform/modules/topics/main.tf), so it is read
-from `latest`: a LAB 3 statement submitted after the race starts never sees the
-standings versions its first laps need, and `car_state` silently drops them. Reset
-leaves the feed stopped and tells you to submit LAB 3 before `uv run race start`.
-`--with-labs` does both, in that order, for you.
+**Plain reset does not restart the race.** It leaves the feed stopped so the next
+start has an explicit boundary. Both source tables read from `earliest-offset`,
+and every record carries `race_id`, so LAB 3 may start before or after the race.
+`--with-labs` rebuilds the lab objects and starts the feed for you.
 
 The source topics are *truncated*, not deleted: `car_telemetry` and
 `race_standings` are Terraform-owned (created by a Flink CREATE TABLE, with
@@ -34,11 +32,8 @@ its config, and its subjects intact while removing every record — which is wha
 "free from previous races" actually requires. Pass --keep-source to skip it.
 
 `race_standings` is compacted (it is the keyed upsert side of the LAB 3 temporal
-join) and Kafka refuses delete-records on a compacted topic. That is reported,
-not worked around: compaction already reduces it to the latest row per
-car_number, lap 0 of the next race overwrites all 22 keys, and the temporal join
-resolves versions by event time so a finished race's rows can never be selected
-by newer telemetry.
+join), so reset leaves it in place. Its composite `(race_id, car_number)` key and
+the temporal join's matching `race_id` keep finished races isolated.
 
 Every step reports whether it worked, and **anything that did not work exits
 nonzero**. A reset that half-succeeded and printed "Reset complete" was worse than
@@ -106,6 +101,7 @@ LAB_TOPICS = ["car_state", "pit_decisions"]
 # Terraform-owned source topics the simulator produces to. Truncated, never
 # deleted — see the module docstring.
 SOURCE_TOPICS = ["car_telemetry", "race_standings"]
+APPEND_SOURCE_TOPICS = ["car_telemetry"]
 
 # Flink objects created by the labs, dropped before their topics. Labels become
 # part of the Flink statement name, which rejects underscores (HTTP 400).
@@ -697,10 +693,8 @@ def main() -> None:
     region = creds.get("TF_VAR_region") or DEFAULT_REGION
 
     clear_source = not args.keep_source
-    # --with-labs stops and restarts the feed even with --keep-source: LAB 3 has
-    # to be RUNNING before any new standings row is produced (see the module
-    # docstring), so submitting it against a live feed is the one thing this
-    # command must never do.
+    # --with-labs stops and restarts the feed even with --keep-source so the
+    # rebuilt jobs and simulator share a clear operational boundary.
     stop_feed = clear_source or args.with_labs
 
     # Whether this track *should* have an ECS service, decided by the track rather
@@ -774,17 +768,12 @@ def main() -> None:
     elif admin is None:
         step("Skipping source topics — no Kafka admin access (see above).")
     else:
-        step("Clearing race data from source topics...")
-        problems += truncate_topics(admin, SOURCE_TOPICS, present)
+        step("Clearing append-only telemetry (compacted standings stay race_id-isolated)...")
+        problems += truncate_topics(admin, APPEND_SOURCE_TOPICS, present)
 
     if args.with_labs:
-        # Before the feed restarts, not after. `car_telemetry` sets
-        # scan.startup.mode=earliest-offset at the table level (see
-        # terraform/modules/topics/main.tf), so it would replay either way — but
-        # `race_standings` does not, and it is the versioned side of LAB 3's
-        # temporal join. Standings rows produced before this statement is RUNNING
-        # are never seen, leaving those laps with no version to join against, so
-        # the join drops them and car_state silently loses its first laps.
+        # Both sources replay from earliest-offset. Rebuilding while stopped is
+        # still useful because it gives the reset one clean restart boundary.
         step("Rebuilding lab objects from demo-reference/...")
         if problems:
             print("  Skipped — the cleanup above did not finish cleanly, so a rebuild would")
@@ -831,11 +820,9 @@ def main() -> None:
     else:
         start = "uv run race start" if ecs_track else f1_race_command(root, creds)
         print("Next steps:")
-        print("  1. Re-run the stream-processing labs — LAB 3, then LAB 4 (`uv run f1-sql`).")
-        print(f"  2. `{start}`  — starts a fresh race from lap 0.")
-        print("  In that order. `race_standings` is read from `latest`, so a LAB 3 statement")
-        print("  submitted after the race is already producing never sees the versions its")
-        print("  first laps need, and car_state silently drops them.")
+        print(f"  1. `{start}`  — starts a fresh deterministic race loop.")
+        print("  2. Re-run LAB 3, then LAB 4 (`uv run f1-sql`) whenever you're ready.")
+        print("  Both sources replay from earliest-offset, and race_id isolates each loop.")
         print("  (Or do all of it in one command next time: `uv run reset --with-labs`.)")
 
 

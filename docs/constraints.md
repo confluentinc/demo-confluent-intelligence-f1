@@ -14,7 +14,7 @@ These are hard constraints for this workshop. Do not violate them.
 - Circuit: Silverstone; 22 drivers, 11 teams
 - Per-attendee isolation: separate CC environment/cluster/Flink pool per attendee; shared Postgres/ECR/Bedrock
 - Everything provisioned by organizers via `wsa` — driven by `uv run workshop build` — (or `uv run deploy` for a single environment) — attendees never run Terraform
-- Race simulator runs as an ECS Fargate service per attendee with `RACE_LOOP=true` so the feed is always live; instructors control fleets via `uv run workshop start-races` / `stop-races`, and a single deployment via `uv run race`
+- Race simulator runs as an ECS Fargate service per attendee with `RACE_LOOP=true`; workshop services are provisioned and prepared at desired count 0, then the organizer starts them through manifest-scoped `uv run workshop start-races` / `stop-races` commands. A single deployment uses `uv run race`.
 - Single partition topics: `DISTRIBUTED BY (col) INTO 1 BUCKETS`
 
 ## Must NOT Have

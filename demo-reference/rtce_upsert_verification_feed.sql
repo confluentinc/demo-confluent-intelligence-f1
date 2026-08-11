@@ -1,9 +1,10 @@
--- Continuously reduce race_standings to one current RTCE row per car.
+-- Continuously reduce race_standings to one current RTCE row per race and car.
 -- The grouped expression preserves the derived upsert key; a direct projection
 -- with CAST(car_number AS STRING) currently introduces UpsertMaterialize.
 INSERT INTO `race_standings_rtce`
 SELECT /*+ STATE_TTL('standings' = '1h') */
-  CAST(`car_number` AS STRING) AS `key`,
+  CONCAT(`race_id`, ':', CAST(`car_number` AS STRING)) AS `key`,
+  LAST_VALUE(`race_id`) AS `race_id`,
   LAST_VALUE(`car_number`) AS `car_number`,
   LAST_VALUE(`driver`) AS `driver`,
   LAST_VALUE(`team`) AS `team`,
@@ -18,4 +19,4 @@ SELECT /*+ STATE_TTL('standings' = '1h') */
   LAST_VALUE(`in_pit_lane`) AS `in_pit_lane`,
   LAST_VALUE(`event_time`) AS `event_time`
 FROM `race_standings` AS `standings`
-GROUP BY CAST(`car_number` AS STRING);
+GROUP BY `race_id`, CAST(`car_number` AS STRING);

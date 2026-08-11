@@ -204,3 +204,8 @@ credentials:
       - label: Service Account ID
         source: terraform
         output: service_account_id
+  - name: Watsonx Orchestrate
+    fields:
+      - label: Download F1 Race Feed Tool
+        source: spec
+        value: "https://small-underpass-refinery.ngrok-free.dev/watsonx/f1-race-feed-openapi.json"

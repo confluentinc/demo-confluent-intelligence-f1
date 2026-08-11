@@ -786,6 +786,21 @@ def build(args: argparse.Namespace) -> None:
         print(f"\nSkipping card generation (--no-cards). When you want them:\n  {follow_up}")
         return
     _write_cards(root, run, args)
+    # WSA keeps the exact per-account Terraform outputs under the run directory.
+    # Record those generated ECS names now; lifecycle commands must never recover
+    # them later with a broad AWS substring search.
+    state_root = run.path / "terraform/aws/terraform.tfstate.d"
+    if state_root.is_dir():
+        from scripts.workshop.lifecycle import write_manifest
+
+        manifest = write_manifest(root, run, args.name or run.run_id, args.region)
+        print(f"Lifecycle manifest: {manifest}")
+    else:
+        print(
+            f"warning: no per-account Terraform states under {state_root}; "
+            "lifecycle manifest was not written",
+            file=sys.stderr,
+        )
     _upload_dispenser(
         root,
         run,

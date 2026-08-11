@@ -3,9 +3,8 @@
 #
 # Runs the shared simulator image (var.ecr_image_uri) as a single-task ECS
 # Fargate SERVICE producing car_telemetry + race_standings into THIS attendee's
-# cluster. desired_count=1 + RACE_LOOP means the feed starts automatically on
-# provision and replays back-to-back. Instructors can pause/restart all
-# attendees at once with scripts/instructor (which scales these services).
+# cluster. It is provisioned stopped; the workshop lifecycle commands start it
+# explicitly after preparation and reset it back to a clean stopped boundary.
 # =============================================================================
 
 resource "random_id" "suffix" {
@@ -83,7 +82,9 @@ resource "aws_ecs_task_definition" "simulator" {
       { name = "SR_URL", value = module.cluster.schema_registry_rest_endpoint },
       { name = "SR_API_KEY", value = module.cluster.sr_api_key },
       { name = "SR_API_SECRET", value = module.cluster.sr_api_secret },
-      { name = "RACE_LOOP", value = tostring(var.race_loop) },
+      { name = "RACE_LOOP", value = "true" },
+      { name = "RACE_SEED", value = "42" },
+      { name = "PRE_RACE_WARMUP_LAPS", value = "0" },
       { name = "SECONDS_PER_LAP", value = tostring(var.seconds_per_lap) },
       { name = "RESTART_DELAY_SEC", value = "30" },
     ]
@@ -103,7 +104,7 @@ resource "aws_ecs_service" "simulator" {
   name            = "${local.ecs_prefix}-simulator"
   cluster         = aws_ecs_cluster.simulator.id
   task_definition = aws_ecs_task_definition.simulator.arn
-  desired_count   = 1
+  desired_count   = 0
   launch_type     = "FARGATE"
 
   network_configuration {

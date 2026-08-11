@@ -60,12 +60,47 @@
 --    does not exist or you do not have permission to access it." Use
 --    `enrichment_anomaly.sql` (the default) instead.
 
-CREATE TABLE `car_state`
-WITH ('changelog.mode' = 'append')
-AS
+-- car_state intentionally remains append-only: RTCE registration used by both
+-- direct MCP and the OpenAPI fallback rejects compacted/upsert topics. Per-race
+-- correctness comes from the composite join/group/anomaly partition below.
+CREATE TABLE IF NOT EXISTS `car_state` (
+  `race_id` STRING,
+  `car_number` INT,
+  `lap` INT,
+  `event_time` TIMESTAMP(3),
+  `tire_temp_fl_c` DOUBLE,
+  `tire_temp_fr_c` DOUBLE,
+  `tire_temp_rl_c` DOUBLE,
+  `tire_temp_rr_c` DOUBLE,
+  `tire_pressure_fl_psi` DOUBLE,
+  `tire_pressure_fr_psi` DOUBLE,
+  `tire_pressure_rl_psi` DOUBLE,
+  `tire_pressure_rr_psi` DOUBLE,
+  `engine_temp_c` DOUBLE,
+  `brake_temp_fl_c` DOUBLE,
+  `brake_temp_fr_c` DOUBLE,
+  `battery_charge_pct` DOUBLE,
+  `fuel_remaining_kg` DOUBLE,
+  `anomaly_tire_temp_fl` BOOLEAN,
+  `position` INT,
+  `gap_to_ahead_sec` DOUBLE,
+  `gap_to_leader_sec` DOUBLE,
+  `pit_stops` INT,
+  `tire_compound` STRING,
+  `tire_age_laps` INT,
+  WATERMARK FOR `event_time` AS `event_time` - INTERVAL '5' SECOND
+) DISTRIBUTED INTO 1 BUCKETS
+WITH (
+  'changelog.mode' = 'append',
+  'connector' = 'confluent',
+  'scan.startup.mode' = 'latest-offset',
+  'value.format' = 'avro-registry'
+);
+
+INSERT INTO `car_state`
 WITH enriched AS (
   SELECT
-    t.car_number, t.event_time, t.lap,
+    t.race_id, t.car_number, t.event_time, t.lap,
     t.tire_temp_fl_c, t.tire_temp_fr_c, t.tire_temp_rl_c, t.tire_temp_rr_c,
     t.tire_pressure_fl_psi, t.tire_pressure_fr_psi,
     t.tire_pressure_rl_psi, t.tire_pressure_rr_psi,
@@ -75,11 +110,11 @@ WITH enriched AS (
     r.pit_stops, r.tire_compound, r.tire_age_laps
   FROM `car_telemetry` t
   JOIN `race_standings` FOR SYSTEM_TIME AS OF t.event_time AS r
-    ON t.car_number = r.car_number
+    ON t.race_id = r.race_id AND t.car_number = r.car_number
 ),
 windowed AS (
   SELECT
-    window_start, window_end, window_time, car_number,
+    window_start, window_end, window_time, race_id, car_number,
     MAX(lap) AS lap,
     AVG(tire_temp_fl_c) AS tire_temp_fl_c,
     AVG(tire_temp_fr_c) AS tire_temp_fr_c,
@@ -103,7 +138,7 @@ windowed AS (
   FROM TABLE(
     TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
   )
-  GROUP BY window_start, window_end, window_time, car_number
+  GROUP BY window_start, window_end, window_time, race_id, car_number
 ),
 anomaly AS (
   SELECT
@@ -117,12 +152,12 @@ anomaly AS (
                   'minContextSize' VALUE 20,
                   'maxContextSize' VALUE 50,
                   'confidencePercentage' VALUE 99.99))
-      OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+      OVER (PARTITION BY race_id, car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
       AS anomaly_tire_temp_fl_result
   FROM windowed
 )
 SELECT
-  car_number, lap,
+  race_id, car_number, lap, window_time AS event_time,
   tire_temp_fl_c, tire_temp_fr_c, tire_temp_rl_c, tire_temp_rr_c,
   tire_pressure_fl_psi, tire_pressure_fr_psi,
   tire_pressure_rl_psi, tire_pressure_rr_psi,

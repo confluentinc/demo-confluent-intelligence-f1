@@ -12,13 +12,14 @@ WITH windowed AS (
     window_start,
     window_end,
     window_time,
+    race_id,
     car_number,
     MAX(lap) AS lap,
     AVG(tire_temp_fl_c) AS tire_temp_fl_c
   FROM TABLE(
     TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
   )
-  GROUP BY window_start, window_end, window_time, car_number
+  GROUP BY window_start, window_end, window_time, race_id, car_number
 ),
 forecasted AS (
   SELECT
@@ -34,13 +35,14 @@ forecasted AS (
         'rmseWindowSize' VALUE 5
       )
     ) OVER (
-      PARTITION BY car_number
+      PARTITION BY race_id, car_number
       ORDER BY window_time
       RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS forecast_result
   FROM windowed
 )
 SELECT
+  race_id,
   lap,
   window_time AS forecast_generated_at,
   tire_temp_fl_c AS current_tire_temperature_c,

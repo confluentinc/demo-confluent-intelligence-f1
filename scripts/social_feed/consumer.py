@@ -23,6 +23,7 @@ from scripts.pitwall.consumer import (
     CAR_STATE_TOPIC,
     PIT_DECISIONS_TOPIC,
     STANDINGS_TOPIC,
+    ConsumerErrorReporter,
     _build_consumer,
     _build_deserializer,
     _decode_standings_key,
@@ -36,9 +37,20 @@ TOPICS = [STANDINGS_TOPIC, CAR_STATE_TOPIC, PIT_DECISIONS_TOPIC]
 
 def run_consumer(creds: dict[str, str], feed: FeedState, stop) -> None:
     """Poll Kafka until ``stop`` is set, routing each record into ``feed``."""
-    consumer = _build_consumer(creds)
-    deserialize = _build_deserializer(creds)
-    consumer.subscribe(TOPICS)
+    reporter = ConsumerErrorReporter(feed, label=feed.prefix)
+    try:
+        consumer = _build_consumer(creds, error_cb=reporter.kafka_error)
+        deserialize = _build_deserializer(creds)
+        consumer.subscribe(TOPICS)
+    except SystemExit as exc:
+        logger.error("[%s] %s", feed.prefix, exc)
+        feed.record_error("CARD_INCOMPLETE", str(exc))
+        return
+    except Exception as exc:
+        logger.error("[%s] could not start consumer: %s", feed.prefix, exc)
+        feed.record_error("FEED_START_FAILED", f"Could not start the race feed: {exc}")
+        return
+    feed.mark_consumer_ready()
     logger.info("[%s] consuming %s", feed.prefix, ", ".join(TOPICS))
 
     routes = {
@@ -54,22 +66,27 @@ def run_consumer(creds: dict[str, str], feed: FeedState, stop) -> None:
                 continue
             if msg.error():
                 # UNKNOWN_TOPIC is expected until the attendee builds LAB 3/4.
-                logger.debug("[%s] kafka: %s", feed.prefix, msg.error())
+                reporter.kafka_error(msg.error())
                 continue
             topic = msg.topic()
             try:
                 value = deserialize(msg.value(), SerializationContext(topic, MessageField.VALUE))
             except Exception as e:  # one bad record must not kill the tail
-                logger.debug("[%s] deserialize %s failed: %s", feed.prefix, topic, e)
+                reporter.deserialize_error(topic, e)
                 continue
             if value is None:
                 continue
-            # race_standings is keyed by car_number in the Avro *key*; merge it back.
+            # The standings key contains race_id + car_number after migration;
+            # only car_number is absent from the value and needs merging here.
             if topic == STANDINGS_TOPIC and "car_number" not in value:
-                car_number = _decode_standings_key(deserialize, msg.key())
+                car_number = _decode_standings_key(deserialize, msg.key(), reporter)
                 if car_number is None:
                     continue
                 value["car_number"] = car_number
             routes[topic](value)
+            reporter.clear()
+    except Exception as exc:
+        logger.error("[%s] race feed stopped: %s", feed.prefix, exc)
+        feed.record_error("FEED_STOPPED", f"The race feed stopped: {exc}")
     finally:
         consumer.close()

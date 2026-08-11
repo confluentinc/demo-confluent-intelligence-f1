@@ -13,7 +13,8 @@ uv run create-workshop
 The command prompts for the attendee count, resource prefix, organizer email
 pattern, missing credentials, and final confirmation. It then validates the WSA
 spec, builds the shared layer and attendee environments, writes credential cards,
-and uploads them to the optional dispenser.
+uploads them to the optional dispenser, and runs the race preparation smoke test.
+Preparation finishes with every simulator stopped.
 
 The email pattern must contain `{N}` and must match the accepted Confluent Cloud
 users prepared earlier. A neutral example is
@@ -43,8 +44,10 @@ and shared Bedrock credentials. Each attendee receives a separate Confluent Clou
 environment, Kafka cluster, Schema Registry context, Flink pool, CDC connector,
 ECS simulator, topics, models, connections, and scoped API keys.
 
-Every simulator starts at desired count 1. The race loops after lap 60 until the
-organizer stops the fleet or tears down the workshop.
+Every simulator is provisioned at desired count 0. The preparation smoke test
+starts the complete cohort, verifies fresh telemetry with a new `race_id`, resets
+the accounts, and leaves them stopped. Once the organizer starts the race, each
+simulator loops after lap 60 until it is stopped or the workshop is torn down.
 
 ### Real-Time Context Engine keys
 
@@ -98,26 +101,39 @@ uploads only after card generation so RTCE fields reach the Sheet.
 
 ## 4. Run the workshop
 
-Races start after provisioning. These commands operate the attendee fleet:
+Use the run ID printed by `create-workshop`. Lifecycle commands read exact ECS
+cluster and service names from `runs/<run-id>/manifest.json`.
 
 | Command | Simulator tasks | Kafka and lab state | Result |
 |---|---:|---|---|
-| `uv run workshop stop-races` | Scale to 0 | Preserved | Pause production |
-| `uv run workshop start-races` | Scale to 1 | Preserved | Start a new process after a stop |
-| `uv run workshop reset-races` | Stop and drain | Clears source data and lab objects | Prepare another lab run |
+| `uv run workshop race-status --run-id <run-id>` | Unchanged | Unchanged | Show ECS, race, event age, Flink, and RTCE health |
+| `uv run workshop start-races --run-id <run-id>` | Scale to 1 | Preserved | Start the prepared cohort and verify fresh telemetry |
+| `uv run workshop stop-races --run-id <run-id>` | Scale to 0 | Preserved | Pause production without resetting |
+| `uv run workshop reset-races --run-id <run-id>` | Stop and drain | Clears safe append-only state | Leave the cohort stopped and ready |
+| `uv run workshop prepare-races --run-id <run-id>` | Smoke start, then scale to 0 | Reset after smoke test | Rehearse the complete cohort |
+| `uv run workshop prepare-social-feed --run-id <run-id> --account 50` | Keep account 50 stopped | Build its Lab 3/4 statements | Prepare the shared Watsonx feed |
 | `uv run teardown-workshop` | Deleted | Deleted | Remove the workshop |
 
-The fleet commands match `river-racing` simulator clusters in `us-east-1`. A
-second workshop in the same AWS account can fall within that scope. Use `--filter`
-to operate one test environment:
+Omit `--run-id` only when one manifest exists under `runs/`. Use `--accounts` for
+one to three test accounts; selectors accept comma-separated numbers and ranges:
 
 ```bash
-uv run workshop start-races --filter f1wp050
-uv run workshop stop-races --filter f1wp050
+uv run workshop start-races --run-id f7zxf --accounts 48-50
+uv run workshop stop-races --run-id f7zxf --accounts 48-50
 ```
 
-The filter is a substring match. It starts or stops the simulator without clearing
-Kafka or Flink state.
+The manifest keeps another workshop in the same AWS account outside the command's
+scope. Each selected account must resolve to exactly one ECS service.
+
+Start the complete cohort when the session begins:
+
+```bash
+uv run workshop start-races --run-id <run-id>
+```
+
+Attendees can start Lab 3 or Lab 4 at any point after that command succeeds.
+Telemetry and standings replay from the earliest workshop data, while each new
+loop has a distinct `race_id`. A missed pit incident returns on the next loop.
 
 ### Presenter and test accounts
 
@@ -126,33 +142,60 @@ accounts will be distributed, provision one additional accepted user for the
 presenter or use the standalone track. Never share a live presenter login with an
 attendee.
 
-Choose the highest-numbered non-attendee account for rehearsals. Stop its simulator
-after testing, and run the fleet reset before the event. This keeps experimental
-statements in one environment without reducing attendee capacity.
+### Shared Watsonx feed
+
+Reserve account 50 for the organizer during Lab 5. If you need 50 attendee seats,
+provision account 51 and keep account 50 out of the dispenser inventory.
+
+Run the cohort preparation first. It resets active lab statements. Then prepare
+account 50 and start only that race:
+
+```bash
+uv run workshop prepare-races --run-id <run-id>
+uv run workshop prepare-social-feed --run-id <run-id> --account 50
+uv run workshop start-races --run-id <run-id> --accounts 50
+```
+
+Start the Kafka-backed endpoint in another terminal:
+
+```bash
+uv run f1-social-feed \
+  --creds runs/<run-id>/credentials/f1wp050.env \
+  --public-base-url https://small-underpass-refinery.ngrok-free.dev \
+  --fixed-prefix f1wp050
+
+ngrok http 8080 --url https://small-underpass-refinery.ngrok-free.dev
+```
+
+The attendee download is
+`https://small-underpass-refinery.ngrok-free.dev/watsonx/f1-race-feed-openapi.json`.
+Stop ngrok after the lab. Reset account 50 afterward; the reset cancels its Lab
+3/4 jobs and leaves the simulator stopped.
+
+Choose the highest-numbered non-attendee account for rehearsals. Stop and reset
+that exact subset afterward. A full-cohort start refuses dirty test accounts and
+prints the reset command needed before they can rejoin the cohort.
 
 ## 5. Reset for another run
 
 ```bash
-uv run workshop reset-races \
-  --creds-glob 'runs/<run-name>/credentials/*.env'
+uv run workshop reset-races --run-id <run-id>
 ```
 
 Reset performs these operations:
 
-1. Stops matching simulator services and waits for tasks to drain.
+1. Stops the manifest-selected simulator services and waits for tasks to drain.
 2. Stops attendee Flink statements.
-3. Drops `car_state`, `pit_decisions`, and `pit_strategy_agent` when present.
-4. Removes derived topics and Schema Registry subjects.
-5. Advances the `car_telemetry` low watermark and clears source records.
-6. Leaves the compacted `race_standings` keys for the next simulator to overwrite.
-7. Leaves every simulator stopped.
+3. Advances the append-only `car_telemetry` low watermark.
+4. Leaves compacted state in place; `race_id` isolates it from the next race.
+5. Marks each successfully reset account ready and leaves it stopped.
 
 Wait for `=== Reset complete ===`. If the command reports `Reset INCOMPLETE`, keep
 the races stopped, repair the named environment, and rerun reset.
 
-`race_standings` uses the latest startup mode, so race timing must be coordinated
-with the Lab 3 window. The attendee walkthrough intentionally contains no fleet
-controls. Use `--keep-source` only when the existing source data should remain.
+Telemetry and standings use earliest-offset replay, so the organizer does not
+coordinate race timing with the Lab 3 window. The attendee walkthrough contains
+no fleet controls.
 
 ## 6. Tear down
 
@@ -200,8 +243,11 @@ before starting the races.
 ```bash
 uv run create-workshop
 uv run workshop validate --creds-glob 'runs/<run-name>/credentials/*.env'
-uv run workshop stop-races
-uv run workshop start-races
-uv run workshop reset-races --creds-glob 'runs/<run-name>/credentials/*.env'
+uv run workshop prepare-races --run-id <run-id>
+uv run workshop prepare-social-feed --run-id <run-id> --account 50
+uv run workshop race-status --run-id <run-id>
+uv run workshop start-races --run-id <run-id>
+uv run workshop stop-races --run-id <run-id>
+uv run workshop reset-races --run-id <run-id>
 uv run teardown-workshop --run-id <run-id>
 ```

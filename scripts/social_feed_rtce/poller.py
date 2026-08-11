@@ -46,36 +46,58 @@ CAR_STATE_TOPIC = "car_state"
 PIT_DECISIONS_TOPIC = "pit_decisions"
 
 
-def _latest_by_lap(rows: list[dict]) -> dict | None:
-    return max(rows, key=lambda r: r.get("lap") or 0) if rows else None
+QUERY_LIMIT = 10
+
+
+def _newest(rows: list[dict]) -> dict | None:
+    """RTCE returns these rows in event-time order; never compare laps across races."""
+    return rows[0] if rows else None
 
 
 async def poll_once(client: RTCEClient, feed: FeedState, seen: dict) -> None:
     """One RTCE refresh of a single attendee's feed."""
     # Append topics — best-effort latest row for our car.
     try:
-        latest = _latest_by_lap(await client.query(CAR_STATE_TOPIC, f'"CAR_NUMBER" = {OUR_CAR_NUMBER}'))
+        latest = _newest(
+            await client.query(
+                CAR_STATE_TOPIC,
+                f'"CAR_NUMBER" = {OUR_CAR_NUMBER}',
+                max_rows=QUERY_LIMIT,
+                order_by='"EVENT_TIME" DESC',
+                limit=QUERY_LIMIT,
+            )
+        )
         if latest is not None:
             feed.update_car_state(latest)
     except Exception as e:
         logger.debug("[%s] %s query failed (append topic, may be unsupported): %s", feed.prefix, CAR_STATE_TOPIC, e)
 
     try:
-        latest = _latest_by_lap(
-            await client.query(PIT_DECISIONS_TOPIC, f'"CAR_NUMBER" = {OUR_CAR_NUMBER}')
+        latest = _newest(
+            await client.query(
+                PIT_DECISIONS_TOPIC,
+                f'"CAR_NUMBER" = {OUR_CAR_NUMBER}',
+                max_rows=QUERY_LIMIT,
+                order_by='"EVENT_TIME" DESC',
+                limit=QUERY_LIMIT,
+            )
         )
-        # Only add a decision when it's for a newer lap, so re-polling the same
-        # latest row doesn't fill the decisions buffer with duplicates.
-        if latest is not None and (latest.get("lap") or 0) != seen.get("decision_lap"):
+        # Re-polling the same event must not fill the decisions buffer with
+        # duplicates. race_id prevents lap 1 of the next race matching this one.
+        decision_id = (
+            latest.get("race_id"),
+            latest.get("event_time") or latest.get("lap"),
+        ) if latest is not None else None
+        if latest is not None and decision_id != seen.get("decision_id"):
             feed.add_decision(latest)
-            seen["decision_lap"] = latest.get("lap") or 0
+            seen["decision_id"] = decision_id
     except Exception as e:
         logger.debug("[%s] %s query failed (append topic, may be unsupported): %s", feed.prefix, PIT_DECISIONS_TOPIC, e)
 
 
 async def poll_loop(client: RTCEClient, feed: FeedState, interval: float, stop) -> None:
     logger.info("[%s] RTCE poll loop @ %ss → %s", feed.prefix, interval, client.endpoint)
-    seen: dict = {"decision_lap": None}
+    seen: dict = {"decision_id": None}
     while not stop.is_set():
         await poll_once(client, feed, seen)
         # Interruptible sleep so Ctrl-C stops promptly.

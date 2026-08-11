@@ -58,6 +58,7 @@ def create_app(state: RaceState) -> FastAPI:
         return {
             "status": "ok",
             "live": snap["live"],
+            "race_id": snap["race_id"],
             "lap": snap["lap"],
             "connection_error": snap["connection_error"],
             "reveal": snap["reveal"],

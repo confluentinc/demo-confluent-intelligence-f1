@@ -17,13 +17,15 @@ uv sync
 
 > [!NOTE]
 >
-> Your instructor provides the Confluent Cloud account, environment prefix, race-feed URL, and watsonx Orchestrate access. You don't need your own cloud account.
+> Your instructor provides the Confluent Cloud account, the shared race-feed tool, and watsonx Orchestrate access. You don't need your own cloud account.
 
 ## Workshop timing
 
 > [!NOTE]
 >
-> Race timing is managed by the instructor. Follow the lab sequence and begin each step when prompted; there are no race-control commands for attendees to run.
+> The instructor starts the race once for the room. After it starts, you may begin
+> any lab; the fixed race repeats, so a missed incident returns on the next loop.
+> If your assigned feed stops, use the short [assigned-account fallback](./docs/backup/ASSIGNED-ACCOUNT-RACE.md).
 
 ## Workshop map
 
@@ -98,7 +100,7 @@ SHOW TABLES;
 | Table | Source | Format |
 |-------|--------|--------|
 | `car_telemetry` | Race simulator — car #88 sensors, ~5 readings/lap | Avro |
-| `race_standings` | Race simulator — all 22 cars, keyed by `car_number` (upsert) | Avro |
+| `race_standings` | Race simulator — all 22 cars, keyed by (`race_id`, `car_number`) (upsert) | Avro |
 | `driver_race_history` | CDC from the shared Postgres (198 historical rows) | JSON |
 
 Check the telemetry stream:
@@ -135,15 +137,51 @@ SHOW CONNECTIONS;
 
 ## Lab 3 — Stream Processing: Enrichment + Anomaly Detection
 
-Stop every streaming `SELECT` from Lab 2. When the instructor prompts you, paste this entire statement into one SQL cell and run it:
+Stop every streaming `SELECT` from Lab 2. Run the durable table definition once,
+then run the restartable `INSERT INTO` job in a second SQL cell. If you repeat
+Lab 3, the first statement is a safe no-op and the second starts processing.
 
 ```sql
-CREATE TABLE `car_state`
-WITH ('changelog.mode' = 'append')
-AS
+CREATE TABLE IF NOT EXISTS `car_state` (
+  `race_id` STRING,
+  `car_number` INT,
+  `lap` INT,
+  `event_time` TIMESTAMP(3),
+  `tire_temp_fl_c` DOUBLE,
+  `tire_temp_fr_c` DOUBLE,
+  `tire_temp_rl_c` DOUBLE,
+  `tire_temp_rr_c` DOUBLE,
+  `tire_pressure_fl_psi` DOUBLE,
+  `tire_pressure_fr_psi` DOUBLE,
+  `tire_pressure_rl_psi` DOUBLE,
+  `tire_pressure_rr_psi` DOUBLE,
+  `engine_temp_c` DOUBLE,
+  `brake_temp_fl_c` DOUBLE,
+  `brake_temp_fr_c` DOUBLE,
+  `battery_charge_pct` DOUBLE,
+  `fuel_remaining_kg` DOUBLE,
+  `anomaly_tire_temp_fl` BOOLEAN,
+  `position` INT,
+  `gap_to_ahead_sec` DOUBLE,
+  `gap_to_leader_sec` DOUBLE,
+  `pit_stops` INT,
+  `tire_compound` STRING,
+  `tire_age_laps` INT,
+  WATERMARK FOR `event_time` AS `event_time` - INTERVAL '5' SECOND
+) DISTRIBUTED INTO 1 BUCKETS
+WITH (
+  'changelog.mode' = 'append',
+  'connector' = 'confluent',
+  'scan.startup.mode' = 'latest-offset',
+  'value.format' = 'avro-registry'
+);
+```
+
+```sql
+INSERT INTO `car_state`
 WITH enriched AS (
   SELECT
-    t.car_number, t.event_time, t.lap,
+    t.race_id, t.car_number, t.event_time, t.lap,
     t.tire_temp_fl_c, t.tire_temp_fr_c, t.tire_temp_rl_c, t.tire_temp_rr_c,
     t.tire_pressure_fl_psi, t.tire_pressure_fr_psi,
     t.tire_pressure_rl_psi, t.tire_pressure_rr_psi,
@@ -153,11 +191,11 @@ WITH enriched AS (
     r.pit_stops, r.tire_compound, r.tire_age_laps
   FROM `car_telemetry` t
   JOIN `race_standings` FOR SYSTEM_TIME AS OF t.event_time AS r
-    ON t.car_number = r.car_number
+    ON t.race_id = r.race_id AND t.car_number = r.car_number
 ),
 windowed AS (
   SELECT
-    window_start, window_end, window_time, car_number,
+    window_start, window_end, window_time, race_id, car_number,
     MAX(lap) AS lap,
     AVG(tire_temp_fl_c) AS tire_temp_fl_c,
     AVG(tire_temp_fr_c) AS tire_temp_fr_c,
@@ -181,7 +219,7 @@ windowed AS (
   FROM TABLE(
     TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
   )
-  GROUP BY window_start, window_end, window_time, car_number
+  GROUP BY window_start, window_end, window_time, race_id, car_number
 ),
 anomaly AS (
   SELECT
@@ -191,12 +229,12 @@ anomaly AS (
                   'maxTrainingSize' VALUE 50,
                   'confidencePercentage' VALUE 99.99,
                   'enableStl' VALUE FALSE))
-      OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+      OVER (PARTITION BY race_id, car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
       AS anomaly_tire_temp_fl_result
   FROM windowed
 )
 SELECT
-  car_number, lap,
+  race_id, car_number, lap, window_time AS event_time,
   tire_temp_fl_c, tire_temp_fr_c, tire_temp_rl_c, tire_temp_rr_c,
   tire_pressure_fl_psi, tire_pressure_fr_psi,
   tire_pressure_rl_psi, tire_pressure_rr_psi,
@@ -235,13 +273,14 @@ WITH windowed AS (
     window_start,
     window_end,
     window_time,
+    race_id,
     car_number,
     MAX(lap) AS lap,
     AVG(tire_temp_fl_c) AS tire_temp_fl_c
   FROM TABLE(
     TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
   )
-  GROUP BY window_start, window_end, window_time, car_number
+  GROUP BY window_start, window_end, window_time, race_id, car_number
 ),
 forecasted AS (
   SELECT
@@ -257,13 +296,14 @@ forecasted AS (
         'rmseWindowSize' VALUE 5
       )
     ) OVER (
-      PARTITION BY car_number
+      PARTITION BY race_id, car_number
       ORDER BY window_time
       RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS forecast_result
   FROM windowed
 )
 SELECT
+  race_id,
   lap,
   window_time AS forecast_generated_at,
   tire_temp_fl_c AS current_tire_temperature_c,
@@ -367,15 +407,44 @@ Confirm it was created:
 SHOW AGENTS;
 ```
 
-Create `pit_decisions`:
+Create `pit_decisions` with durable DDL, then start its restartable `INSERT INTO`
+job in a second SQL cell. Because `car_state` is configured at the table level
+with `latest-offset`, this begins with the next current state instead of sending
+old races through the LLM.
 
 ```sql
-CREATE TABLE `pit_decisions`
-WITH ('changelog.mode' = 'append')
-AS
+CREATE TABLE IF NOT EXISTS `pit_decisions` (
+  `race_id` STRING,
+  `car_number` INT,
+  `lap` INT,
+  `event_time` TIMESTAMP(3),
+  `position` INT,
+  `tire_compound_current` STRING,
+  `tire_age_laps` INT,
+  `anomaly_tire_temp_fl` BOOLEAN,
+  `suggestion` STRING,
+  `condition_summary` STRING,
+  `race_context` STRING,
+  `recommended_tire_compound` STRING,
+  `recommended_stint_laps` INT,
+  `recommended_reason` STRING,
+  `reasoning` STRING,
+  `raw_response` STRING
+) DISTRIBUTED INTO 1 BUCKETS
+WITH (
+  'changelog.mode' = 'append',
+  'connector' = 'confluent',
+  'value.format' = 'avro-registry'
+);
+```
+
+```sql
+INSERT INTO `pit_decisions`
 SELECT
+  cs.race_id,
   cs.car_number,
   cs.lap,
+  cs.event_time,
   cs.`position`,
   cs.tire_compound AS tire_compound_current,
   cs.tire_age_laps,
@@ -392,7 +461,7 @@ SELECT
   NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Reason:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS recommended_reason,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Reasoning:\*{0,2}\s*([\s\S]+?)$', 1)) AS reasoning,
   CAST(response AS STRING) AS raw_response
-FROM `car_state` /*+ OPTIONS('scan.startup.mode'='earliest-offset') */ cs,
+FROM `car_state` cs,
 LATERAL TABLE(AI_RUN_AGENT(
   `pit_strategy_agent`,
   CONCAT(
@@ -448,17 +517,17 @@ Check the Pit Wall. The **AI PIT STRATEGIST** panel should unlock and show the d
 
 ## Lab 5 — Social Media Agent (IBM watsonx Orchestrate)
 
-Use the watsonx Orchestrate access and race-feed URL supplied by your instructor.
+Lab 5 reads one organizer-controlled race shared by the room. It doesn't connect
+to your Confluent environment, so the lap in Watsonx can differ from the lap in
+your SQL workspace.
 
 ### 1. Add the race-feed tool
 
-Open **Agent Builder**, then select **Tools → Add tool → Import from OpenAPI**. Import this URL:
+1. Open the **Download F1 Race Feed Tool** link in your claim email and save the JSON file.
+2. In **Agent Builder**, choose **Add tool → OpenAPI** and upload the file.
+3. Select only **Get the live shared race feed**, then add it to the agent.
 
-```
-<race-feed-base-url>/openapi.json
-```
-
-Choose the **`get_race_feed`** operation.
+The tool asks for no prefix, connection, username, or password.
 
 ### 2. Create the agent
 
@@ -472,14 +541,14 @@ Your job: when asked, draft short, high-energy social posts about what is
 happening in OUR race, grounded in live data.
 
 DATA
-- Always call the get_race_feed tool with prefix "f1wp001" to get the current
-  race situation before writing. Never invent positions, gaps, lap numbers, or
-  events — use only what the tool returns.
+- Always call the get_race_feed tool to get the current shared race situation
+  before writing. Never invent positions, gaps, lap numbers, or events; use only
+  what the tool returns.
 - The headline_events list is your best source of post hooks (overtakes, the
   tire anomaly, the pit call). Lead with the most recent meaningful event.
 - If latest_pit_decision is PIT NOW or PIT SOON, that is newsworthy — say so.
-- If the tool returns live = false or empty events, say the race feed is quiet
-  rather than making something up.
+- If the tool returns live = false, say the race is paused or stopped. Retained
+  standings are historical and must not be described as live.
 
 VOICE
 - Confident, upbeat, fan-facing. Short sentences. 1–3 emoji max.
@@ -492,8 +561,6 @@ OUTPUT
 - Draft the post text only. Do not claim to have published it — these are drafts
   for a human to review and post.
 ```
-
-Replace `f1wp001` with the prefix on your credential card.
 
 ### 3. Draft a post
 
@@ -560,7 +627,9 @@ Ask your instructor to reset the race before repeating Labs 3 and 4.
 - **`car_state` is empty:** Leave it running for a few minutes. The anomaly function needs 20 windows before it emits results.
 - **No lap-32 anomaly:** Ask the instructor to confirm the race was reset and started at the Lab 3 gate.
 - **Agent fields are empty:** Inspect `raw_response`. If all responses fail, tell the instructor; the shared Bedrock quota may be throttled.
-- **Lab 5 tool fails:** Confirm the URL ends in `/openapi.json` and that the prefix exactly matches your credential card.
+- **Lab 5 tool fails:** Upload the downloaded JSON file again and select only **Get the live shared race feed**. The tool needs no connection or credentials.
+- **RTCE says a topic is missing:** Finish the lab that creates it, then rerun `f1-rtce enable`. Registration can take several minutes; `f1-rtce status` shows when it is online.
+- **Watsonx says the feed is unavailable:** Tell the instructor. You can continue Labs 1–4 while they restart the shared feed.
 
 </details>
 
@@ -568,4 +637,5 @@ Ask your instructor to reset the race before repeating Labs 3 and 4.
 
 - **Overview:** [Main README](./README.md)
 - **Workshop:** [Attendee walkthrough](#f1-pit-wall-ai-workshop-walkthrough)
-- **Backup:** [Local self-service guide](./docs/backup/LOCAL-SELF-SERVICE.md)
+- **Assigned-account backup:** [Race feed recovery](./docs/backup/ASSIGNED-ACCOUNT-RACE.md)
+- **Organizer-only backup:** [Local self-service guide](./docs/backup/LOCAL-SELF-SERVICE.md)

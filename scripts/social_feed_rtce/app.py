@@ -127,11 +127,13 @@ async def _probe(client: RTCEClient) -> None:
     print(f"Probing RTCE endpoint: {client.endpoint}")
     try:
         topics = await client.list_topics()
-        print("\nlistTopics →")
+        print("\nlist_topics →")
         for block in getattr(topics, "content", None) or []:
             print(" ", getattr(block, "text", block))
-        rows = await client.query("race_standings")
-        print(f"\nqueryData race_standings → {len(rows)} row(s)")
+        rows = await client.query(
+            "race_standings", max_rows=5, order_by='"EVENT_TIME" DESC', limit=5
+        )
+        print(f"\nquery_data race_standings → {len(rows)} row(s)")
         print(json.dumps(rows[:3], indent=2, default=str))
     except Exception as e:
         causes = "\n".join(f"  - {c}" for c in _root_causes(e))

@@ -105,11 +105,32 @@ def main() -> None:
         ),
     )
     parser.add_argument("--once", action="store_true", help="Run a single race instead of looping continuously")
+    parser.add_argument(
+        "--fallback",
+        action="store_true",
+        help="Start a fixed-seed continuous local race only when the assigned cloud feed is idle",
+    )
     args = parser.parse_args(_expand_numeric_flags(sys.argv[1:]))
 
     root = get_project_root()
     path, card = load_card(args.creds)
     print(f"Using credential card: {path}")
+
+    if args.fallback:
+        from scripts.participant.feed import ACTIVE_WITHIN_SECONDS, active_feed
+
+        try:
+            active, age = active_feed(card, max_age=ACTIVE_WITHIN_SECONDS)
+        except Exception:
+            sys.exit(
+                "Could not check the assigned race feed. Check the Kafka values on the credential card "
+                "and your network."
+            )
+        if active:
+            print(f"The account already has a usable race feed (last telemetry {age:.0f}s ago).")
+            print("Continue the labs normally; no local producer was started.")
+            return
+        print("No telemetry arrived in the last 90 seconds. Starting the local fallback; leave this terminal open.")
     seconds_per_lap = _resolve_seconds_per_lap(args.seconds_per_lap, root, path)
 
     def need(key: str) -> str:
@@ -127,6 +148,10 @@ def main() -> None:
     os.environ["SR_API_SECRET"] = need("F1_SR_API_SECRET")
     os.environ["SECONDS_PER_LAP"] = str(seconds_per_lap)
     os.environ["RACE_LOOP"] = "false" if args.once else "true"
+    if args.fallback:
+        os.environ["RACE_LOOP"] = "true"
+        os.environ["RACE_SEED"] = "42"
+        os.environ["RESTART_DELAY_SEC"] = "30"
 
     # Skip the pre-race warmup laps (~140s at 20s/lap). They produce four
     # telemetry windows at lap=0 and **no** race_standings, and LAB 3's first CTE
@@ -136,9 +161,8 @@ def main() -> None:
     # changes nothing: real race data supplies 20 windows (2/lap) by lap 10, long
     # before the lap-32 anomaly.
     #
-    # setdefault, so `PRE_RACE_WARMUP_LAPS=4 uv run f1-race` still works. The
-    # standalone ECS path keeps the warmup — its value comes from the task
-    # definition in terraform/, not from here.
+    # setdefault, so an explicit `PRE_RACE_WARMUP_LAPS=4 uv run f1-race` still
+    # works for local experiments. Workshop ECS tasks also set this to zero.
     os.environ.setdefault("PRE_RACE_WARMUP_LAPS", "0")
 
     # Import after setting env — datagen.config reads os.environ at import time.
