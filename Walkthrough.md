@@ -267,19 +267,18 @@ SELECT
   lap,
   window_time AS forecast_generated_at,
   tire_temp_fl_c AS current_tire_temperature_c,
-  forecast_result.forecast[0].`timestamp` AS next_point_at,
-  forecast_result.forecast[0].mean AS next_point_c,
-  forecast_result.forecast[9].`timestamp` AS hundred_seconds_out_at,
-  forecast_result.forecast[9].mean AS hundred_seconds_out_c,
-  forecast_result.forecast[19].`timestamp` AS two_hundred_seconds_out_at,
-  forecast_result.forecast[19].mean AS two_hundred_seconds_out_c,
+  forecast_result.forecast[1].`timestamp` AS next_point_at,
+  forecast_result.forecast[1].mean AS next_point_c,
   forecast_result.forecast AS full_forecast,
   forecast_result.metadata AS forecast_metadata
 FROM forecasted
 WHERE CARDINALITY(forecast_result.forecast) > 0;
 ```
 
-The forecast contains 20 ten-second points, covering 3 minutes 20 seconds. Stop this optional query after you see results so Lab 4 can use the compute pool.
+Confluent Flink arrays are one-based, so `[1]` is the first predicted point.
+Inspect `full_forecast` for every point returned by the model; the number of
+points can vary. Stop this optional query after you see results so Lab 4 can use
+the compute pool.
 
 ## Lab 4 — Streaming Agent: Pit Decisions
 
