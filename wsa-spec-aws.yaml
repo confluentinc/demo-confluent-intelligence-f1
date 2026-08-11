@@ -1,0 +1,206 @@
+# =============================================================================
+# Workshop Setup Accelerator (wsa) spec — F1 Pit Wall AI workshop (AWS).
+#
+# Provisions one isolated Confluent Cloud environment + live race simulator per
+# attendee, all sharing a single AWS account's VPC, Postgres and ECR image.
+# Matches the schema in confluentinc/workshop-setup-accelerator's
+# internal/spec/spec.go — see that repo's wsa-spec.example.yaml for the full
+# annotated reference. This file is read by `wsa build`, `wsa clean`, and
+# `wsa validate`.
+#
+#   set -a; . ./credentials.env; set +a      # wsa does not collect TF_VAR_* itself
+#   ./bin/wsa validate -w wsa-spec-aws.yaml
+#   ./bin/wsa build -w wsa-spec-aws.yaml --accounts 1-2 --concurrency 2
+#
+# Or skip the export and use the wrappers, which collect the secrets for you:
+#   uv run workshop spec-validate
+#   uv run workshop build --accounts 1-2 --concurrency 2
+#
+# Run from a sibling `workshop-setup-accelerator` checkout (see that repo's
+# ONBOARDING.md "Local layout"). Attendees don't run Terraform: they claim an
+# account via the wsa dispenser, log in to the Confluent Cloud Console with the
+# email/password on their card, and write their Flink SQL in the browser SQL
+# workspace. The card's API keys are what `uv run f1-pitwall` authenticates with.
+#
+# PREREQUISITE — the logins are NOT created by this spec. Each email_pattern
+# address must already be an accepted Confluent Cloud user with a password in
+# 1Password before `wsa build` runs, or terraform/aws's confluent_user lookup
+# fails at plan time. One-time per account number; see docs/organizer/WORKSHOP-GUIDE.md.
+# =============================================================================
+
+name: confluent-intelligence-f1
+description: F1 Pit Wall AI Workshop — Confluent Cloud + Flink Streaming Agents
+cloud: AWS
+
+# The default attendee count, and nothing more: `uv run create-workshop
+# --attendees N` is authoritative and overrides this value via a derived spec, so
+# growing a workshop needs no edit here. The shared Postgres host is already sized
+# for the accelerator's supported 95-account maximum. This number is what the
+# interactive prompt offers, and what a raw `wsa build` with no --accounts builds.
+# wsa itself only uses account_count for its `>= 1` check, its "(N accounts)"
+# banner, and that default account list — --accounts decides what gets built.
+account_count: 5
+
+# {N} is replaced with the account number (1..account_count). The workshop
+# commands prompt for the organizer's pattern and override this placeholder.
+email_pattern: "bheintz+f1wp{N}@confluent.io"
+
+# Terraform source. terraform_repo/terraform_ref omitted for local-copy mode
+# (build straight from this local checkout — useful while iterating on
+# terraform/ before pushing).
+terraform_path: terraform/aws/
+shared_infra_path: terraform/aws-shared/
+
+# Files the shared Terraform reads from OUTSIDE the terraform/ tree via relative
+# paths, staged into the run dir preserving layout:
+#   - terraform/aws-shared/datagen.tf builds the simulator image from datagen/
+#   - terraform/modules/postgres seeds from data/driver_race_history_seed.sql
+# Required for local-copy mode (terraform_repo omitted); harmless with a full
+# remote clone (the files are already present, just re-overlaid from local disk).
+stage_paths:
+  - data
+  - datagen
+
+# Per-account Terraform variables. wsa passes ONLY these (no legacy pass-all)
+# once this map is non-empty — every non-secret variable terraform/aws needs
+# must be listed here. {email}/{N}/{NNN} are expanded per account.
+# Secrets (Confluent/Bedrock keys) are NOT templated here — see env_vars
+# below; Terraform picks up TF_VAR_* from the environment natively.
+terraform_vars:
+  prefix: "f1wp{NNN}" # -> RIVER-RACING-f1wp001-ENV, river-racing-f1wp001-<hex>-simulator
+  owner_email: "{email}"
+  region: "us-east-1"
+  flink_max_cfu: "10"
+  seconds_per_lap: "60" # 60s/lap -> 60-minute race
+  race_loop: "true"
+  # Bind {email} to their environment as EnvironmentAdmin so the Console login
+  # actually shows them something. Requires the user to exist — see the
+  # PREREQUISITE note in the header.
+  grant_console_access: "true"
+
+# Environment variables that must be set at runtime (checked by `wsa
+# validate`; passed through to Terraform as TF_VAR_* since Terraform reads
+# them natively — wsa's Terraform runner inherits the process environment).
+# Confluent + Bedrock keys are shared across every attendee account.
+# owner_email is also needed directly (not just via terraform_vars) because
+# wsa's shared-infra apply (terraform/aws-shared) reads TF_VAR_owner_email
+# itself to tag the shared resources.
+env_vars:
+  - TF_VAR_confluent_cloud_api_key
+  - TF_VAR_confluent_cloud_api_secret
+  - TF_VAR_aws_bedrock_access_key
+  - TF_VAR_aws_bedrock_secret_key
+  - TF_VAR_owner_email
+
+# Terraform providers used by this workshop (for `wsa validate`).
+providers:
+  - name: confluent
+    version: ">= 2.0"
+  - name: aws
+    version: ">= 5.0"
+
+# CLI tools required on the operator's machine (for `wsa validate`).
+# Terraform/Bedrock secrets still flow via a plain .env file or shell exports,
+# not the TMM 1Password vault — but `op` is required for the attendee Console
+# passwords, which wsa stores in the "Workshop Setup Accelerator Users" vault
+# and resolves at dispenser-upload / card-generation time.
+tools_required:
+  - name: terraform
+    version: ">= 1.7"
+  - name: git
+    version: ">= 2.0"
+  - name: op
+    version: ">= 2.0"
+
+# No data_generation: block — the race simulator is a per-attendee ECS
+# Fargate task already defined directly in terraform/aws/datagen.tf, not a
+# wsa-staged generator profile.
+#
+# No isolation: block — AWS isolation is enforced by workshop Terraform via
+# resource tags (wsa's aws isolation model is a no-op pass-through anyway),
+# and the Confluent Cloud environment is created directly by a
+# confluent_environment resource inside terraform/aws, not by a wsa isolation
+# phase.
+
+# Credential groups — columns in the wsa build CSV and fields in the
+# dispenser claim email. The Console Password field is `source: op`: wsa writes
+# the literal "(from 1Password)" into build-output.csv and only substitutes the
+# real value in memory at `wsa dispenser-upload` time. `uv run workshop creds
+# --resolve-op` does the same substitution for instructor-distributed cards.
+# `uv run workshop creds` turns this CSV into the runs/<name>/credentials/*.env
+# cards our own tools (f1-sql, f1-pitwall, f1-social-feed) expect; `uv run
+# f1-onboard` lets a self-serve attendee rebuild that file from their
+# claim-email values.
+credentials:
+  # wsa's CSV always leads with built-in "Account"/"Email" columns before
+  # these, so no separate spec-sourced email field is declared here.
+  - name: Confluent Cloud
+    fields:
+      # --- Console login. The group name "Confluent Cloud" is what maps this
+      # group to the `confluent-cloud` 1Password platform key (wsa's
+      # internal/spec/spec.go PlatformKey) — don't rename it.
+      - label: Console URL
+        source: terraform
+        output: environment_url
+      - label: Console Username
+        source: terraform
+        output: console_username
+      - label: Console Password
+        source: op
+      - label: Prefix
+        source: terraform
+        output: prefix
+      - label: Environment ID
+        source: terraform
+        output: environment_id
+      - label: Environment URL
+        source: terraform
+        output: environment_url
+      - label: Environment Name
+        source: terraform
+        output: environment_name
+      - label: Cluster ID
+        source: terraform
+        output: cluster_id
+      - label: Cluster Name
+        source: terraform
+        output: cluster_name
+      - label: Kafka Bootstrap
+        source: terraform
+        output: cluster_bootstrap
+      - label: Kafka API Key
+        source: terraform
+        output: kafka_api_key
+      - label: Kafka API Secret
+        source: terraform
+        output: kafka_api_secret
+      - label: Schema Registry URL
+        source: terraform
+        output: schema_registry_url
+      - label: SR API Key
+        source: terraform
+        output: sr_api_key
+      - label: SR API Secret
+        source: terraform
+        output: sr_api_secret
+      - label: Compute Pool ID
+        source: terraform
+        output: compute_pool_id
+      - label: Flink REST Endpoint
+        source: terraform
+        output: flink_rest_endpoint
+      - label: Flink API Key
+        source: terraform
+        output: flink_api_key
+      - label: Flink API Secret
+        source: terraform
+        output: flink_api_secret
+      - label: Organization ID
+        source: terraform
+        output: organization_id
+      # Not handed to the attendee — `workshop creds --rtce-keys` needs it to mint
+      # each attendee a Global API key owned by their own service account, which
+      # is what authenticates their MCP client to the Real-Time Context Engine.
+      - label: Service Account ID
+        source: terraform
+        output: service_account_id

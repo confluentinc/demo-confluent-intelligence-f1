@@ -1,0 +1,195 @@
+:root {
+  --bg: #0a0e14;
+  --panel: #121823;
+  --panel-2: #0e131c;
+  --line: #1f2a3a;
+  --text: #e6edf3;
+  --muted: #7d8da3;
+  --accent: #00d2ff;
+  --river: #1fc77b;     /* River Racing green */
+  --red: #ff3b3b;
+  --amber: #ffb020;
+  --green: #1fc77b;
+  --soft: #ff4d6d;
+  --medium: #ffd23f;
+  --hard: #e8eef5;
+  font-size: 15px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: radial-gradient(1200px 600px at 70% -10%, #16202e 0%, var(--bg) 60%);
+  color: var(--text);
+  font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  min-height: 100vh;
+}
+
+.hidden { display: none !important; }
+
+/* ---- top bar ---- */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 22px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #101722, #0b0f17);
+}
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.logo { color: var(--river); font-size: 1.2rem; }
+.brand-name { font-weight: 800; letter-spacing: 2px; }
+.brand-sub { color: var(--muted); letter-spacing: 4px; font-size: 0.8rem; }
+.race-meta { display: flex; align-items: center; gap: 26px; font-variant-numeric: tabular-nums; }
+.circuit { color: var(--muted); letter-spacing: 3px; font-size: 0.85rem; }
+.lap { font-size: 1.05rem; letter-spacing: 1px; }
+.lap b { font-size: 1.5rem; color: var(--accent); }
+.lap-total { color: var(--muted); }
+.conn { font-size: 0.78rem; letter-spacing: 1px; }
+.conn.online { color: var(--green); }
+.conn.offline { color: var(--muted); }
+
+/* ---- layout ---- */
+.grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  grid-template-areas:
+    "track board"
+    "telem board"
+    "anomaly agent";
+  gap: 16px;
+  padding: 18px 22px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+.track-card { grid-area: track; }
+.board-card { grid-area: board; }
+.telem-card { grid-area: telem; }
+#anomaly-card { grid-area: anomaly; }
+#agent-card { grid-area: agent; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.card-title {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  letter-spacing: 2px;
+  color: var(--muted);
+  font-weight: 700;
+  display: flex; align-items: center; gap: 10px;
+}
+.tag {
+  margin-left: auto;
+  font-size: 0.62rem;
+  color: var(--accent);
+  border: 1px solid #173041;
+  background: #0c1722;
+  padding: 2px 8px; border-radius: 999px;
+  letter-spacing: 1px;
+}
+.pos-pill {
+  margin-left: auto; color: var(--accent); font-size: 1rem;
+}
+
+/* ---- track ---- */
+#track { width: 100%; height: auto; display: block; }
+#track-path { stroke: #2c3a4e; stroke-width: 16; stroke-linejoin: round; stroke-linecap: round; }
+.car-dot { transition: none; }
+/* Subtle glow so John Doe (#88) is easy to pick out in the pack. */
+.car-dot-ours {
+  filter: drop-shadow(0 0 3px var(--river)) drop-shadow(0 0 7px rgba(31,199,123,0.65));
+  animation: car-glow 2.4s ease-in-out infinite;
+}
+@keyframes car-glow {
+  0%, 100% { filter: drop-shadow(0 0 3px var(--river)) drop-shadow(0 0 6px rgba(31,199,123,0.45)); }
+  50%      { filter: drop-shadow(0 0 4px var(--river)) drop-shadow(0 0 10px rgba(31,199,123,0.85)); }
+}
+.car-label { font: 700 11px "Segoe UI", sans-serif; fill: #06121a; }
+.track-note { color: var(--muted); font-size: 0.72rem; margin: 6px 0 0; text-align: center; }
+
+/* ---- leaderboard ---- */
+.board { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.board th {
+  text-align: left; color: var(--muted); font-size: 0.7rem; letter-spacing: 1px;
+  padding: 4px 6px; border-bottom: 1px solid var(--line);
+}
+.board td { padding: 5px 6px; border-bottom: 1px solid #131b27; font-size: 0.86rem; }
+.board tr.us td { background: rgba(31,199,123,0.12); color: #c9ffe6; font-weight: 600; }
+.board tr.us td:first-child { box-shadow: inset 3px 0 0 var(--river); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.dot.SOFT { background: var(--soft); }
+.dot.MEDIUM { background: var(--medium); }
+.dot.HARD { background: var(--hard); }
+.pit-flag { color: var(--amber); font-size: 0.7rem; margin-left: 4px; }
+
+/* ---- telemetry ---- */
+.tyres { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+.tyre { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.tyre-label { color: var(--muted); font-size: 0.72rem; letter-spacing: 1px; }
+.tyre .bar { width: 100%; height: 12px; background: #0b1119; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.tyre .bar i { display: block; height: 100%; width: 0%; border-radius: 6px; transition: width 0.4s ease, background 0.4s ease; }
+.tyre-val { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.9rem; }
+.tyre.alert .tyre-label, .tyre.alert .tyre-val { color: var(--red); }
+.tyre.alert { animation: pulse 1s infinite; }
+
+.meters { display: grid; gap: 10px; }
+.meter { display: grid; grid-template-columns: 70px 1fr 60px; align-items: center; gap: 10px; }
+.meter label { color: var(--muted); font-size: 0.72rem; letter-spacing: 1px; }
+.mbar { height: 12px; background: #0b1119; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.mbar i { display: block; height: 100%; width: 0%; transition: width 0.4s ease; }
+.mbar.fuel i { background: linear-gradient(90deg, #2a7, #6f6); }
+.mbar.batt i { background: linear-gradient(90deg, #07a, #4cf); }
+.meter span { font-variant-numeric: tabular-nums; text-align: right; font-size: 0.85rem; }
+.readouts { display: flex; justify-content: space-around; margin-top: 4px; }
+.readouts > div { text-align: center; }
+.ro-v { display: block; font-size: 1.3rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.ro-l { color: var(--muted); font-size: 0.68rem; letter-spacing: 1px; }
+
+/* ---- lab panels ---- */
+.lab-card { position: relative; min-height: 190px; }
+.lab-locked {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; gap: 10px; color: var(--muted);
+  height: 150px; border: 1px dashed var(--line); border-radius: 10px;
+  background: repeating-linear-gradient(45deg, #0d121b, #0d121b 12px, #0f1520 12px, #0f1520 24px);
+}
+.lab-locked .lock { font-size: 1.8rem; opacity: 0.8; }
+.lab-locked code { color: var(--accent); background: #0c1722; padding: 1px 5px; border-radius: 4px; }
+
+.anom-status {
+  text-align: center; font-weight: 800; letter-spacing: 3px; font-size: 1.6rem;
+  padding: 14px; border-radius: 10px; margin-bottom: 12px;
+  background: #0e2018; color: var(--green); border: 1px solid #1c3b2c;
+}
+.anom-status.alert { background: #2a0f12; color: var(--red); border-color: #5a1d22; animation: pulse 0.9s infinite; }
+.anom-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; }
+.anom-l { display: block; color: var(--muted); font-size: 0.7rem; letter-spacing: 1px; }
+.anom-v { display: block; font-size: 1.25rem; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+.agent-banner {
+  text-align: center; font-weight: 800; letter-spacing: 3px; font-size: 1.7rem;
+  padding: 14px; border-radius: 10px; margin-bottom: 10px;
+  background: #0e2018; color: var(--green); border: 1px solid #1c3b2c;
+}
+.agent-banner.pit-now { background: #2a0f12; color: var(--red); border-color: #5a1d22; animation: pulse 0.9s infinite; }
+.agent-banner.pit-soon { background: #2a230c; color: var(--amber); border-color: #5a4a1d; }
+.feed-title { color: var(--muted); font-size: 0.7rem; letter-spacing: 2px; margin: 8px 0 6px; }
+.feed { list-style: none; margin: 0; padding: 0; max-height: 120px; overflow-y: auto; }
+.feed li {
+  display: flex; gap: 10px; align-items: center; padding: 4px 6px;
+  border-bottom: 1px solid #131b27; font-size: 0.8rem;
+}
+.feed .f-lap { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 48px; }
+.feed .f-sug { font-weight: 700; }
+.f-sug.PIT-NOW { color: var(--red); }
+.f-sug.PIT-SOON { color: var(--amber); }
+.f-sug.STAY-OUT { color: var(--green); }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+@media (max-width: 1000px) {
+  .grid { grid-template-columns: 1fr; grid-template-areas: "track" "telem" "board" "anomaly" "agent"; }
+}
