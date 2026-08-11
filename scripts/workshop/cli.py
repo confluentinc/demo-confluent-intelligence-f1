@@ -79,6 +79,13 @@ def main() -> None:
     lifecycle_mod.add_lifecycle_arguments(p_prepare, allow_accounts=False)
     p_prepare.set_defaults(func=lifecycle_mod.prepare_races)
 
+    p_migrate = sub.add_parser(
+        "migrate-race-contract",
+        help="Rebuild race source tables/topics for one to three explicit accounts",
+    )
+    lifecycle_mod.add_migration_arguments(p_migrate)
+    p_migrate.set_defaults(func=lifecycle_mod.migrate_race_contract)
+
     p_social = sub.add_parser(
         "prepare-social-feed",
         help="Build Lab 3/4 for organizer-controlled account 50 and leave its race stopped",

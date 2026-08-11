@@ -112,6 +112,7 @@ cluster and service names from `runs/<run-id>/manifest.json`.
 | `uv run workshop reset-races --run-id <run-id>` | Stop and drain | Clears safe append-only state | Leave the cohort stopped and ready |
 | `uv run workshop prepare-races --run-id <run-id>` | Smoke start, then scale to 0 | Reset after smoke test | Rehearse the complete cohort |
 | `uv run workshop prepare-social-feed --run-id <run-id> --account 50` | Keep account 50 stopped | Build its Lab 3/4 statements | Prepare the shared Watsonx feed |
+| `uv run workshop migrate-race-contract --run-id <run-id> --accounts 50` | Stop only the selected account(s) | Rebuild the two race source tables/topics and update the simulator | Guarded schema migration; requires one to three explicit accounts |
 | `uv run teardown-workshop` | Deleted | Deleted | Remove the workshop |
 
 Omit `--run-id` only when one manifest exists under `runs/`. Use `--accounts` for

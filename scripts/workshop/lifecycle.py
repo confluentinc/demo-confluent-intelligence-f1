@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
+import subprocess
 import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,12 +20,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import boto3
+import yaml
 from dotenv import dotenv_values
 
 from scripts.common.terraform import get_project_root
 from scripts.reset import (
+    LAB_DROPS,
+    LAB_TOPICS,
     SOURCE_TOPICS,
     delete_flink_statements,
+    delete_topic_and_subjects,
     drop_flink_objects,
     existing_topics,
     kafka_admin,
@@ -35,6 +42,22 @@ RESET_WORKERS = 8
 START_TIMEOUT = 60
 STOP_TIMEOUT = 120
 FRESH_SECONDS = 90
+
+MIGRATION_DESTROY_TARGETS = {
+    "module.topics.confluent_rtce_topic.car_telemetry[0]",
+    "confluent_tag_binding.car_telemetry_raw_data",
+}
+MIGRATION_APPLY_TARGETS = {
+    "module.topics.confluent_flink_statement.create_car_telemetry_table",
+    "module.topics.confluent_flink_statement.create_race_standings_table",
+    *MIGRATION_DESTROY_TARGETS,
+    "aws_ecs_task_definition.simulator",
+    "aws_ecs_service.simulator",
+}
+SOURCE_DROPS = [
+    ("drop-race-standings", "DROP TABLE IF EXISTS `race_standings`"),
+    ("drop-car-telemetry", "DROP TABLE IF EXISTS `car_telemetry`"),
+]
 
 
 @dataclass(frozen=True)
@@ -541,6 +564,331 @@ def prepare_races(args: argparse.Namespace) -> None:
     print(f"Run {manifest.run_id}: preparation passed; every account is stopped and ready.")
 
 
+def _state_output(state: dict, name: str) -> object:
+    return (state.get("outputs", {}).get(name) or {}).get("value")
+
+
+def _show_create(tf: dict[str, str], table: str) -> str:
+    """Return SHOW CREATE output and always delete the probe statement."""
+    from scripts.common.simulator_control import flink_session
+
+    session = flink_session(tf)
+    name = session.submit(f"SHOW CREATE TABLE `{table}`")
+    try:
+        status = session.wait(name, timeout=120)
+        phase = (status.get("status") or {}).get("phase")
+        if phase == "FAILED":
+            detail = (status.get("status") or {}).get("detail", "")
+            raise RuntimeError(f"SHOW CREATE TABLE {table} failed: {detail}")
+        rows = list(session.results(name, max_rows=2, timeout=60))
+        if len(rows) != 1 or not rows[0]:
+            raise RuntimeError(f"SHOW CREATE TABLE {table} returned {len(rows)} rows")
+        return str(rows[0][0])
+    finally:
+        session.stop(name)
+
+
+def _validate_race_contract(creates: dict[str, str]) -> list[str]:
+    def has_column(sql: str, name: str) -> bool:
+        return bool(re.search(rf"`{name}`\s+(?:STRING|VARCHAR\s*\(\s*\d+\s*\))", sql, re.IGNORECASE))
+
+    def has_retention(sql: str) -> bool:
+        return bool(
+            re.search(
+                r"'kafka\.retention\.time'\s*=\s*'(?:24\s*h|1\s*d|86400000\s*ms)'",
+                sql,
+                re.IGNORECASE,
+            )
+        )
+
+    problems: list[str] = []
+    telemetry = creates.get("car_telemetry", "")
+    standings = creates.get("race_standings", "")
+    if not has_column(telemetry, "race_id"):
+        problems.append("car_telemetry is missing race_id")
+    if not re.search(r"`event_time`\s+TIMESTAMP\s*\(\s*3\s*\)", telemetry, re.IGNORECASE):
+        problems.append("car_telemetry is missing event_time TIMESTAMP(3)")
+    if not has_retention(telemetry):
+        problems.append("car_telemetry is missing 24-hour retention")
+    if not re.search(r"'kafka\.cleanup-policy'\s*=\s*'delete'", telemetry, re.IGNORECASE):
+        problems.append("car_telemetry is not append/delete")
+    if not re.search(r"'scan\.startup\.mode'\s*=\s*'earliest-offset'", telemetry, re.IGNORECASE):
+        problems.append("car_telemetry is not configured for earliest-offset")
+    if not has_column(standings, "race_id"):
+        problems.append("race_standings is missing race_id")
+    if not re.search(r"`event_time`\s+TIMESTAMP\s*\(\s*3\s*\)", standings, re.IGNORECASE):
+        problems.append("race_standings is missing event_time TIMESTAMP(3)")
+    if not re.search(
+        r"PRIMARY\s+KEY\s*\(\s*`race_id`\s*,\s*`car_number`\s*\)\s+NOT\s+ENFORCED",
+        standings,
+        re.IGNORECASE,
+    ):
+        problems.append("race_standings is missing the composite race key")
+    if not re.search(
+        r"DISTRIBUTED\s+BY(?:\s+HASH)?\s*\(\s*`race_id`\s*,\s*`car_number`\s*\)",
+        standings,
+        re.IGNORECASE,
+    ):
+        problems.append("race_standings is not distributed by the composite race key")
+    if not has_retention(standings):
+        problems.append("race_standings is missing 24-hour retention")
+    if not re.search(
+        r"'kafka\.cleanup-policy'\s*=\s*'(?:compact,delete|delete,compact)'",
+        standings,
+        re.IGNORECASE,
+    ):
+        problems.append("race_standings is not compact/delete")
+    if not re.search(r"'key\.format'\s*=\s*'avro-registry'", standings, re.IGNORECASE):
+        problems.append("race_standings is missing its Avro key format")
+    if not re.search(r"'scan\.startup\.mode'\s*=\s*'earliest-offset'", standings, re.IGNORECASE):
+        problems.append("race_standings is not configured for earliest-offset")
+    return problems
+
+
+def _migration_tf_env(root: Path, run_dir: Path, account: Account, card: dict[str, str]) -> dict[str, str]:
+    """Reconstruct WSA's exact per-account TF_VAR environment without logging it."""
+    spec_path = run_dir / "wsa-spec.yaml"
+    shared_state_path = run_dir / "terraform/aws-shared/terraform.tfstate"
+    if not spec_path.is_file() or not shared_state_path.is_file():
+        raise RuntimeError("the WSA spec or shared Terraform state is missing")
+    spec = yaml.safe_load(spec_path.read_text()) or {}
+    raw_vars = spec.get("terraform_vars") or {}
+    if not isinstance(raw_vars, dict):
+        raise RuntimeError("wsa-spec.yaml terraform_vars is invalid")
+
+    email = card.get("F1_EMAIL") or card.get("F1_CONSOLE_USERNAME", "")
+    if not email:
+        raise RuntimeError(f"account {account.number}: card has no attendee owner email")
+    replacements = {
+        "{N}": str(account.number),
+        "{NNN}": f"{account.number:03d}",
+        "{email}": email,
+    }
+    env = os.environ.copy()
+    deploy = {k: str(v) for k, v in dotenv_values(root / "credentials.env").items() if v is not None}
+    for name in spec.get("env_vars") or []:
+        value = deploy.get(str(name)) or env.get(str(name), "")
+        if not value:
+            raise RuntimeError(f"missing required deploy variable {name}")
+        env[str(name)] = value
+    for name, raw in raw_vars.items():
+        value = str(raw)
+        for token, replacement in replacements.items():
+            value = value.replace(token, replacement)
+        env[f"TF_VAR_{name}"] = value
+
+    shared = json.loads(shared_state_path.read_text())
+    mapping = {
+        "shared_vpc_id": "vpc_id",
+        "shared_subnet_ids": "subnet_ids",
+        "shared_postgres_host": "postgres_host",
+        "shared_postgres_port": "postgres_port",
+        "shared_postgres_dbname": "postgres_dbname",
+        "shared_postgres_user": "postgres_user",
+        "shared_postgres_password": "postgres_password",
+        "shared_ecr_image_uri": "ecr_image_uri",
+    }
+    for variable, output in mapping.items():
+        value = _state_output(shared, output)
+        if value in (None, "", []):
+            raise RuntimeError(f"shared Terraform output {output} is missing")
+        env[f"TF_VAR_{variable}"] = json.dumps(value) if isinstance(value, list) else str(value)
+    return env
+
+
+def _migration_preflight(
+    root: Path, manifest: RunManifest, account: Account
+) -> tuple[Path, dict[str, str], dict[str, str], dict[str, str]]:
+    run_dir = root / "wsa-output" / manifest.run_id
+    tf_dir = run_dir / "terraform/aws"
+    state_path = tf_dir / "terraform.tfstate.d" / f"account-{account.number:03d}" / "terraform.tfstate"
+    staged_topics = run_dir / "terraform/modules/topics/main.tf"
+    staged_datagen = tf_dir / "datagen.tf"
+    if not tf_dir.is_dir() or not state_path.is_file():
+        raise RuntimeError(f"account {account.number}: exact WSA Terraform workspace/state is missing")
+    current_topics = root / "terraform/modules/topics/main.tf"
+    if not staged_topics.is_file() or staged_topics.read_bytes() != current_topics.read_bytes():
+        raise RuntimeError(f"account {account.number}: staged topics module differs from this checkout")
+    current_datagen = root / "terraform/aws/datagen.tf"
+    if not staged_datagen.is_file() or staged_datagen.read_bytes() != current_datagen.read_bytes():
+        raise RuntimeError(f"account {account.number}: staged simulator definition differs from this checkout")
+
+    card = _card(account)
+    state = json.loads(state_path.read_text())
+    state_email = str(_state_output(state, "console_username") or "")
+    card_email = card.get("F1_EMAIL") or card.get("F1_CONSOLE_USERNAME", "")
+    if not card_email or not state_email or card_email != state_email:
+        raise RuntimeError(f"account {account.number}: owner email does not match card/state")
+    card["F1_EMAIL"] = card_email
+    checks = {
+        "prefix": (account.prefix, card.get("F1_PREFIX"), _state_output(state, "prefix")),
+        "environment": (card.get("F1_ENVIRONMENT_ID"), _state_output(state, "environment_id")),
+        "cluster": (card.get("F1_CLUSTER_ID"), _state_output(state, "cluster_id")),
+    }
+    for label, values in checks.items():
+        present = [str(value or "") for value in values]
+        if not all(present) or len(set(present)) != 1:
+            raise RuntimeError(f"account {account.number}: {label} does not match manifest/card/state")
+    env = _migration_tf_env(root, run_dir, account, card)
+    return tf_dir, card, _card_to_tf(card), env
+
+
+def _run_tf(tf_dir: Path, env: dict[str, str], args: list[str]) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        ["terraform", *args], cwd=tf_dir, env=env, capture_output=True, text=True, timeout=1800
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip().splitlines()
+        raise RuntimeError(f"terraform {' '.join(args[:2])} failed: {detail[-1] if detail else 'unknown error'}")
+    return result
+
+
+def _validate_saved_plan(
+    tf_dir: Path, env: dict[str, str], plan: Path, allowed: set[str]
+) -> set[str]:
+    shown = _run_tf(tf_dir, env, ["show", "-json", str(plan)])
+    document = json.loads(shown.stdout)
+    changed = {
+        item["address"]
+        for item in document.get("resource_changes", [])
+        if item.get("change", {}).get("actions") not in (["no-op"], ["read"])
+    }
+    unexpected = changed - allowed
+    if unexpected:
+        raise RuntimeError("targeted plan changes unexpected resources: " + ", ".join(sorted(unexpected)))
+    return changed
+
+
+def _saved_target_plan(
+    tf_dir: Path,
+    env: dict[str, str],
+    account: Account,
+    targets: set[str],
+    *,
+    destroy: bool,
+) -> Path:
+    workspace = f"account-{account.number:03d}"
+    _run_tf(tf_dir, env, ["workspace", "select", workspace])
+    selected = _run_tf(tf_dir, env, ["workspace", "show"]).stdout.strip()
+    if selected != workspace:
+        raise RuntimeError(f"account {account.number}: selected Terraform workspace is {selected!r}")
+    suffix = "detach" if destroy else "rebuild"
+    plan = tf_dir / f"{workspace}-race-contract-{suffix}.tfplan"
+    args = ["plan"]
+    if destroy:
+        args.append("-destroy")
+    for target in sorted(targets):
+        args.append(f"-target={target}")
+    args.append(f"-out={plan}")
+    _run_tf(tf_dir, env, args)
+    changed = _validate_saved_plan(tf_dir, env, plan, targets)
+    if destroy and changed != targets:
+        missing = targets - changed
+        raise RuntimeError("detach plan is missing managed resources: " + ", ".join(sorted(missing)))
+    return plan
+
+
+def _apply_saved_plan(tf_dir: Path, env: dict[str, str], plan: Path) -> None:
+    _run_tf(tf_dir, env, ["apply", "-auto-approve", str(plan)])
+
+
+def _delete_lab_rtce(card: dict[str, str]) -> list[str]:
+    if not card.get("F1_RTCE_API_KEY") or not card.get("F1_RTCE_API_SECRET"):
+        return []
+    from scripts.participant.rtce import _run_cli, _topic_name, list_registrations
+
+    registered = {_topic_name(row) for row in list_registrations(card)}
+    targets = [topic for topic in LAB_TOPICS if topic in registered]
+    if not targets:
+        return []
+    result = _run_cli(
+        card,
+        [
+            "confluent", "rtce", "rtce-topic", "delete", *targets,
+            "--environment", card["F1_ENVIRONMENT_ID"],
+            "--cluster", card["F1_CLUSTER_ID"],
+            "--force",
+        ],
+    )
+    if result.returncode == 0:
+        return []
+    detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "unknown CLI error"
+    return [f"could not remove Lab RTCE topics ({detail})"]
+
+
+def migrate_race_contract(args: argparse.Namespace) -> None:
+    """Destructively rebuild the race source contract for one to three exact accounts."""
+    if not str(getattr(args, "accounts", "") or "").strip():
+        raise SystemExit("migrate-race-contract requires an explicit --accounts selection (maximum three)")
+    root = get_project_root()
+    manifest, accounts, _ = _selection(args)
+    from scripts.common.login_checks import ensure_confluent_login
+
+    deploy_creds = {
+        key: str(value)
+        for key, value in dotenv_values(root / "credentials.env").items()
+        if value is not None
+    }
+    if not ensure_confluent_login(deploy_creds, interactive=False):
+        raise SystemExit("Migration preflight failed; run `confluent login --save` and retry")
+    prepared = []
+    try:
+        for account in accounts:
+            tf_dir, card, tf, env = _migration_preflight(root, manifest, account)
+            describe_exact(account)
+            before = {table: _show_create(tf, table) for table in SOURCE_TOPICS}
+            if _validate_race_contract(before):
+                detach = _saved_target_plan(
+                    tf_dir, env, account, MIGRATION_DESTROY_TARGETS, destroy=True
+                )
+            else:
+                detach = None
+            prepared.append((account, tf_dir, card, tf, env, detach))
+    except Exception as exc:
+        raise SystemExit(f"Migration preflight failed; nothing changed:\n  {exc}") from exc
+
+    for account, tf_dir, card, tf, env, detach in prepared:
+        errors = _stop_accounts([account], announce=False)
+        _set_preparation(manifest, {account.number}, False, "migration_failed")
+        if errors:
+            raise SystemExit("Migration stopped before table changes:\n  " + "\n  ".join(errors))
+        try:
+            if detach is not None:
+                _apply_saved_plan(tf_dir, env, detach)
+                problems = delete_flink_statements(tf)
+                problems += _delete_lab_rtce(card)
+                if not problems:
+                    problems += drop_flink_objects(tf, [*LAB_DROPS, *SOURCE_DROPS])
+                admin = kafka_admin(tf)
+                present = existing_topics(admin)
+                if present is None:
+                    problems.append("could not confirm exact Kafka topics before deletion")
+                else:
+                    for topic in [*LAB_TOPICS, *SOURCE_TOPICS]:
+                        problems += delete_topic_and_subjects(
+                            topic, tf["environment_id"], tf["cluster_id"], topic in present
+                        )
+                if problems:
+                    raise RuntimeError("; ".join(problems))
+
+            rebuild = _saved_target_plan(tf_dir, env, account, MIGRATION_APPLY_TARGETS, destroy=False)
+            _apply_saved_plan(tf_dir, env, rebuild)
+            after = {table: _show_create(tf, table) for table in SOURCE_TOPICS}
+            problems = _validate_race_contract(after)
+            if problems:
+                raise RuntimeError("post-migration contract check failed: " + "; ".join(problems))
+        except Exception as exc:
+            _stop_accounts([account], announce=False)
+            raise SystemExit(
+                f"Account {account.number} migration failed; it remains stopped and unprepared:\n  {exc}"
+            ) from exc
+        final_errors = _stop_accounts([account], announce=False)
+        if final_errors:
+            raise SystemExit("Migration applied but final stop failed:\n  " + "\n  ".join(final_errors))
+        print(f"  {account.number:03d} {account.prefix}: race contract migrated; stopped and unprepared")
+    print(f"Run {manifest.run_id}: migrated {len(accounts)} account(s). Reset/rehearse them before cohort start.")
+
+
 def prepare_social_feed(args: argparse.Namespace) -> None:
     """Build Lab 3/4 only for the manifest's organizer-controlled account 50."""
     from scripts.common.simulator_control import create_lab_objects
@@ -685,3 +1033,12 @@ def add_lifecycle_arguments(parser: argparse.ArgumentParser, *, allow_accounts: 
 def add_prepare_social_feed_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--run-id", required=True, help="Exact workshop run manifest ID")
     parser.add_argument("--account", required=True, type=int, help="Organizer feed account (must be 50)")
+
+
+def add_migration_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--run-id", default="", help="Run manifest ID (required when multiple runs exist)")
+    parser.add_argument(
+        "--accounts",
+        required=True,
+        help="One to three exact account numbers/ranges, for example 50 or 48-50",
+    )

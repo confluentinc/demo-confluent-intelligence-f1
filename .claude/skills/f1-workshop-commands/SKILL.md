@@ -61,6 +61,7 @@ uv run f1-pitwall --mock                                    # offline demo/dev, 
 
 # Organizer: shared race-feed service for LAB 5 (OpenAPI tool for watsonx Orchestrate)
 uv run workshop prepare-social-feed --run-id <run-id> --account 50
+uv run workshop migrate-race-contract --run-id <run-id> --accounts 50
 uv run f1-social-feed --creds runs/<run-id>/credentials/f1wp050.env \
   --public-base-url https://small-underpass-refinery.ngrok-free.dev \
   --fixed-prefix f1wp050
