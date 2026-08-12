@@ -6,7 +6,18 @@ Follow the labs in order. Every attendee command and SQL statement is included h
 
 ## Prerequisites
 
-You need a browser, a terminal, this repository, and `uv` for the Pit Wall dashboard. Clone the repository and install the locked dependencies before the session:
+You need a browser, a terminal, this repository, and `uv` for the Pit Wall dashboard.
+
+On macOS:
+
+```bash
+brew install git uv
+brew install --cask claude-code   # optional — only for the Bonus section
+```
+
+No Homebrew? Install `uv` from [astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/) instead.
+
+Clone the repository and install the locked dependencies before the session:
 
 ```bash
 git clone https://github.com/confluentinc/demo-confluent-intelligence-f1.git
@@ -55,12 +66,12 @@ uv run f1-onboard --paste     # paste your claim email, then a blank line
 
 Your username is a **workshop account we created for you** — something like `...+f1wp###@confluent.io`. It is *not* your own work email, and signing in with your own address won't find your environment.
 
-1. Open the sign-in link on your card (**confluent.cloud**) and log in with the username and password you were given.
+1. Open the sign-in link from your emailand log in to [confluent.cloud](https://confluent.cloud/) with the **console username** and **console password** you were given.
 2. You'll land in your environment, **`RIVER-RACING-f1wp###-ENV`**. It's the only one you can see.
 3. Open the **Flink** tab and click **Open SQL workspace**.
 4. Set the workspace's **catalog** to your environment and **database** to your cluster (`RIVER-RACING-f1wp###-CLUSTER`), using the dropdowns above the editor.
 
-Run this in the workspace:
+Run this in the SQL workspace:
 
 ```sql
 SHOW TABLES;
@@ -129,7 +140,7 @@ SHOW CONNECTIONS;
 
 ## Lab 3 — Stream Processing: Enrichment + Anomaly Detection
 
-Stop every streaming `SELECT` from Lab 2. When the instructor prompts you, paste this entire statement into one SQL cell and run it:
+Stop every streaming `SELECT` from Lab 2. Then paste this entire statement into one SQL cell and run it:
 
 ```sql
 CREATE TABLE `car_state`
@@ -219,9 +230,8 @@ FROM `car_state`;
 
 You should see one row per 60-second lap. Around lap 32,
 `anomaly_tire_temp_fl` becomes `true` and the temperature reaches about 145°C.
-Stop the query after checking it.
 
-### Optional: Forecast tire temperature with IBM Granite
+### Optional: Forecast tire temperature with new IBM Granite Time Series Models
 
 Open a new SQL cell and run the query below. It uses the same 60-second, one-per-lap tire temperature windows, but asks the built-in `AI_FORECAST` function for the next 20 values. The `model` option selects IBM Granite TinyTimeMixer directly; there is no connection or model to register.
 
@@ -356,13 +366,13 @@ REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recomme
 WITH ('max_iterations' = '10');
 ```
 
-Confirm it was created:
+Confirm it was created successfully:
 
 ```sql
 SHOW AGENTS;
 ```
 
-Create `pit_decisions`:
+Create `pit_decisions`, which invokes `AI_RUN_AGENT` and puts our agent to work:
 
 ```sql
 CREATE TABLE `pit_decisions`
@@ -507,6 +517,26 @@ Then try:
 - "The pit wall just made a call. Draft a post about our strategy."
 - "Write a 3-tweet recap thread of John's race so far."
 
+## Bonus (Optional) — Query the Live Race from Claude Code using Confluent Real-Time Context Engine
+
+`car_telemetry` is already published to Confluent's **Real-Time Context
+Engine (RTCE)**, so an AI agent can query the live sensor stream directly —
+no Kafka client, no consumer group.
+
+1. Copy the **MCP Setup Command** line from your **credential claim email** and run it
+   in a terminal:
+   
+   ```bash
+   claude mcp add --transport http rtce <YOUR_MCP_ENDPOINT> \
+     --header "Authorization: Basic <YOUR_TOKEN>"
+   ```
+   
+2. Run `claude`, then ask it about the live race, e.g.:
+   - "What's the front-left tire temperature on car 88 right now?"
+   - "Show me the last 10 telemetry readings."
+
+Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and
+only `car_telemetry` is exposed. You can enable more topics for use with Real-Time Context Engine from the Clusters -> Topics page.
 
 ## Lab 6 — Wrap-Up
 
