@@ -221,7 +221,7 @@ SHOW CONNECTIONS;   -- the Bedrock connections behind them
 
 ## 4. LAB B — Enrichment + anomaly detection → `car_state`
 
-This joins telemetry to standings by event time, tumbles into 10-second windows, and
+This joins telemetry to standings by event time, tumbles into 60-second windows, and
 runs `ML_DETECT_ANOMALIES` on the front-left tire temperature.
 
 > **Deployed with `--with-labs`?** This statement is already running — skip the submit
@@ -257,10 +257,9 @@ SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
 FROM `car_state`;
 ```
 
-**Be patient here.** `ML_DETECT_ANOMALIES` withholds all output until it has 20 training
-windows. Windows are 10 seconds of wall-clock event time, so that's **~3.5 minutes of
-live data** before `car_state` emits its first row, regardless of lap pacing. Empty
-result → wait and re-run.
+`car_state` begins emitting after the first 60-second window closes. During the
+first 20 windows, `anomaly_tire_temp_fl` remains `false` while the model builds
+its training context. At the default pace, that context is ready around lap 21.
 
 Around **lap 32**, `anomaly_tire_temp_fl` flips to `true` and `tire_temp_fl_c` spikes to
 ~145°C. The **ANOMALY DETECTION** panel on your dashboard unlocks.
@@ -487,8 +486,8 @@ The workshop's LAB 5 builds a no-code IBM watsonx Orchestrate agent that drafts 
 posts from the live feed, reading it through an OpenAPI tool. You can reproduce the tool
 side solo; the agent side still needs an Orchestrate account.
 
-Two interchangeable backends serve the identical `/race-feed/{prefix}` +
-`/openapi.json` surface, so Orchestrate imports the same spec either way:
+Two interchangeable backends serve the identical `/race-feed/{prefix}` surface,
+so Orchestrate uses the same root `f1-race-feed-openapi.json` file either way:
 
 ```bash
 # A. Straight from Kafka (no extra Confluent features needed)
@@ -509,9 +508,9 @@ Run `--probe` first — it validates the live RTCE contract and exits, which is 
 easier to debug than a failed tool import. RTCE has to be available on your org; if the
 probe fails, use backend A, which needs nothing beyond the topics you already have.
 
-Orchestrate has to reach the spec over the internet, so expose
-`http://localhost:8080/openapi.json` with a tunnel (`ngrok`, Cloudflare Tunnel) and
-import the public URL. It can't consume RTCE's MCP endpoint directly — it supports only
+Orchestrate has to reach the API over the internet, so expose port 8080 with a
+tunnel (`ngrok`, Cloudflare Tunnel), set that HTTPS URL in `servers[0].url` in
+`f1-race-feed-openapi.json`, and upload the JSON file. It can't consume RTCE's MCP endpoint directly — it supports only
 *local* MCP servers, which is the whole reason this REST shim exists. Agent
 configuration (persona, prompts, tool wiring):
 [`demo-reference/orchestrate_social_agent.md`](../../demo-reference/orchestrate_social_agent.md)
@@ -578,7 +577,7 @@ they're gone after `uv run reset`, which drops them by design. Rebuild everythin
 `uv run reset --with-labs`, or re-run the `--file` commands from §4 and §5 in order.
 
 **`car_state` is empty.** Almost always the `ML_DETECT_ANOMALIES` warmup — it needs 20
-× 10-second windows (~3.3 min of live data). If it's still empty after 5 minutes, check
+× 60-second windows (~20 min of live data). If it's still empty after 22 minutes, check
 that telemetry is arriving (`SELECT * FROM car_telemetry;`) and that the table itself was
 created (`DESCRIBE car_state;`). If the table is missing, the LAB B statement failed —
 re-run the `--file` command and read the error it prints.
@@ -593,9 +592,8 @@ running?), check the ECS logs (§7), or bounce it with `uv run race restart`.
 SELECT lap, tire_temp_fl_c FROM `car_state` WHERE lap BETWEEN 30 AND 34;
 ```
 
-You should see ~145°C. If `car_state` has fewer than 20 windows of history before lap 32,
-the detector never trained — that happens if you set `seconds_per_lap` very low. 20s/lap
-gives it plenty of room.
+You should see ~145°C. If Lab 3 started too late to collect 20 windows before lap
+32, the detector did not have enough training context for the incident.
 
 **Agent fields are null but `raw_response` has text.** The LLM emitted a slightly
 different label format than the parsing regex expects. Inspect it:

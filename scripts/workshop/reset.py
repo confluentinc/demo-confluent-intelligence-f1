@@ -21,6 +21,7 @@ import argparse
 import os
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
 from pathlib import Path
 
@@ -48,6 +49,7 @@ from scripts.reset import (
 )
 
 DEFAULT_CREDS_GLOB = "runs/*/credentials/*.env"
+RESET_WORKERS = 8
 
 
 def _card_to_tf(card: dict[str, str | None]) -> dict[str, str]:
@@ -109,6 +111,60 @@ def _wait_for_fleet_drain(region: str, name_filter: str, timeout: int = 120) -> 
     return False
 
 
+def _reset_card(card_path: str, keep_source: bool) -> tuple[str, list[str]]:
+    """Reset one credential card without changing any other environment."""
+    card = dotenv_values(card_path)
+    prefix = card.get("F1_PREFIX") or Path(card_path).stem
+    tf = _card_to_tf(card)
+
+    validation = _validate_tf(tf, card_path)
+    if validation:
+        return prefix, validation
+
+    env_id = tf["environment_id"]
+    cluster_id = tf["cluster_id"]
+    problems = delete_flink_statements(tf)
+    problems += drop_flink_objects(tf, LAB_DROPS)
+
+    try:
+        admin = kafka_admin(tf)
+    except Exception as exc:
+        problems.append(f"no Kafka admin access ({exc})")
+        admin = None
+
+    present = existing_topics(admin) if admin is not None else None
+    for topic in LAB_TOPICS:
+        exists = None if present is None else (topic in present)
+        problems += delete_topic_and_subjects(topic, env_id, cluster_id, exists)
+
+    if not keep_source and admin is not None:
+        problems += truncate_topics(admin, SOURCE_TOPICS, present)
+
+    return prefix, problems
+
+
+def _reset_cards(card_paths: list[str], keep_source: bool) -> list[tuple[int, str, list[str]]]:
+    """Reset independent cards concurrently while returning deterministic results."""
+    results: list[tuple[int, str, list[str]]] = []
+    workers = min(RESET_WORKERS, len(card_paths))
+    # Keep each confluent_kafka AdminClient in its own process. Thread workers
+    # corrupt the client's Future callback state under concurrent fleet resets.
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_reset_card, card_path, keep_source): (index, card_path)
+            for index, card_path in enumerate(card_paths, 1)
+        }
+        for future in as_completed(futures):
+            index, card_path = futures[future]
+            try:
+                prefix, problems = future.result()
+            except Exception as exc:
+                prefix = Path(card_path).stem
+                problems = [f"unexpected reset failure ({exc})"]
+            results.append((index, prefix, problems))
+    return sorted(results)
+
+
 def reset_races(args: argparse.Namespace) -> None:
     root = get_project_root()
 
@@ -142,50 +198,9 @@ def reset_races(args: argparse.Namespace) -> None:
 
     # --- 2. Fan out per-card reset ---
     all_problems: list[str] = []
-
-    for i, card_path in enumerate(card_paths, 1):
-        card = dotenv_values(card_path)
-        prefix = (card.get("F1_PREFIX") or Path(card_path).stem)
-        tf = _card_to_tf(card)
-
-        validation = _validate_tf(tf, card_path)
-        if validation:
-            all_problems.extend(validation)
-            continue
-
-        env_id = tf["environment_id"]
-        cluster_id = tf["cluster_id"]
-
+    print(f"2. Resetting environments with up to {min(RESET_WORKERS, len(card_paths))} workers...")
+    for i, prefix, problems in _reset_cards(card_paths, args.keep_source):
         print(f"--- [{i}/{len(card_paths)}] {prefix} ---")
-
-        print("  Stopping Flink statements...")
-        problems = delete_flink_statements(tf)
-
-        print("  Dropping lab objects...")
-        problems += drop_flink_objects(tf, LAB_DROPS)
-
-        try:
-            admin = kafka_admin(tf)
-        except Exception as e:
-            print(f"  Could not reach Kafka admin API: {e}")
-            problems.append(f"{prefix}: no Kafka admin access ({e})")
-            admin = None
-
-        present = existing_topics(admin) if admin is not None else None
-
-        print("  Dropping lab topics and SR subjects...")
-        for topic in LAB_TOPICS:
-            exists = None if present is None else (topic in present)
-            problems += delete_topic_and_subjects(topic, env_id, cluster_id, exists)
-
-        if args.keep_source:
-            print("  Keeping source topic data (--keep-source).")
-        elif admin is None:
-            print("  Skipping source topics — no Kafka admin access.")
-        else:
-            print("  Clearing race data from source topics...")
-            problems += truncate_topics(admin, SOURCE_TOPICS, present)
-
         if problems:
             all_problems.extend(f"{prefix}: {p}" for p in problems)
             print(f"  INCOMPLETE — {len(problems)} problem(s)")

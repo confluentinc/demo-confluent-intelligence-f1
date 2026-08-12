@@ -4,7 +4,7 @@
 -- `uv run selfservice up --with-labs` submit this exact file instead. There is no
 -- dbt in this repo.
 -- Input: car_telemetry (stream), race_standings (versioned table)
--- Output: car_state (one record per 10-second window)
+-- Output: car_state (one record per 60-second race lap)
 --
 -- Design notes (learned from live debugging — keep!):
 --
@@ -76,7 +76,7 @@ windowed AS (
     MAX(tire_compound) AS tire_compound,
     MAX(tire_age_laps) AS tire_age_laps
   FROM TABLE(
-    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
+    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '60' SECOND)
   )
   GROUP BY window_start, window_end, window_time, car_number
 ),

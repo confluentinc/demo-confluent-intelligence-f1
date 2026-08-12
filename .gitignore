@@ -180,6 +180,7 @@ package-lock.json
 api-key-*.txt
 /RTCE-UPSERT+LIGHTNING-QUERIES.md
 /RTCE-UPSERT-DEMO.postman_collection.json
+/RTCE-CURRENT-TOPICS.postman_collection.json
 # Local validation notes can include internal product behavior and live-run
 # observations. Keep them available to organizers without publishing them.
 /docs/technical-discoveries.md

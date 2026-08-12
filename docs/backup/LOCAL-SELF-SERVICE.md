@@ -289,8 +289,9 @@ Run the race-feed service against the generated credential card:
 uv run f1-social-feed --creds runs/selfservice/credentials/<prefix>.env
 ```
 
-Expose `http://localhost:8080/openapi.json` through an approved tunnel, import
-that public OpenAPI URL into watsonx Orchestrate, and follow
+Expose port 8080 through an approved HTTPS tunnel, set that public URL in
+`servers[0].url` in the root `f1-race-feed-openapi.json`, upload the JSON file to
+watsonx Orchestrate, and follow
 [Lab 5 in `Walkthrough.md`](../../Walkthrough.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
 
 ### Optional MCP access
@@ -346,8 +347,8 @@ Don't choose a new prefix while the first deployment still exists. Run
 
 Confirm Lab 3 was running before you restarted `f1-race`. The standings table
 starts at the latest offset, so earlier standings versions aren't available to
-the temporal join. Leave the new race running for a few minutes while the
-anomaly function collects its first 20 windows.
+the temporal join. The first `car_state` row appears after its 60-second window
+closes; the anomaly flag needs 20 windows of context before it can fire.
 
 ### The Bedrock model fails
 

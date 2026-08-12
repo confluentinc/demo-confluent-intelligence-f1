@@ -6,7 +6,18 @@ Follow the labs in order. Every attendee command and SQL statement is included h
 
 ## Prerequisites
 
-You need a browser, a terminal, this repository, and `uv` for the Pit Wall dashboard. Clone the repository and install the locked dependencies before the session:
+You need a browser, a terminal, this repository, and `uv` for the Pit Wall dashboard.
+
+On macOS:
+
+```bash
+brew install git uv
+brew install --cask claude-code   # optional — only for the Bonus section
+```
+
+No Homebrew? Install `uv` from [astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/) instead.
+
+Clone the repository and install the locked dependencies before the session:
 
 ```bash
 git clone https://github.com/confluentinc/demo-confluent-intelligence-f1.git
@@ -55,12 +66,12 @@ uv run f1-onboard --paste     # paste your claim email, then a blank line
 
 Your username is a **workshop account we created for you** — something like `...+f1wp###@confluent.io`. It is *not* your own work email, and signing in with your own address won't find your environment.
 
-1. Open the sign-in link on your card (**confluent.cloud**) and log in with the username and password you were given.
+1. Open the sign-in link from your emailand log in to [confluent.cloud](https://confluent.cloud/) with the **console username** and **console password** you were given.
 2. You'll land in your environment, **`RIVER-RACING-f1wp###-ENV`**. It's the only one you can see.
 3. Open the **Flink** tab and click **Open SQL workspace**.
 4. Set the workspace's **catalog** to your environment and **database** to your cluster (`RIVER-RACING-f1wp###-CLUSTER`), using the dropdowns above the editor.
 
-Run this in the workspace:
+Run this in the SQL workspace:
 
 ```sql
 SHOW TABLES;
@@ -115,12 +126,6 @@ SELECT car_number, `position`, gap_to_leader_sec, tire_compound, tire_age_laps
 FROM race_standings;
 ```
 
-Confirm the historical table contains 198 rows:
-
-```sql
-SELECT COUNT(*) FROM driver_race_history;
-```
-
 Check the pre-deployed models:
 
 ```sql
@@ -135,7 +140,7 @@ SHOW CONNECTIONS;
 
 ## Lab 3 — Stream Processing: Enrichment + Anomaly Detection
 
-Stop every streaming `SELECT` from Lab 2. When the instructor prompts you, paste this entire statement into one SQL cell and run it:
+Stop every streaming `SELECT` from Lab 2. Then paste this entire statement into one SQL cell and run it:
 
 ```sql
 CREATE TABLE `car_state`
@@ -179,7 +184,7 @@ windowed AS (
     MAX(tire_compound) AS tire_compound,
     MAX(tire_age_laps) AS tire_age_laps
   FROM TABLE(
-    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
+    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '60' SECOND)
   )
   GROUP BY window_start, window_end, window_time, car_number
 ),
@@ -223,11 +228,12 @@ SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
 FROM `car_state`;
 ```
 
-You should see a row every 10 seconds. Around lap 32, `anomaly_tire_temp_fl` becomes `true` and the temperature reaches about 145°C. Stop the query after checking it.
+You should see one row per 60-second lap. Around lap 32,
+`anomaly_tire_temp_fl` becomes `true` and the temperature reaches about 145°C.
 
-### Optional: Forecast tire temperature with IBM Granite
+### Optional: Forecast tire temperature with new IBM Granite Time Series Models
 
-Open a new SQL cell and run the query below. It uses the same 10-second tire temperature windows, but asks the built-in `AI_FORECAST` function for the next 20 values. The `model` option selects IBM Granite TinyTimeMixer directly; there is no connection or model to register.
+Open a new SQL cell and run the query below. It uses the same 60-second, one-per-lap tire temperature windows, but asks the built-in `AI_FORECAST` function for the next 20 values. The `model` option selects IBM Granite TinyTimeMixer directly; there is no connection or model to register.
 
 ```sql
 WITH windowed AS (
@@ -239,7 +245,7 @@ WITH windowed AS (
     MAX(lap) AS lap,
     AVG(tire_temp_fl_c) AS tire_temp_fl_c
   FROM TABLE(
-    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
+    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '60' SECOND)
   )
   GROUP BY window_start, window_end, window_time, car_number
 ),
@@ -267,19 +273,18 @@ SELECT
   lap,
   window_time AS forecast_generated_at,
   tire_temp_fl_c AS current_tire_temperature_c,
-  forecast_result.forecast[0].`timestamp` AS next_point_at,
-  forecast_result.forecast[0].mean AS next_point_c,
-  forecast_result.forecast[9].`timestamp` AS hundred_seconds_out_at,
-  forecast_result.forecast[9].mean AS hundred_seconds_out_c,
-  forecast_result.forecast[19].`timestamp` AS two_hundred_seconds_out_at,
-  forecast_result.forecast[19].mean AS two_hundred_seconds_out_c,
+  forecast_result.forecast[1].`timestamp` AS next_point_at,
+  forecast_result.forecast[1].mean AS next_point_c,
   forecast_result.forecast AS full_forecast,
   forecast_result.metadata AS forecast_metadata
 FROM forecasted
 WHERE CARDINALITY(forecast_result.forecast) > 0;
 ```
 
-The forecast contains 20 ten-second points, covering 3 minutes 20 seconds. Stop this optional query after you see results so Lab 4 can use the compute pool.
+Confluent Flink arrays are one-based, so `[1]` is the first predicted point.
+Inspect `full_forecast` for every point returned by the model; the number of
+points can vary. Stop this optional query after you see results so Lab 4 can use
+the compute pool.
 
 ## Lab 4 — Streaming Agent: Pit Decisions
 
@@ -361,13 +366,13 @@ REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recomme
 WITH ('max_iterations' = '10');
 ```
 
-Confirm it was created:
+Confirm it was created successfully:
 
 ```sql
 SHOW AGENTS;
 ```
 
-Create `pit_decisions`:
+Create `pit_decisions`, which invokes `AI_RUN_AGENT` and puts our agent to work:
 
 ```sql
 CREATE TABLE `pit_decisions`
@@ -431,6 +436,11 @@ LATERAL TABLE(AI_RUN_AGENT(
 ));
 ```
 
+Then run:
+```sql
+SELECT * FROM `pit_decisions`;
+```
+
 ### Expected result
 
 | Lap | Position | Suggestion | What's happening |
@@ -448,15 +458,13 @@ Check the Pit Wall. The **AI PIT STRATEGIST** panel should unlock and show the d
 
 ## Lab 5 — Social Media Agent (IBM watsonx Orchestrate)
 
-Use the watsonx Orchestrate access and race-feed URL supplied by your instructor.
+Use the watsonx Orchestrate access and `f1-race-feed-openapi.json` file supplied
+by your instructor.
 
 ### 1. Add the race-feed tool
 
-Open **Agent Builder**, then select **Tools → Add tool → Import from OpenAPI**. Import this URL:
-
-```
-<race-feed-base-url>/openapi.json
-```
+Open **Agent Builder**, then select **Tools → Add tool → OpenAPI** and upload
+`f1-race-feed-openapi.json`.
 
 Choose the **`get_race_feed`** operation.
 
@@ -509,6 +517,26 @@ Then try:
 - "The pit wall just made a call. Draft a post about our strategy."
 - "Write a 3-tweet recap thread of John's race so far."
 
+## Bonus (Optional) — Query the Live Race from Claude Code using Confluent Real-Time Context Engine
+
+`car_telemetry` is already published to Confluent's **Real-Time Context
+Engine (RTCE)**, so an AI agent can query the live sensor stream directly —
+no Kafka client, no consumer group.
+
+1. Copy the **MCP Setup Command** line from your **credential claim email** and run it
+   in a terminal:
+   
+   ```bash
+   claude mcp add --transport http rtce <YOUR_MCP_ENDPOINT> \
+     --header "Authorization: Basic <YOUR_TOKEN>"
+   ```
+   
+2. Run `claude`, then ask it about the live race, e.g.:
+   - "What's the front-left tire temperature on car 88 right now?"
+   - "Show me the last 10 telemetry readings."
+
+Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and
+only `car_telemetry` is exposed. You can enable more topics for use with Real-Time Context Engine from the Clusters -> Topics page.
 
 ## Lab 6 — Wrap-Up
 
@@ -557,10 +585,10 @@ Ask your instructor to reset the race before repeating Labs 3 and 4.
 - **Can't sign in:** Use the workshop username ending in `+f1wp###@confluent.io`, not your own email. Ask the instructor for a fresh password if needed.
 - **No tables, models, or agents:** Check the catalog and database selectors above the SQL editor.
 - **Source tables are idle:** Wait a few seconds and run the query again. Tell the instructor if no rows arrive after several minutes.
-- **`car_state` is empty:** Leave it running for a few minutes. The anomaly function needs 20 windows before it emits results.
+- **`car_state` is empty:** Wait for the first 60-second window to close. If it is still empty after 90 seconds, tell the instructor; Lab 3 may have started after the standings version it needs.
 - **No lap-32 anomaly:** Ask the instructor to confirm the race was reset and started at the Lab 3 gate.
 - **Agent fields are empty:** Inspect `raw_response`. If all responses fail, tell the instructor; the shared Bedrock quota may be throttled.
-- **Lab 5 tool fails:** Confirm the URL ends in `/openapi.json` and that the prefix exactly matches your credential card.
+- **Lab 5 tool fails:** Confirm the instructor's public race-feed service is still running and that the prefix exactly matches your credential card.
 
 </details>
 

@@ -13,7 +13,7 @@ of attendee instructions.
 - Open the presenter account, Flink SQL workspace, and Pit Wall.
 - Confirm `car_telemetry`, `race_standings`, and `driver_race_history` are healthy.
 - Confirm the shared Lab 5 race-feed URL and watsonx Orchestrate access.
-- Put the walkthrough link and session-specific values where attendees can find them.
+- Put the walkthrough link and updated `f1-race-feed-openapi.json` file where attendees can find them.
 
 ## Opening
 
@@ -30,7 +30,7 @@ Cloud account, and that all SQL runs in the browser workspace.
 |---|---|---|
 | 1 | Open the assigned environment and Pit Wall | Each attendee sees the three source tables |
 | 2 | Inspect telemetry, standings, CDC history, models, and connections | History reaches 198 rows and live data advances |
-| 3 | Build `car_state`; offer Granite forecasting only if time permits | `car_state` produces 10-second windows and the optional forecast is stopped afterward |
+| 3 | Build `car_state`; offer Granite forecasting only if time permits | `car_state` produces one 60-second window per lap and the optional forecast is stopped afterward |
 | 4 | Create the streaming agent and `pit_decisions` | Decisions appear and the Pit Wall AI panel unlocks |
 | 5 | Build the watsonx Orchestrate social agent | The imported tool returns the live race state |
 | 6 | Inspect the important decision and recap the pipeline | Attendees can trace source data to the final output |
@@ -38,8 +38,8 @@ Cloud account, and that all SQL runs in the browser workspace.
 ## Lab 3 notes
 
 The required path uses `ML_DETECT_ANOMALIES`. The Granite `AI_FORECAST` query is
-optional and uses a 20-step horizon. With 10-second windows, it projects roughly
-3 minutes 20 seconds ahead. Ask attendees to stop that temporary query before
+optional and uses a 20-step horizon. With 60-second windows, it projects roughly
+20 laps ahead. Ask attendees to stop that temporary query before
 Lab 4 so it does not occupy the shared compute pool.
 
 The standings table reads from the latest offset, so late-running Lab 3 jobs can
