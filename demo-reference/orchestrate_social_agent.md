@@ -10,26 +10,26 @@ watsonx Orchestrate **Agent Builder** UI and reads live race data from the
 
 ## The tool — `get_race_feed`
 
-The shared `f1-social-feed` service exposes one read-only endpoint and publishes
-an OpenAPI 3.0 spec that Agent Builder imports directly:
+The shared `f1-social-feed` service exposes one read-only endpoint. Agent Builder
+imports the repository's upload-ready OpenAPI 3.0 file:
 
-- Spec URL: `<race-feed-base-url>/openapi.json`
+- Spec file: [`f1-race-feed-openapi.json`](../f1-race-feed-openapi.json)
 - Operation: `GET /race-feed/{prefix}` → `operation_id: get_race_feed`
 - Path parameter: `prefix` — the attendee's own prefix (e.g. `f1wp001`)
 
-> **Setting up `<race-feed-base-url>` (organizer).** It is **one shared value for
-> the whole workshop**, not a per-attendee credential — every attendee imports the
-> same spec URL and differs only by their `prefix` path parameter. Because
+> **Setting up the public server URL (organizer).** It is **one shared value for
+> the whole workshop**, not a per-attendee credential. Every attendee uploads the
+> same file and differs only by their `prefix` path parameter. Because
 > watsonx Orchestrate is SaaS, the service must be reachable over the public
 > internet, so:
 >
 > 1. Host one instance: `uv run f1-social-feed --creds-glob 'runs/*/credentials/*.env'` (binds `:8080`).
 > 2. Expose it at a public HTTPS URL — a tunnel (`ngrok http 8080`, `cloudflared`) for a quick session, or a load balancer / reverse proxy for a durable one.
-> 3. Share that public base URL with attendees (slide, chat, or the shared claim link). That URL — e.g. `https://f1-feed.example.com` — is `<race-feed-base-url>`.
+> 3. Set `servers[0].url` in `f1-race-feed-openapi.json` to that public HTTPS URL.
+> 4. Share the updated JSON file with attendees.
 >
-> It is deliberately **not** on the credential card: the card is per-attendee
-> Terraform output, while this is a single organizer-hosted endpoint only known
-> once you start and expose the service.
+> The file contains no attendee credentials. Its server URL is deliberately
+> separate from the per-attendee Terraform credential card.
 
 Response (digest the agent writes posts from):
 

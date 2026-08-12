@@ -19,7 +19,8 @@
 --
 -- DEPLOYMENT ORDER: Run CREATE AGENT first (streaming_agent_create_agent.sql),
 -- then start the race simulator, then run this CREATE TABLE.
--- Uses earliest-offset so it processes all race laps.
+-- Uses earliest-offset so it processes all race laps. car_state emits one row
+-- per 60-second race lap, so the agent is called once per lap.
 
 CREATE TABLE `pit_decisions`
 WITH ('changelog.mode' = 'append')

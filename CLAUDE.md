@@ -181,20 +181,16 @@ rowtime attribute and the join silently returns zero rows.
 telemetry producer writes a string message key; do not add a PK that would
 register an Avro int key schema.
 
-**Anomaly warmup — the lap-0 warmup laps do NOT prime it:** the function withholds
-output for its first 20 windows (`minTrainingSize` on `ML_DETECT_ANOMALIES`,
-`minContextSize` on the Granite variant — both 20), i.e. 20 × 10s ≈ 3.3
-minutes of live data, whatever the lap pacing. The simulator's `PRE_RACE_WARMUP_LAPS`
-(`datagen/config.py`, default 4) cannot shorten that, and **not** because of the
-count — 4 laps is `4 × SECONDS_PER_LAP/10` windows' worth of telemetry (8 at 20s/lap,
-24 at 60s/lap), which would clear 20 at the slower pacing. They contribute nothing
-because they carry telemetry but **no `race_standings`**: with no version to match at
-those timestamps, LAB 3's *inner* temporal join drops every warmup row before it ever
-reaches TUMBLE or the OVER window, so zero of them reach the function at any
-pacing (the closing `lap > 0` filter is then redundant for them). Their real value is
-a producer/schema smoke test before lap 1. The context comes from race data —
-`SECONDS_PER_LAP / 10` windows per lap, so 2/lap at 20s and 6/lap at 60s, reaching 20
-windows well before the lap-32 anomaly either way.
+**Anomaly cadence and warmup:** canonical LAB 3 SQL uses a 60-second TUMBLE to
+match the workshop's 60-second laps. Preserve that equality: `car_state` feeds
+`AI_RUN_AGENT` directly, so a shorter window causes multiple paid agent calls per
+lap. Both anomaly variants emit rows immediately with a false/null-backed flag,
+then gain full context after 20 windows (about lap 21). The simulator's lap-0
+warmup laps do **not** prime that context because they carry telemetry but no
+`race_standings`; LAB 3's inner temporal join drops them before TUMBLE/OVER. Their
+only purpose is a producer/schema smoke test. A non-60-second `SECONDS_PER_LAP`
+override no longer preserves one-window-per-lap semantics and must be accompanied
+by a matching SQL-window change.
 `f1-race` therefore sets `PRE_RACE_WARMUP_LAPS=0` (`scripts/selfservice/race.py`,
 overridable via the env var); the ECS path keeps the default 4.
 

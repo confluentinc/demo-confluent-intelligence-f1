@@ -115,12 +115,6 @@ SELECT car_number, `position`, gap_to_leader_sec, tire_compound, tire_age_laps
 FROM race_standings;
 ```
 
-Confirm the historical table contains 198 rows:
-
-```sql
-SELECT COUNT(*) FROM driver_race_history;
-```
-
 Check the pre-deployed models:
 
 ```sql
@@ -179,7 +173,7 @@ windowed AS (
     MAX(tire_compound) AS tire_compound,
     MAX(tire_age_laps) AS tire_age_laps
   FROM TABLE(
-    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
+    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '60' SECOND)
   )
   GROUP BY window_start, window_end, window_time, car_number
 ),
@@ -223,11 +217,13 @@ SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
 FROM `car_state`;
 ```
 
-You should see a row every 10 seconds. Around lap 32, `anomaly_tire_temp_fl` becomes `true` and the temperature reaches about 145°C. Stop the query after checking it.
+You should see one row per 60-second lap. Around lap 32,
+`anomaly_tire_temp_fl` becomes `true` and the temperature reaches about 145°C.
+Stop the query after checking it.
 
 ### Optional: Forecast tire temperature with IBM Granite
 
-Open a new SQL cell and run the query below. It uses the same 10-second tire temperature windows, but asks the built-in `AI_FORECAST` function for the next 20 values. The `model` option selects IBM Granite TinyTimeMixer directly; there is no connection or model to register.
+Open a new SQL cell and run the query below. It uses the same 60-second, one-per-lap tire temperature windows, but asks the built-in `AI_FORECAST` function for the next 20 values. The `model` option selects IBM Granite TinyTimeMixer directly; there is no connection or model to register.
 
 ```sql
 WITH windowed AS (
@@ -239,7 +235,7 @@ WITH windowed AS (
     MAX(lap) AS lap,
     AVG(tire_temp_fl_c) AS tire_temp_fl_c
   FROM TABLE(
-    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
+    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '60' SECOND)
   )
   GROUP BY window_start, window_end, window_time, car_number
 ),
@@ -430,6 +426,11 @@ LATERAL TABLE(AI_RUN_AGENT(
 ));
 ```
 
+Then run:
+```sql
+SELECT * FROM `pit_decisions`;
+```
+
 ### Expected result
 
 | Lap | Position | Suggestion | What's happening |
@@ -447,15 +448,13 @@ Check the Pit Wall. The **AI PIT STRATEGIST** panel should unlock and show the d
 
 ## Lab 5 — Social Media Agent (IBM watsonx Orchestrate)
 
-Use the watsonx Orchestrate access and race-feed URL supplied by your instructor.
+Use the watsonx Orchestrate access and `f1-race-feed-openapi.json` file supplied
+by your instructor.
 
 ### 1. Add the race-feed tool
 
-Open **Agent Builder**, then select **Tools → Add tool → Import from OpenAPI**. Import this URL:
-
-```
-<race-feed-base-url>/openapi.json
-```
+Open **Agent Builder**, then select **Tools → Add tool → OpenAPI** and upload
+`f1-race-feed-openapi.json`.
 
 Choose the **`get_race_feed`** operation.
 
@@ -556,10 +555,10 @@ Ask your instructor to reset the race before repeating Labs 3 and 4.
 - **Can't sign in:** Use the workshop username ending in `+f1wp###@confluent.io`, not your own email. Ask the instructor for a fresh password if needed.
 - **No tables, models, or agents:** Check the catalog and database selectors above the SQL editor.
 - **Source tables are idle:** Wait a few seconds and run the query again. Tell the instructor if no rows arrive after several minutes.
-- **`car_state` is empty:** Leave it running for a few minutes. The anomaly function needs 20 windows before it emits results.
+- **`car_state` is empty:** Wait for the first 60-second window to close. If it is still empty after 90 seconds, tell the instructor; Lab 3 may have started after the standings version it needs.
 - **No lap-32 anomaly:** Ask the instructor to confirm the race was reset and started at the Lab 3 gate.
 - **Agent fields are empty:** Inspect `raw_response`. If all responses fail, tell the instructor; the shared Bedrock quota may be throttled.
-- **Lab 5 tool fails:** Confirm the URL ends in `/openapi.json` and that the prefix exactly matches your credential card.
+- **Lab 5 tool fails:** Confirm the instructor's public race-feed service is still running and that the prefix exactly matches your credential card.
 
 </details>
 

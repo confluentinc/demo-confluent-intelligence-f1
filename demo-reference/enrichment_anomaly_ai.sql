@@ -20,7 +20,7 @@
 -- the social feed cannot tell which one produced it (only whether it ever fires).
 --
 -- Input: car_telemetry (stream), race_standings (versioned table)
--- Output: car_state (one record per 10-second window)
+-- Output: car_state (one record per 60-second race lap)
 --
 -- Design notes (learned from live debugging — keep!):
 --
@@ -41,11 +41,10 @@
 --    `minContextSize`/`maxContextSize` here, and because `ttm` is a pretrained
 --    foundation model there is no per-partition training phase at all:
 --    `minContextSize` is an emission gate, not a training size. Held at 20 so the
---    warmup arithmetic elsewhere in the repo (the ~3.5-minute figure in the lab
---    guides, MIN_SECONDS_PER_LAP in scripts/common/deployment_meta.py) stays
---    correct — measured: `forecast_value` starts populating at about row 21.
+--    per-lap sampling stays consistent — measured: `forecast_value` starts
+--    populating at about row 21 (roughly 20 minutes at the workshop pace).
 --    `maxContextSize=50` keeps the ARIMA version's *rolling* 50-window context: at
---    ~360 windows per race, a larger value would condition the model on the cool
+--    60 windows per race, a larger value would condition the model on the cool
 --    early laps, dragging the forecast below a monotonic 0.42°C/lap gradient.
 --    `confidencePercentage=99.99` is carried over from the ARIMA tuning and is
 --    UNVERIFIED here — it cannot be tuned while the bounds it controls are NULL.
@@ -101,7 +100,7 @@ windowed AS (
     MAX(tire_compound) AS tire_compound,
     MAX(tire_age_laps) AS tire_age_laps
   FROM TABLE(
-    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
+    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '60' SECOND)
   )
   GROUP BY window_start, window_end, window_time, car_number
 ),
