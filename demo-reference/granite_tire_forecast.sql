@@ -16,7 +16,7 @@ WITH windowed AS (
     MAX(lap) AS lap,
     AVG(tire_temp_fl_c) AS tire_temp_fl_c
   FROM TABLE(
-    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '60' SECOND)
+    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '30' SECOND)
   )
   GROUP BY window_start, window_end, window_time, car_number
 ),

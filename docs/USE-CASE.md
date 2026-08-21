@@ -13,7 +13,7 @@ River Racing is an ambitious F1 team that wants to use AI to make smarter pit wa
 ## Pipeline Steps
 
 **Step 1: Car State Enrichment + Anomaly Detection**
-Car sensor data (tire temps, pressures, engine, brake, battery, fuel) is aggregated in 60-second, one-per-lap tumbling windows and passed through `ML_DETECT_ANOMALIES` on `tire_temp_fl_c`. The result is enriched with live race standings via a temporal join to produce a comprehensive `car_state` stream.
+Car sensor data (tire temps, pressures, engine, brake, battery, fuel) is aggregated in 30-second, one-per-lap tumbling windows and passed through `ML_DETECT_ANOMALIES` on `tire_temp_fl_c`. The result is enriched with live race standings via a temporal join to produce a comprehensive `car_state` stream.
 
 **Step 2: AI Pit Strategy Agent**
 The `car_state` stream feeds a Streaming Agent that evaluates every lap. It assesses anomaly flags, tire condition, and race position, and produces a pit suggestion (`PIT NOW` / `PIT SOON` / `STAY OUT`) with recommended tire compound and reasoning, written to `pit_decisions`.
@@ -34,7 +34,7 @@ The `car_state` stream feeds a Streaming Agent that evaluates every lap. It asse
 
 **Net result: P8 → P2 = +6 positions gained from the moment the agent made the call.**
 
-Race configuration: 60 laps, 60 seconds/lap simulated in the workshop (one lap per minute, a 60-minute race), 22 cars, pit stop ~20s time loss. The simulator loops continuously so the feed is always live.
+Race configuration: 60 laps, 30 seconds/lap simulated in the workshop (two laps per minute, a 30-minute race), 22 cars, pit stop ~20s time loss. The simulator loops continuously so the feed is always live.
 
 ## Historical Data
 

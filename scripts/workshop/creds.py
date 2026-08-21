@@ -370,7 +370,7 @@ Register it with Claude Code (one line, run it anywhere):
 Then just ask, in plain English:
 
 - "What are car 88's front-left tire temperatures over the last few laps?"
-- "How did car 88's tire temperatures change around lap 32?"
+- "How did car 88's tire temperatures change around lap 22?"
 
 Three tools come with it: `list_topics`, `get_metadata`, and `query_data`.
 """

@@ -3,7 +3,7 @@
 Drives ``RaceState`` without Kafka or a Confluent environment so the UI can be
 built, demoed and verified end-to-end with no cost. It reuses the real race logic
 from ``datagen/`` — the 22-car grid, the cumulative-time race model and the
-telemetry curves (including the front-left spike at lap 32) — so the mock arc
+telemetry curves (including the front-left spike at lap 22) — so the mock arc
 matches what attendees see live.
 
 To exercise progressive reveal it withholds the lab-output streams early on:
@@ -130,7 +130,7 @@ def run_mock(state: RaceState, stop) -> None:
     grid, sim_race_cls, generate_telemetry = _import_datagen()
     seconds_per_lap = float(os.environ.get("PITWALL_MOCK_SECONDS_PER_LAP", "1.2"))
     total_laps = int(os.environ.get("PITWALL_MOCK_TOTAL_LAPS", "60"))
-    logger.info("Mock race feed: %ss/lap, FL anomaly at lap 32", seconds_per_lap)
+    logger.info("Mock race feed: %ss/lap, FL anomaly at lap 22", seconds_per_lap)
 
     while not stop.is_set():
         race = sim_race_cls(grid)

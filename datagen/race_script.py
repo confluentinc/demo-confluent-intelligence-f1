@@ -11,14 +11,16 @@ import random
 
 # Tire degradation: seconds added to lap time per lap of tire age
 TIRE_DEGRADATION = {
-    "SOFT": 0.12,  # Fast initially but degrades quickly — 32 laps = +3.84s
+    "SOFT": 0.12,  # Fast initially but degrades quickly — 24 laps = +2.88s
     "MEDIUM": 0.08,  # Balanced — 25 laps = +2.00s
     "HARD": 0.02,  # Slow but durable — 40 laps = +0.80s
 }
 
-# Age (in laps) past which degradation accelerates — models the real F1 tire cliff
-TIRE_CLIFF_AGE = {"SOFT": 28, "MEDIUM": 28, "HARD": 38}
-TIRE_CLIFF_FACTOR = 3.0  # Past cliff, each extra lap costs CLIFF_FACTOR x base degradation
+# Age (in laps) past which degradation accelerates — models the real F1 tire cliff.
+# SOFT cliff is early (14) so #88's long first stint on softs collapses around
+# lap 20-22 — the pre-pit drop that coincides with the front-left tire anomaly.
+TIRE_CLIFF_AGE = {"SOFT": 14, "MEDIUM": 28, "HARD": 38}
+TIRE_CLIFF_FACTOR = 4.0  # Past cliff, each extra lap costs CLIFF_FACTOR x base degradation
 
 # Base lap time by compound (lower = faster)
 TIRE_BASE_PACE = {

@@ -349,8 +349,8 @@ def up(args: argparse.Namespace) -> None:
     print("\n=== Ready ===\n")
     if args.with_labs and labs_ok:
         print("LAB 3 and LAB 4 are already running — they start filling as soon as the race does.")
-        print("  `car_state` stays empty for ~3.5 min while anomaly detection fills its")
-        print("  first 20 windows of context. The anomaly fires around lap 32.\n")
+        print("  `car_state` stays empty for ~6 min while anomaly detection fills its")
+        print("  first 12 windows of context. The anomaly fires around lap 22.\n")
     print("1. Start the live race feed (leave running in its own terminal):")
     print(f"     uv run f1-race          # {cfg['seconds_per_lap']}s/lap, from this deployment's config")
     print("2. Open the SQL shell for the labs:")
@@ -358,8 +358,8 @@ def up(args: argparse.Namespace) -> None:
     print("3. Open the live dashboard:")
     print("     uv run f1-pitwall")
     if not (args.with_labs and labs_ok):
-        print("\nWork through Walkthrough.md: LAB 1 → LAB 4, then LAB 6.")
-    print("Optional LAB 5 (watsonx Orchestrate) — see Walkthrough.md.")
+        print("\nWork through README.md: LAB 1 → LAB 4, then LAB 6.")
+    print("Optional LAB 5 (watsonx Orchestrate) — see README.md.")
     print("\nTear down when finished:  uv run selfservice down")
 
     if not (seeded and labs_ok):

@@ -24,8 +24,8 @@ Every `uv run` command in this repo — organizer provisioning, credential cards
 race control, reset, standalone deploy, self-service, pitwall, social feed,
 setup-mcp, tests and lint — is in the **`f1-workshop-commands`** skill
 (`.claude/skills/f1-workshop-commands/SKILL.md`). Load it before running or
-explaining any of them. The checked-in references are `Walkthrough.md` (attendee
-steps), `docs/organizer/RUN-OF-SHOW.md` (presenter cues),
+explaining any of them. The checked-in references are `README.md` (the attendee
+walkthrough), `docs/organizer/RUN-OF-SHOW.md` (presenter cues),
 `docs/organizer/WORKSHOP-GUIDE.md` (organizer lifecycle), and the
 `[project.scripts]` table in `pyproject.toml` (every entry point).
 
@@ -123,7 +123,7 @@ with raw VARCHAR and BYTES keys. Four things that are easy to get wrong:
 ## Flink Jobs (the labs)
 
 Jobs 1 & 2 are **not** pre-deployed — attendees write them in LAB 3 / LAB 4. The
-canonical SQL is in `demo-reference/` and reproduced in `Walkthrough.md`.
+canonical SQL is in `demo-reference/` and reproduced in the attendee `README.md`.
 
 | Job | SQL file | Input → Output |
 |-----|----------|----------------|
@@ -133,7 +133,7 @@ canonical SQL is in `demo-reference/` and reproduced in `Walkthrough.md`.
 | 2b | `demo-reference/streaming_agent_pit_decisions.sql` | `car_state` → `pit_decisions` |
 
 **Job 1 has two implementations, and only one of them works.** The default is the GA
-`ML_DETECT_ANOMALIES` (ARIMA), which flags lap 32 and only lap 32. The
+`ML_DETECT_ANOMALIES` (ARIMA), which flags lap 22 and only lap 22. The
 foundation-model `AI_DETECT_ANOMALIES` variant (`'model' VALUE 'ttm'`; `'flowstate'`,
 `'patchtstfm'`, and Google's `'timesfm-2.5'` are one-word swaps) is kept as an opt-in
 — `F1_ANOMALY_FN=ai` on any `--with-labs` path, or submit `enrichment_anomaly_ai.sql`
@@ -181,16 +181,17 @@ rowtime attribute and the join silently returns zero rows.
 telemetry producer writes a string message key; do not add a PK that would
 register an Avro int key schema.
 
-**Anomaly cadence and warmup:** canonical LAB 3 SQL uses a 60-second TUMBLE to
-match the workshop's 60-second laps. Preserve that equality: `car_state` feeds
+**Anomaly cadence and warmup:** canonical LAB 3 SQL uses a 30-second TUMBLE to
+match the workshop's 30-second laps. Preserve that equality: `car_state` feeds
 `AI_RUN_AGENT` directly, so a shorter window causes multiple paid agent calls per
 lap. Both anomaly variants emit rows immediately with a false/null-backed flag,
-then gain full context after 20 windows (about lap 21). The simulator's lap-0
-warmup laps do **not** prime that context because they carry telemetry but no
-`race_standings`; LAB 3's inner temporal join drops them before TUMBLE/OVER. Their
-only purpose is a producer/schema smoke test. A non-60-second `SECONDS_PER_LAP`
-override no longer preserves one-window-per-lap semantics and must be accompanied
-by a matching SQL-window change.
+then gain full context after 12 windows (about lap 13; `minTrainingSize`/
+`minContextSize` are both 12). The anomaly is injected at lap 22, comfortably past
+that warmup. The simulator's lap-0 warmup laps do **not** prime that context because
+they carry telemetry but no `race_standings`; LAB 3's inner temporal join drops them
+before TUMBLE/OVER. Their only purpose is a producer/schema smoke test. A
+non-30-second `SECONDS_PER_LAP` override no longer preserves one-window-per-lap
+semantics and must be accompanied by a matching SQL-window change.
 `f1-race` therefore sets `PRE_RACE_WARMUP_LAPS=0` (`scripts/selfservice/race.py`,
 overridable via the env var); the ECS path keeps the default 4.
 
@@ -253,14 +254,14 @@ attendee passwords live are all in the **`wsa-provisioning`** skill
 ## File Sync Rule
 
 `demo-reference/*.sql`, `demo-reference/orchestrate_social_agent.md`, and the
-corresponding examples in `Walkthrough.md` must stay in sync. The organizer
+corresponding examples in the attendee `README.md` must stay in sync. The organizer
 run-of-show links to the walkthrough and must not duplicate attendee SQL.
 
 The split lab files under `docs/deprecated/` are historical references, not part
 of the sync set. Do not restore `labs/instructor-led/` or copy SQL into organizer
 docs. The default ARIMA `ML_DETECT_ANOMALIES` and optional 20-step Granite
 `AI_FORECAST` examples each have a checked-in source under `demo-reference/`
-and an attendee copy in `Walkthrough.md`. The experimental Granite
+and an attendee copy in the `README.md`. The experimental Granite
 `AI_DETECT_ANOMALIES` query is maintainer-only and must not be added to the
 attendee walkthrough.
 
