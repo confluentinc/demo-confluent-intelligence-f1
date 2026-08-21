@@ -34,6 +34,6 @@ uv run selfservice down
 Read the complete [self-service guide](tracks/SELF-SERVICE.md). LAB 5 still needs
 an IBM watsonx Orchestrate account.
 
-Both tracks use the canonical SQL under `demo-reference/` and follow
-`Walkthrough.md`. Their deployment and teardown commands remain separate from
+Both tracks use the canonical SQL under `demo-reference/` and follow the attendee
+`README.md`. Their deployment and teardown commands remain separate from
 the organizer workflow.

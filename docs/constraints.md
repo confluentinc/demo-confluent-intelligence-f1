@@ -6,10 +6,10 @@ These are hard constraints for this workshop. Do not violate them.
 
 - Two ingestion paths: direct Kafka (telemetry + standings, produced by the simulator), Postgres CDC (history)
 - `ML_DETECT_ANOMALIES` running, but only `tire_temp_fl_c` fires an anomaly
-- Single anomaly at lap 32 — no other anomalies in the entire race
+- Single anomaly at lap 22 — no other anomalies in the entire race
 - AI agent decides pit strategy — no threshold formulas in Flink SQL
 - +6 positions gained after agent recommendation (P8 → P2)
-- 60 seconds per simulated lap by default (60-min race, one lap per minute, spans the full lab session); tunable via `seconds_per_lap`
+- 30 seconds per simulated lap by default (30-min race, two laps per minute, spans the lab session); must match the 30s TUMBLE window in the LAB 3 SQL — tunable via `seconds_per_lap` only with a matching SQL-window change
 - Hero entry is fictional: team = River Racing, driver = John Doe, car #88. The rest of the grid uses real 2025 F1 driver names (with fictional team names); car #44 is Lewis Hamilton
 - Circuit: Silverstone; 22 drivers, 11 teams
 - Per-attendee isolation: separate CC environment/cluster/Flink pool per attendee; shared Postgres/ECR/Bedrock

@@ -1,10 +1,10 @@
 -- Job 1: Enrichment + Anomaly Detection
--- Attendees write this by hand in LAB 3 of Walkthrough.md.
+-- Attendees write this by hand in LAB 3 of the attendee README.md.
 -- `uv run reset --with-labs`, `uv run deploy --with-labs`, and
 -- `uv run selfservice up --with-labs` submit this exact file instead. There is no
 -- dbt in this repo.
 -- Input: car_telemetry (stream), race_standings (versioned table)
--- Output: car_state (one record per 60-second race lap)
+-- Output: car_state (one record per 30-second race lap)
 --
 -- Design notes (learned from live debugging — keep!):
 --
@@ -18,13 +18,13 @@
 --    brakes), and the predictable ones (tire_temp_fr/rl/rr, pressures, fuel)
 --    only generate false positives that distract from the demo narrative.
 --
--- 3. Confidence is set to 99.99% with `minTrainingSize=20` and `enableStl=false`
+-- 3. Confidence is set to 99.99% with `minTrainingSize=12` and `enableStl=false`
 --    because synthetic tire data has ±1°C noise on a 0.42°C/lap gradient —
 --    looser thresholds produce constant false positives, and the STL
 --    seasonal-trend decomposition adds variance the demo doesn't need.
 --
 -- 4. The CASE filter restricts anomalies to `actual_value > upper_bound`.
---    Otherwise the post-pit drop at lap 33 (145°C → 95°C) flags a second
+--    Otherwise the post-pit drop at lap 24 (145°C → 95°C) flags a second
 --    anomaly that's semantically a recovery, not a problem. It also handles the
 --    warmup rows for free: `is_anomaly` is NULL until the training window fills,
 --    and NULL fails the WHEN, so those rows fall through to `false`.
@@ -76,7 +76,7 @@ windowed AS (
     MAX(tire_compound) AS tire_compound,
     MAX(tire_age_laps) AS tire_age_laps
   FROM TABLE(
-    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '60' SECOND)
+    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '30' SECOND)
   )
   GROUP BY window_start, window_end, window_time, car_number
 ),
@@ -84,7 +84,7 @@ anomaly AS (
   SELECT
     *,
     ML_DETECT_ANOMALIES(tire_temp_fl_c, window_time,
-      JSON_OBJECT('minTrainingSize' VALUE 20,
+      JSON_OBJECT('minTrainingSize' VALUE 12,
                   'maxTrainingSize' VALUE 50,
                   'confidencePercentage' VALUE 99.99,
                   'enableStl' VALUE FALSE))

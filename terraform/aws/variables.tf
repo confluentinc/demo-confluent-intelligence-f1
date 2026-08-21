@@ -141,9 +141,9 @@ variable "table_include_list" {
 # --- Race simulator behaviour ---
 
 variable "seconds_per_lap" {
-  description = "Simulated seconds per lap. 60 → 60-minute races (one lap per minute)."
+  description = "Simulated seconds per lap. 30 → 30-minute races (two laps per minute)."
   type        = number
-  default     = 60
+  default     = 30
 }
 
 variable "race_loop" {

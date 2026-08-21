@@ -814,14 +814,14 @@ def main() -> None:
 
     if labs_ok and ecs_track:
         print("Environment is ready — race running from lap 0, all lab objects rebuilt.")
-        print("  `car_state` stays empty for ~3.5 min while anomaly detection fills")
-        print("  its first 20 windows of context. The anomaly fires around lap 32.")
+        print("  `car_state` stays empty for ~6 min while anomaly detection fills")
+        print("  its first 12 windows of context. The anomaly fires around lap 22.")
         print("  Watch it: `uv run f1-pitwall`")
     elif labs_ok:
         print("Lab objects rebuilt. Start the race feed to fill them:")
         print(f"  {f1_race_command(root, creds)}")
-        print("  `car_state` then stays empty for ~20 windows while anomaly detection")
-        print("  warms up. The anomaly fires around lap 32. Watch it: `uv run f1-pitwall`")
+        print("  `car_state` then stays empty for ~12 windows while anomaly detection")
+        print("  warms up. The anomaly fires around lap 22. Watch it: `uv run f1-pitwall`")
     elif args.keep_source and not stop_feed:
         # The feed was never stopped, so it is still producing wherever it runs.
         print("Next steps:")

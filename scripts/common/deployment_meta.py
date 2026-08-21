@@ -52,10 +52,10 @@ MAX_PREFIX_LEN = 12
 # suffix inside MAX_PREFIX_LEN.
 BASE_PREFIX_LEN = 8
 
-# Below ~10s/lap the anomaly function cannot accumulate its 20 windows before the
-# lap-32 anomaly, so the anomaly never fires and the demo has no payoff. Holds for
+# Below ~10s/lap the anomaly function cannot accumulate its 12 windows before the
+# lap-22 anomaly, so the anomaly never fires and the demo has no payoff. Holds for
 # either LAB 3 backend — ML_DETECT_ANOMALIES' `minTrainingSize` and
-# AI_DETECT_ANOMALIES' `minContextSize` are both 20. Mirrors MIN_SECONDS_PER_LAP
+# AI_DETECT_ANOMALIES' `minContextSize` are both 12. Mirrors MIN_SECONDS_PER_LAP
 # in deploy.py.
 MIN_SECONDS_PER_LAP = 10
 
@@ -159,7 +159,7 @@ def validate_seconds_per_lap(raw: str | int | None) -> tuple[int | None, str | N
     if value < MIN_SECONDS_PER_LAP:
         return None, (
             f"Seconds per lap {value} is below the {MIN_SECONDS_PER_LAP}s minimum — "
-            "anomaly detection can't accumulate its 20 windows before the lap-32 anomaly."
+            "anomaly detection can't accumulate its 12 windows before the lap-22 anomaly."
         )
     return value, None
 

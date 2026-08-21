@@ -3,7 +3,7 @@
 Drives a single ``FeedState`` (prefix ``f1wp001``) without Kafka or a Confluent
 environment, so the service, its OpenAPI spec, and an Orchestrate agent wired to
 it can be built and demoed at no cost. Reuses the Pit Wall mock's race logic
-(``scripts.pitwall.mock``) — same 22-car grid, same lap-32 front-left spike — so
+(``scripts.pitwall.mock``) — same 22-car grid, same lap-22 front-left spike — so
 the offline arc matches what attendees see live.
 """
 
@@ -35,7 +35,7 @@ def run_mock(feed: FeedState, stop) -> None:
     grid, sim_race_cls, generate_telemetry = _import_datagen()
     seconds_per_lap = float(os.environ.get("SOCIAL_FEED_MOCK_SECONDS_PER_LAP", "1.2"))
     total_laps = int(os.environ.get("SOCIAL_FEED_MOCK_TOTAL_LAPS", "60"))
-    logger.info("Mock race feed: %ss/lap, FL anomaly at lap 32", seconds_per_lap)
+    logger.info("Mock race feed: %ss/lap, FL anomaly at lap 22", seconds_per_lap)
 
     while not stop.is_set():
         race = sim_race_cls(grid)

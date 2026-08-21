@@ -16,9 +16,9 @@ SR_URL = os.environ.get("SR_URL", "")
 SR_API_KEY = os.environ.get("SR_API_KEY", "")
 SR_API_SECRET = os.environ.get("SR_API_SECRET", "")
 
-# Race timing — 60 laps at 60 seconds/lap == a 60-minute race (one lap per minute).
+# Race timing — 60 laps at 30 seconds/lap == a 30-minute race (two laps per minute).
 TOTAL_LAPS = 60
-SECONDS_PER_LAP = int(os.environ.get("SECONDS_PER_LAP", "60"))
+SECONDS_PER_LAP = int(os.environ.get("SECONDS_PER_LAP", "30"))
 TELEMETRY_INTERVAL_SEC = 2
 
 # Workshop lifecycle: when RACE_LOOP=true the simulator replays the race

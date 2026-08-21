@@ -252,7 +252,7 @@ Sign in to Confluent Cloud with your own account. Open
 `RIVER-RACING-<your-prefix>-ENV`, open the Flink SQL workspace, and set the
 database to `RIVER-RACING-<your-prefix>-CLUSTER`.
 
-Use [Walkthrough.md](../../Walkthrough.md) for the lab steps, with these backup
+Use the attendee [README.md](../../README.md) for the lab steps, with these backup
 mode substitutions:
 
 - Skip Lab 1's credential-claim steps. `selfservice up` already created the
@@ -271,7 +271,7 @@ uv run reset
 ```
 
 In the browser SQL workspace, run Lab 3's full `CREATE TABLE car_state`
-statement from [Walkthrough.md](../../Walkthrough.md). Wait until it shows
+statement from the attendee [README.md](../../README.md). Wait until it shows
 **Running**, then restart the simulator:
 
 ```bash
@@ -292,7 +292,7 @@ uv run f1-social-feed --creds runs/selfservice/credentials/<prefix>.env
 Expose port 8080 through an approved HTTPS tunnel, set that public URL in
 `servers[0].url` in the root `f1-race-feed-openapi.json`, upload the JSON file to
 watsonx Orchestrate, and follow
-[Lab 5 in `Walkthrough.md`](../../Walkthrough.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
+[Lab 5 in the attendee `README.md`](../../README.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
 
 ### Optional MCP access
 
@@ -347,8 +347,8 @@ Don't choose a new prefix while the first deployment still exists. Run
 
 Confirm Lab 3 was running before you restarted `f1-race`. The standings table
 starts at the latest offset, so earlier standings versions aren't available to
-the temporal join. The first `car_state` row appears after its 60-second window
-closes; the anomaly flag needs 20 windows of context before it can fire.
+the temporal join. The first `car_state` row appears after its 30-second window
+closes; the anomaly flag needs 12 windows of context before it can fire.
 
 ### The Bedrock model fails
 
@@ -358,6 +358,5 @@ credentials, check that `TF_VAR_aws_session_token` is present in
 
 ## Navigation
 
-- **Overview:** [Main README](../../README.md)
-- **Workshop:** [Attendee walkthrough](../../Walkthrough.md)
+- **Workshop:** [Attendee walkthrough (README.md)](../../README.md)
 - **Backup:** [Local self-service guide](#local-self-service-and-backup-workshop-path)

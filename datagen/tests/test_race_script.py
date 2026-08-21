@@ -25,25 +25,30 @@ def test_car88_starts_p3():
 def test_pit_stop_changes_tire():
     """After pitting, tire compound and age reset."""
     state = RaceState(GRID)
-    for _ in range(18):
+    for _ in range(15):
         state.advance_lap()
     car1 = state.get_car(1)
     assert car1["tire_compound"] == "MEDIUM"
     assert car1["tire_age_laps"] < 5
 
 
-def test_car88_drops_below_p8_by_lap32():
-    """John Doe drops to P8 or worse by lap 32 due to tire cliff in laps 29-32."""
+def test_car88_drops_below_p8_by_lap22():
+    """John Doe drops to P8 or worse by lap 22 due to the soft-tire cliff in laps 18-22.
+
+    This is the pre-pit collapse the front-left tire anomaly (lap 22) coincides with;
+    #88 has not pitted yet (pit lap 24).
+    """
     random.seed(42)
     state = RaceState(GRID)
-    for _ in range(32):
+    for _ in range(22):
         state.advance_lap()
     car88 = state.get_car(88)
     assert car88["position"] >= 8, f"Expected P8 or worse, got P{car88['position']}"
+    assert car88["pit_stops"] == 0, "Anomaly at lap 22 must fire while #88 is pre-pit"
 
 
 def test_car88_finishes_better_than_p3():
-    """After pit at lap 33 onto fresh MEDIUMs, John climbs past leaders whose MEDIUMs are deep past the cliff."""
+    """After pit at lap 24 onto fresh MEDIUMs, John climbs past leaders whose MEDIUMs are deep past the cliff."""
     random.seed(42)
     state = RaceState(GRID)
     for _ in range(TOTAL_LAPS):

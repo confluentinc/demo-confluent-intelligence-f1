@@ -1,7 +1,7 @@
 """F1 Race Simulator — produces car telemetry and race standings to Kafka.
 
-Simulates a 60-lap race at Silverstone in ~60 minutes of real time (one lap
-per minute at the default SECONDS_PER_LAP=60).
+Simulates a 60-lap race at Silverstone in ~30 minutes of real time (two laps
+per minute at the default SECONDS_PER_LAP=30).
 Two Kafka outputs (both Avro via Schema Registry, produced directly to
 Confluent Cloud — there is no IBM MQ hop):
   - Car telemetry (car #88 only) → topic 'car_telemetry'
@@ -141,7 +141,7 @@ def _run_warmup_laps(producer, avro_serializer):
     """Produce pre-race telemetry windows (lap=0) as a producer/schema smoke test.
 
     These do **not** prime the anomaly function, despite the name. It withholds
-    output for its first 20 windows, and none of these rows ever reach it: only
+    output for its first 12 windows, and none of these rows ever reach it: only
     telemetry is produced here, so there is no `race_standings` version to match
     at these timestamps and LAB 3's *inner* temporal join drops every warmup row
     before the window aggregation (the closing `lap > 0` filter is redundant for

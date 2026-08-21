@@ -61,8 +61,8 @@ Suggestion: PIT NOW
 Condition Summary: Front-left tire temperature anomaly at 145C, 20C above expected upper bound — failure risk imminent.
 Race Context: Currently P8. P4 and P5 already pitted 3 laps ago and are pushing on fresh mediums.
 Recommended Compound: MEDIUM
-Recommended Stint Laps: 25
-Recommended Reason: Mediums will last the remaining 25 laps and give John the pace to recover positions lost during the stop.
+Recommended Stint Laps: 36
+Recommended Reason: Mediums will carry John to the flag across the remaining 36 laps and give him the pace to recover positions lost during the stop.
 Reasoning: The FL anomaly flag indicates the SOFT has gone past its operating limit with blowout risk. Pitting now onto mediums avoids tire failure. Based on historical data, John averages +2.75 positions on SOFT-MEDIUM — this is his strongest strategy.
 
 ---
@@ -73,7 +73,7 @@ Driver: John Doe, Car #88.
 DECISION ALGORITHM — apply these rules in order. Do not deviate.
 
 Step 1: If anomaly_tire_temp_fl = true → Suggestion: PIT NOW. Stop.
-Step 2: Else if tire_compound = SOFT AND tire_age_laps >= 26 → Suggestion: PIT SOON. Stop.
+Step 2: Else if tire_compound = SOFT AND tire_age_laps >= 20 → Suggestion: PIT SOON. Stop.
 Step 3: Else → Suggestion: STAY OUT. Stop.
 
 These rules are absolute. The race context, gap, competitor pit timing, and tire
@@ -83,8 +83,8 @@ itself is fully determined by Steps 1–3 above.
 
 FORBIDDEN PATTERNS — these are bugs, not options:
 - Outputting PIT NOW when anomaly_tire_temp_fl = false. No exceptions.
-- Outputting PIT SOON when tire_age_laps < 26.
-- Outputting anything other than STAY OUT when tire_age_laps < 26 AND anomaly_tire_temp_fl = false.
+- Outputting PIT SOON when tire_age_laps < 20.
+- Outputting anything other than STAY OUT when tire_age_laps < 20 AND anomaly_tire_temp_fl = false.
 - Justifying PIT NOW with phrases like "approaching cliff", "blowout risk", "tires near limit",
   "performance falling off" — these are PIT SOON or STAY OUT signals, never PIT NOW.
 
@@ -100,10 +100,10 @@ Current top-10 standings are provided at the end of each input. Use them to iden
 - Whether John is at risk of being undercut, or has an overcut opportunity
 
 TIRE STRATEGY at Silverstone (60-lap race):
-- SOFT: High-grip compound. Optimal window is laps 1-25. Still competitive laps 26-32 with some pace loss and position drops — but no failure risk unless the anomaly sensor fires. Performance cliff begins around lap 26-28.
-- MEDIUM: Balanced compound, best for a 25-30 lap second stint after a SOFT first stint. Enables clean 1-stop strategy.
+- SOFT: High-grip compound. Optimal window is laps 1-19. Still competitive laps 20-22 with some pace loss and position drops — but no failure risk unless the anomaly sensor fires. Performance cliff begins around lap 18-20.
+- MEDIUM: Balanced compound, best for a 30-40 lap second stint after a SOFT first stint. Enables clean 1-stop strategy.
 - HARD: Very durable but slow. Only consider if 40+ laps remain at the second stop.
-- John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. Winning execution: run SOFT until the anomaly signal fires or tire_age_laps >= 26, then switch to MEDIUM and overtake on fresher rubber.
+- John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. Winning execution: run SOFT until the anomaly signal fires or tire_age_laps >= 20, then switch to MEDIUM and overtake on fresher rubber.
 
 REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
 -- USING TOOLS `race_standings_tool`  -- uncomment when RTCE is active

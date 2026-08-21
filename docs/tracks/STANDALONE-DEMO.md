@@ -87,11 +87,12 @@ first.
 > unattended. To keep the existing shared infrastructure under a new attendee prefix:
 > `export F1_SHARED_PREFIX=<the deployed name>`.
 
-On pacing: the workshop default is 60s/lap, which makes a 60-lap race take an hour and
-puts the anomaly — the payoff of the whole demo — ~32 minutes in. This prompt defaults
-to **20** instead (~20-minute race, anomaly at ~11 min). Don't go below 10: at that
-pace `ML_DETECT_ANOMALIES` can't accumulate its 20 training windows before lap 32 and
-the anomaly never fires.
+On pacing: the default is **30s/lap**, which makes a 60-lap race take 30 minutes and
+puts the anomaly — the payoff of the whole demo — ~11 minutes in (lap 22). This must
+match the fixed 30-second `TUMBLE` window in the LAB 3 SQL (one window per lap), so
+changing the pace requires a matching SQL-window change. Below 10s/lap
+`ML_DETECT_ANOMALIES` can't accumulate its 12 training windows before lap 22 and the
+anomaly never fires.
 
 **Want the pipeline built for you** instead of typing LAB B and LAB C yourself?
 
@@ -221,7 +222,7 @@ SHOW CONNECTIONS;   -- the Bedrock connections behind them
 
 ## 4. LAB B — Enrichment + anomaly detection → `car_state`
 
-This joins telemetry to standings by event time, tumbles into 60-second windows, and
+This joins telemetry to standings by event time, tumbles into 30-second windows, and
 runs `ML_DETECT_ANOMALIES` on the front-left tire temperature.
 
 > **Deployed with `--with-labs`?** This statement is already running — skip the submit
@@ -257,11 +258,11 @@ SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
 FROM `car_state`;
 ```
 
-`car_state` begins emitting after the first 60-second window closes. During the
-first 20 windows, `anomaly_tire_temp_fl` remains `false` while the model builds
-its training context. At the default pace, that context is ready around lap 21.
+`car_state` begins emitting after the first 30-second window closes. During the
+first 12 windows, `anomaly_tire_temp_fl` remains `false` while the model builds
+its training context. At the default pace, that context is ready around lap 13.
 
-Around **lap 32**, `anomaly_tire_temp_fl` flips to `true` and `tire_temp_fl_c` spikes to
+Around **lap 22**, `anomaly_tire_temp_fl` flips to `true` and `tire_temp_fl_c` spikes to
 ~145°C. The **ANOMALY DETECTION** panel on your dashboard unlocks.
 
 ---
@@ -309,15 +310,15 @@ processes laps that already happened — you don't have to have started it first
 
 | Lap | Position | Suggestion | What's happening |
 |-----|----------|-----------|------------------|
-| 1–17 | P3 | STAY OUT | Competitive, stable |
-| 18–25 | P3 → P1 | STAY OUT | Leaders pit, John briefly leads |
-| 26–31 | P1 → P8 | PIT SOON | Tire cliff bites |
-| **32** | **P8** | **PIT NOW** | **Front-left anomaly at 145°C** |
-| 33 | P12 | STAY OUT | Fresh MEDIUMs |
-| 34–60 | P12 → P2 | STAY OUT | Fastest car on track, climbs back |
+| 1–15 | P3 | STAY OUT | Competitive, stable |
+| 16–19 | P3 → P1 | STAY OUT | Leaders pit, John briefly leads |
+| 20–21 | P1 → P8 | PIT SOON | Tire cliff bites |
+| **22** | **P8** | **PIT NOW** | **Front-left anomaly at 145°C** |
+| 24 | P12 | STAY OUT | Fresh MEDIUMs |
+| 25–60 | P12 → P2 | STAY OUT | Fastest car on track, climbs back |
 
 P8 at the call → P2 at the flag. The **AI PIT STRATEGIST** panel unlocks and the banner
-flips to a flashing red **PIT NOW** at lap 32.
+flips to a flashing red **PIT NOW** at lap 22.
 
 ---
 
@@ -391,7 +392,7 @@ race pacing" below).
 
 Your Flink jobs keep running across the pause, and the simulator restarts at lap 0, so
 `car_state` and `pit_decisions` just get a second pass over laps 1–60 — including a
-second lap-32 anomaly. That's fine for a re-demo. Use the reset below when you want a
+second lap-22 anomaly. That's fine for a re-demo. Use the reset below when you want a
 genuinely clean run.
 
 **Start the demo over** — one command, nothing to sequence:
@@ -433,7 +434,7 @@ clearing underneath it — `--force` overrides that.
 Clearing `car_telemetry` matters more than it looks. The simulator loops races back to
 back, so the topic accumulates finished races — and LAB B reads what's already there.
 Re-run it against a full topic and `car_state` sprints through several old races in
-under a minute, surfacing the lap-32 anomaly immediately instead of when the live race
+under a minute, surfacing the lap-22 anomaly immediately instead of when the live race
 reaches it. Pass `--keep-source` if you *want* that history retained.
 
 `race_standings` is compacted, so Kafka won't let its records be deleted; `reset` says
@@ -514,7 +515,7 @@ tunnel (`ngrok`, Cloudflare Tunnel), set that HTTPS URL in `servers[0].url` in
 *local* MCP servers, which is the whole reason this REST shim exists. Agent
 configuration (persona, prompts, tool wiring):
 [`demo-reference/orchestrate_social_agent.md`](../../demo-reference/orchestrate_social_agent.md)
-and [Lab 5 in the walkthrough](../../Walkthrough.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
+and [Lab 5 in the walkthrough](../../README.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
 
 ---
 
@@ -576,8 +577,8 @@ Nothing created it yet. Both tables come from the LAB B/C statements — not Ter
 they're gone after `uv run reset`, which drops them by design. Rebuild everything with
 `uv run reset --with-labs`, or re-run the `--file` commands from §4 and §5 in order.
 
-**`car_state` is empty.** Almost always the `ML_DETECT_ANOMALIES` warmup — it needs 20
-× 60-second windows (~20 min of live data). If it's still empty after 22 minutes, check
+**`car_state` is empty.** Almost always the `ML_DETECT_ANOMALIES` warmup — it needs 12
+× 30-second windows (~6 min of live data). If it's still empty after 8 minutes, check
 that telemetry is arriving (`SELECT * FROM car_telemetry;`) and that the table itself was
 created (`DESCRIBE car_state;`). If the table is missing, the LAB B statement failed —
 re-run the `--file` command and read the error it prints.
@@ -586,14 +587,14 @@ re-run the `--file` command and read the error it prints.
 nothing arrives for several minutes, run `uv run race status` (is a task actually
 running?), check the ECS logs (§7), or bounce it with `uv run race restart`.
 
-**No anomaly around lap 32.** Confirm the spike exists at all:
+**No anomaly around lap 22.** Confirm the spike exists at all:
 
 ```sql
-SELECT lap, tire_temp_fl_c FROM `car_state` WHERE lap BETWEEN 30 AND 34;
+SELECT lap, tire_temp_fl_c FROM `car_state` WHERE lap BETWEEN 20 AND 24;
 ```
 
-You should see ~145°C. If Lab 3 started too late to collect 20 windows before lap
-32, the detector did not have enough training context for the incident.
+You should see ~145°C. If Lab 3 started too late to collect 12 windows before lap
+22, the detector did not have enough training context for the incident.
 
 **Agent fields are null but `raw_response` has text.** The LLM emitted a slightly
 different label format than the parsing regex expects. Inspect it:
