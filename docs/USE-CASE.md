@@ -38,4 +38,4 @@ Race configuration: 60 laps, 30 seconds/lap simulated in the workshop (two laps 
 
 ## Historical Data
 
-198 rows in `driver_race_history` (22 drivers × 9 prior GPs). Seeded from `data/driver_race_history_seed.sql` with `random.seed(42)` for determinism. Postgres composite PK: `(race_id, car_number)`.
+198 rows in `driver_race_history` (22 drivers × 9 prior GPs). Seeded from `datagen/data/driver_race_history_seed.sql` with `random.seed(42)` for determinism. Postgres composite PK: `(race_id, car_number)`.

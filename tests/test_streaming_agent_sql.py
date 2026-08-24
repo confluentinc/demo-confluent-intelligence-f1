@@ -6,8 +6,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_car_state_uses_one_30_second_window_per_race_lap():
     for relative_path in (
-        "demo-reference/enrichment_anomaly.sql",
-        "demo-reference/enrichment_anomaly_ai.sql",
+        "docs/demo-reference/enrichment_anomaly.sql",
+        "docs/demo-reference/enrichment_anomaly_ai.sql",
         "README.md",
     ):
         sql = (ROOT / relative_path).read_text()
@@ -15,7 +15,7 @@ def test_car_state_uses_one_30_second_window_per_race_lap():
 
 
 def test_forecast_uses_the_same_one_per_lap_window():
-    forecast = (ROOT / "demo-reference/granite_tire_forecast.sql").read_text()
+    forecast = (ROOT / "docs/demo-reference/granite_tire_forecast.sql").read_text()
     walkthrough = (ROOT / "README.md").read_text()
 
     window = "TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '30' SECOND)"
@@ -25,7 +25,7 @@ def test_forecast_uses_the_same_one_per_lap_window():
 
 def test_agent_consumes_the_one_row_per_lap_car_state_stream_directly():
     for relative_path in (
-        "demo-reference/streaming_agent_pit_decisions.sql",
+        "docs/demo-reference/streaming_agent_pit_decisions.sql",
         "README.md",
     ):
         sql = (ROOT / relative_path).read_text()

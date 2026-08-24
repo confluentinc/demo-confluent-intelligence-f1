@@ -46,7 +46,7 @@ brew install --cask docker-desktop
 
 The simulator writes `car_telemetry` and `race_standings`. A shared Postgres CDC connector supplies `driver_race_history`. During the labs, attendees build `car_state`, detect the front-left tire anomaly, create the streaming pit-strategy agent, and write its output to `pit_decisions`.
 
-The SQL reference copies live in [`demo-reference/`](../../demo-reference/), while the attendee [README.md](../../README.md) keeps every attendee statement inline. The former split lab files remain under [`docs/deprecated/`](../deprecated/) for historical reference.
+The SQL reference copies live in [`docs/demo-reference/`](../demo-reference/), while the attendee [README.md](../../README.md) keeps every attendee statement inline. The former split lab files remain under [`docs/deprecated/`](../deprecated/) for historical reference.
 
 Read [docs/USE-CASE.md](../USE-CASE.md) for the scenario, source data, and intended pit-wall outcome.
 
@@ -55,10 +55,10 @@ Read [docs/USE-CASE.md](../USE-CASE.md) for the scenario, source data, and inten
 ```text
 demo-confluent-intelligence-f1/
 ├── README.md               # Complete attendee workshop (what attendees follow)
-├── demo-reference/         # Maintainer copies of the Flink SQL
 ├── docs/
 │   ├── backup/             # Self-service fallback
 │   ├── deprecated/         # Retired split lab guides
+│   ├── demo-reference/     # Maintainer copies of the Flink SQL
 │   └── organizer/          # This organizer guide, prerequisites, and run of show
 ├── scripts/                # Workshop and self-service commands
 └── terraform/              # Shared and per-attendee infrastructure

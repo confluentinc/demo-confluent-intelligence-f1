@@ -13,7 +13,9 @@ of attendee instructions.
 - Open the presenter account, Flink SQL workspace, and Pit Wall.
 - Confirm `car_telemetry`, `race_standings`, and `driver_race_history` are healthy.
 - Confirm the shared Lab 5 race-feed URL and watsonx Orchestrate access.
-- Put the walkthrough link and updated `f1-race-feed-openapi.json` file where attendees can find them.
+- Edit `f1-race-feed-openapi.json`'s `servers[0].url` (ships with a placeholder)
+  to point at your own public `f1-social-feed` endpoint, then put the walkthrough
+  link and that updated file where attendees can find them.
 
 ## Opening
 

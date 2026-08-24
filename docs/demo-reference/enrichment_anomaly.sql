@@ -33,7 +33,7 @@
 --    Granite / AI_DETECT_ANOMALIES implementation keeps the same output schema
 --    and can be selected for separate evaluation:
 --      F1_ANOMALY_FN=ai uv run reset --with-labs
---      uv run f1-sql --file demo-reference/enrichment_anomaly_ai.sql
+--      uv run f1-sql --file docs/demo-reference/enrichment_anomaly_ai.sql
 
 CREATE TABLE `car_state`
 WITH ('changelog.mode' = 'append')

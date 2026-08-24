@@ -69,7 +69,6 @@ exclude = [
     "/.git",
     "/terraform",
     "/datagen",
-    "/data",
     "*.pyc",
     "__pycache__",
 ]

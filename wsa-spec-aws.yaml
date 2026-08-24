@@ -54,7 +54,7 @@ shared_infra_path: terraform/aws-shared/
 # Files the shared Terraform reads from OUTSIDE the terraform/ tree via relative
 # paths, staged into the run dir preserving layout:
 #   - terraform/aws-shared/datagen.tf builds the simulator image from datagen/
-#   - terraform/modules/postgres seeds from data/driver_race_history_seed.sql
+#   - terraform/modules/postgres seeds from datagen/data/driver_race_history_seed.sql
 # Required for local-copy mode (terraform_repo omitted); harmless with a full
 # remote clone (the files are already present, just re-overlaid from local disk).
 stage_paths:

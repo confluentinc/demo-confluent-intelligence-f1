@@ -6,7 +6,7 @@ yum install -y docker
 systemctl start docker
 systemctl enable docker
 
-# Init SQL — content injected by terraform templatefile() from data/driver_race_history_seed.sql
+# Init SQL — content injected by terraform templatefile() from datagen/data/driver_race_history_seed.sql
 # Gzip+base64 encoded to fit within EC2 user_data's 16KB limit.
 mkdir -p /opt/postgres-init
 

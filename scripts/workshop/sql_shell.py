@@ -3,7 +3,7 @@
   uv run f1-sql                      # card resolved from credentials.env
   uv run f1-sql --creds <prefix>.env
   uv run f1-sql --exec 'SHOW TABLES'         # one statement, then exit
-  uv run f1-sql --file demo-reference/x.sql  # every statement in a file, in order
+  uv run f1-sql --file docs/demo-reference/x.sql  # every statement in a file, in order
 
 Authenticates to a Flink compute pool with the API keys on a credential card and
 runs SQL against the Statements REST API. The instructor-led workshop teaches the
@@ -84,7 +84,7 @@ def is_durable(sql: str) -> bool:
     """True if the statement creates something and should be left running.
 
     Classifies on the first *keyword*, not the first character: every file in
-    ``demo-reference/`` opens with a ``--`` header, and pasting one whole (or
+    ``docs/demo-reference/`` opens with a ``--`` header, and pasting one whole (or
     piping it through ``--exec`` / ``--file``) must not make a ``CREATE TABLE``
     look like a throwaway SELECT — that would delete the job moments after
     submitting it.
@@ -109,7 +109,7 @@ def normalize(lines: list[str]) -> str:
 
     Strips the trailing ';' — that's a shell convention for "run it", not part of
     the statement (``scripts/common/simulator_control.py`` does the same to the
-    ``demo-reference/*.sql`` files it submits).
+    ``docs/demo-reference/*.sql`` files it submits).
     """
     return "\n".join(lines).strip().rstrip(";").strip()
 
@@ -285,7 +285,7 @@ def run_file(session: FlinkSession, path: str | Path) -> int:
     Same classification, comment handling, wait and error reporting as ``--exec``
     — this is why the splitting rule lives in ``split_statements`` rather than
     being reimplemented per caller (``scripts/common/simulator_control.py`` had to
-    do exactly that to submit ``demo-reference/*.sql``).
+    do exactly that to submit ``docs/demo-reference/*.sql``).
     """
     file = Path(path)
     if not file.exists():

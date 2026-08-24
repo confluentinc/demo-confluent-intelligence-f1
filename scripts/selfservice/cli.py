@@ -418,7 +418,7 @@ def main() -> None:
         "--with-labs",
         action="store_true",
         help=(
-            "Also build the LAB 3 / LAB 4 Flink objects from demo-reference/ so the "
+            "Also build the LAB 3 / LAB 4 Flink objects from docs/demo-reference/ so the "
             "environment is ready to demo. Omit to write them yourself."
         ),
     )

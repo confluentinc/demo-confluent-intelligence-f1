@@ -289,9 +289,10 @@ Run the race-feed service against the generated credential card:
 uv run f1-social-feed --creds runs/selfservice/credentials/<prefix>.env
 ```
 
-Expose port 8080 through an approved HTTPS tunnel, set that public URL in
-`servers[0].url` in the root `f1-race-feed-openapi.json`, upload the JSON file to
-watsonx Orchestrate, and follow
+Expose port 8080 through an approved HTTPS tunnel, then edit the root
+`f1-race-feed-openapi.json` (ships with a placeholder `servers[0].url`) to
+point at that public URL, upload the JSON file to watsonx Orchestrate, and
+follow
 [Lab 5 in the attendee `README.md`](../../README.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
 
 ### Optional MCP access

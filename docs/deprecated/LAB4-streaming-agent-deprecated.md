@@ -1,6 +1,6 @@
 # LAB 4 — Streaming Agent: Pit Decisions (deprecated)
 
-> Retained for reference. Use the canonical [`Walkthrough.md`](../../Walkthrough.md).
+> Retained for reference. Use the canonical [`README.md`](../../README.md).
 
 ## Overview
 
@@ -26,7 +26,7 @@ lap-32 anomaly.
 ### Step 1: Create the agent
 
 The agent's full prompt lives in
-[`demo-reference/streaming_agent_create_agent.sql`](../../demo-reference/streaming_agent_create_agent.sql).
+[`docs/demo-reference/streaming_agent_create_agent.sql`](../demo-reference/streaming_agent_create_agent.sql).
 Open it and paste the whole file into a workspace cell — comment header and
 all — as one statement, then run it.
 
@@ -52,7 +52,7 @@ SHOW AGENTS;
 ### Step 2: Produce `pit_decisions`
 
 Run the second statement, from
-[`demo-reference/streaming_agent_pit_decisions.sql`](../../demo-reference/streaming_agent_pit_decisions.sql).
+[`docs/demo-reference/streaming_agent_pit_decisions.sql`](../demo-reference/streaming_agent_pit_decisions.sql).
 It formats each `car_state` row into a prompt, calls `AI_RUN_AGENT`, and parses
 the agent's labeled response into columns:
 

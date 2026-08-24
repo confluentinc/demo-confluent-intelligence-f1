@@ -1,7 +1,7 @@
 # Troubleshooting (deprecated)
 
 > Retained for reference. Use the canonical
-> [`Walkthrough.md#troubleshooting`](../../Walkthrough.md#troubleshooting).
+> [`README.md#troubleshooting`](../../README.md#troubleshooting).
 
 ## Can't sign in to Confluent Cloud
 
@@ -92,7 +92,7 @@ your own `RIVER-RACING-f1wp###-ENV`.
   not yours).
 - **Agent invents positions or events.** Re-check the instructions tell it to
   *always call `get_race_feed` first* and post only from the returned data (see
-  [`demo-reference/orchestrate_social_agent.md`](../../demo-reference/orchestrate_social_agent.md)).
+  [`docs/demo-reference/orchestrate_social_agent.md`](../demo-reference/orchestrate_social_agent.md)).
 
 ## I want to start over
 

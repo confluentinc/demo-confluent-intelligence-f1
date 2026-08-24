@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-REFERENCE = ROOT / "demo-reference"
+REFERENCE = ROOT / "docs" / "demo-reference"
 SETUP = (REFERENCE / "rtce_upsert_verification_setup.sql").read_text()
 FEED = (REFERENCE / "rtce_upsert_verification_feed.sql").read_text()
 RUNBOOK = (REFERENCE / "rtce_upsert_verification.md").read_text()

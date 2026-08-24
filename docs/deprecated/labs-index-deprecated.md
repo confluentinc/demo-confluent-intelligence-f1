@@ -1,10 +1,10 @@
 # F1 Pit Wall AI Workshop — Labs (deprecated)
 
 > This split lab index is retained for reference. Attendees should use the
-> canonical [`Walkthrough.md`](../../Walkthrough.md).
+> canonical [`README.md`](../../README.md).
 
 The attendee-facing workshop now lives in the single-file
-[`Walkthrough.md`](../../Walkthrough.md). It includes all six labs, required SQL,
+[`README.md`](../../README.md). It includes all six labs, required SQL,
 the watsonx Orchestrate agent instructions, and troubleshooting. The former
 `labs/instructor-led/` files are archived here for reference.
 

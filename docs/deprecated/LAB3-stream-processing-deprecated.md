@@ -1,6 +1,6 @@
 # LAB 3 — Stream Processing: Enrichment + Anomaly Detection (deprecated)
 
-> Retained for reference. Use the canonical [`Walkthrough.md`](../../Walkthrough.md).
+> Retained for reference. Use the canonical [`README.md`](../../README.md).
 
 ## Overview
 
@@ -173,7 +173,7 @@ continuous job, so leave it running for the next step.
 > ARIMA-specific and does not exist here. (`ttm` is pretrained, so there is no
 > training phase at all; `minContextSize` is just an emission gate.) Everything
 > above and below the CTE stays exactly as written. The full statement is in
-> `demo-reference/enrichment_anomaly_ai.sql`.
+> `docs/demo-reference/enrichment_anomaly_ai.sql`.
 > </details>
 
 ### Step 2: Verify
@@ -255,7 +255,7 @@ identifies `ttm`, confirming that Granite served the forecast.
 This SELECT is only an experiment. After you see forecast rows, stop the
 statement in the SQL workspace so LAB 4 has the full compute pool available.
 The checked-in copy is
-[`granite_tire_forecast.sql`](../../demo-reference/granite_tire_forecast.sql).
+[`granite_tire_forecast.sql`](../demo-reference/granite_tire_forecast.sql).
 
 ### Step 4 (optional): Publish `car_state` to the Real-Time Context Engine
 

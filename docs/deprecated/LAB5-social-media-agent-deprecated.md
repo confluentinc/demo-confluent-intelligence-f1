@@ -1,6 +1,6 @@
 # LAB 5 — Social Media Agent (IBM watsonx Orchestrate) (deprecated)
 
-> Retained for reference. Use the canonical [`Walkthrough.md`](../../Walkthrough.md).
+> Retained for reference. Use the canonical [`README.md`](../../README.md).
 
 ## Overview
 
@@ -31,7 +31,7 @@ UI and point it at a race-feed tool your instructor is hosting.
   service that serves everyone; you select your own race with your prefix.
 
 > The canonical agent persona, instructions, and example prompts also live in
-> [`demo-reference/orchestrate_social_agent.md`](../../demo-reference/orchestrate_social_agent.md).
+> [`docs/demo-reference/orchestrate_social_agent.md`](../demo-reference/orchestrate_social_agent.md).
 
 ## Steps
 
@@ -58,7 +58,7 @@ status, the latest pit recommendation, and a list of recent **headline events**.
 
 **Agents → Create agent.** Name it `River Racing Social`, and paste the
 instructions from
-[`demo-reference/orchestrate_social_agent.md`](../../demo-reference/orchestrate_social_agent.md)
+[`docs/demo-reference/orchestrate_social_agent.md`](../demo-reference/orchestrate_social_agent.md)
 into the agent's instructions field. The short version of what they tell the agent:
 
 - You're the social-media manager for River Racing — John Doe, car #88, at

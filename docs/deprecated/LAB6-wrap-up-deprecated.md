@@ -1,6 +1,6 @@
 # LAB 6 — Wrap-Up (deprecated)
 
-> Retained for reference. Use the canonical [`Walkthrough.md`](../../Walkthrough.md).
+> Retained for reference. Use the canonical [`README.md`](../../README.md).
 
 ## Overview
 

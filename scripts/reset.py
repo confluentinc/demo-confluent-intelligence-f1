@@ -649,7 +649,7 @@ def main() -> None:
         "--with-labs",
         action="store_true",
         help=(
-            "Also rebuild the lab objects from demo-reference/ and restart the race — a "
+            "Also rebuild the lab objects from docs/demo-reference/ and restart the race — a "
             "ready-to-demo environment in one command. Omit for the workshop, where attendees "
             "build the labs themselves."
         ),
@@ -785,7 +785,7 @@ def main() -> None:
         # temporal join. Standings rows produced before this statement is RUNNING
         # are never seen, leaving those laps with no version to join against, so
         # the join drops them and car_state silently loses its first laps.
-        step("Rebuilding lab objects from demo-reference/...")
+        step("Rebuilding lab objects from docs/demo-reference/...")
         if problems:
             print("  Skipped — the cleanup above did not finish cleanly, so a rebuild would")
             print("  fail confusingly (most often 'table already exists'). Fix the errors")
