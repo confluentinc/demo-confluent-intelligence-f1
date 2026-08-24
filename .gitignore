@@ -54,6 +54,7 @@ Thumbs.db
 .claude/*
 !.claude/skills/
 !.claude/skills/**
+.claude/skills/.DS_Store
 CLAUDE.md
 claude-*
 
