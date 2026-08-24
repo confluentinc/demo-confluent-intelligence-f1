@@ -17,7 +17,7 @@ Race simulator (ECS Fargate, always on)
                                              │
 Shared Postgres ─ CDC ─ driver_race_history  │
                                              │
-                          LAB B  10s window + temporal join
+                          LAB B  30s window + temporal join
                                  ML_DETECT_ANOMALIES  →  car_state
                                              │
                           LAB C  CREATE AGENT + AI_RUN_AGENT
@@ -488,7 +488,7 @@ posts from the live feed, reading it through an OpenAPI tool. You can reproduce 
 side solo; the agent side still needs an Orchestrate account.
 
 Two interchangeable backends serve the identical `/race-feed/{prefix}` surface,
-so Orchestrate uses the same root `f1-race-feed-openapi.json` file either way:
+so Orchestrate uses the same `docs/assets/orchestrate/f1-race-feed-openapi.json` file either way:
 
 ```bash
 # A. Straight from Kafka (no extra Confluent features needed)
@@ -510,13 +510,13 @@ easier to debug than a failed tool import. RTCE has to be available on your org;
 probe fails, use backend A, which needs nothing beyond the topics you already have.
 
 Orchestrate has to reach the API over the internet, so expose port 8080 with a
-tunnel (`ngrok`, Cloudflare Tunnel), then edit the root `f1-race-feed-openapi.json`
+tunnel (`ngrok`, Cloudflare Tunnel), then edit `docs/assets/orchestrate/f1-race-feed-openapi.json`
 (ships with a placeholder `servers[0].url`) to point at that HTTPS URL, and
 upload the JSON file. It can't consume RTCE's MCP endpoint directly — it supports only
 *local* MCP servers, which is the whole reason this REST shim exists. Agent
 configuration (persona, prompts, tool wiring):
 [`docs/demo-reference/orchestrate_social_agent.md`](../demo-reference/orchestrate_social_agent.md)
-and [Lab 5 in the walkthrough](../../README.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
+and [Lab 5 in the hosted workshop walkthrough](./HOSTED-WORKSHOP.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
 
 ---
 

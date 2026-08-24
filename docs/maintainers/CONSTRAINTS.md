@@ -1,6 +1,6 @@
-# Workshop Constraints
+# Hosted workshop constraints
 
-These are hard constraints for this workshop. Do not violate them.
+These constraints protect the hosted workshop scenario. The self-service and standalone tracks change who provisions the environment and where the simulator runs, but they keep the same race, SQL, and expected result.
 
 ## Must Have
 
@@ -22,7 +22,7 @@ These are hard constraints for this workshop. Do not violate them.
 - Anomalies on any metric other than `tire_temp_fl_c`
 - Multiple anomalies at different laps
 - Probability formulas or threshold logic in Flink SQL
-- Real driver or team names
+- Real F1 team names, or replacing the fictional River Racing drivers with real drivers
 - A Copilot/chatbot layer on top of the agent output
 - Anything outside Confluent Cloud + AWS in the attendee path — no Tableflow, Databricks, dbt, or IBM MQ
 - Batch processing anywhere in the pipeline

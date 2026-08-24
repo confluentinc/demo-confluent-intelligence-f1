@@ -8,7 +8,7 @@
 -- NOTE: The original competitor_grid CTE (GROUP BY lap on race_standings) was removed.
 -- It caused a retract changelog (CURRENT_TIMESTAMP non-determinism error) because
 -- race_standings is an upsert table, and the 22 cars' event_times spread across
--- multiple 10-second TUMBLE windows making snapshot aggregation unreliable.
+-- different TUMBLE windows, making snapshot aggregation unreliable.
 -- The agent still receives full car state + position/gap context from car_state itself.
 -- When RTCE is enabled, add USING TOOLS to the CREATE AGENT above for live standings.
 --

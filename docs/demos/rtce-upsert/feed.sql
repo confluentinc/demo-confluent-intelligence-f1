@@ -1,4 +1,4 @@
--- Continuously reduce race_standings to one current RTCE row per car.
+-- Reduce race_standings continuously to one current RTCE row per car.
 -- The grouped expression preserves the derived upsert key; a direct projection
 -- with CAST(car_number AS STRING) currently introduces UpsertMaterialize.
 INSERT INTO `race_standings_rtce`

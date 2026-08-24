@@ -2,7 +2,7 @@
 
 Running this workshop? **Start here.** This page is for organizers who provision and
 run the workshop. Attendees never need it — send them straight to the
-[attendee walkthrough](../../README.md), which is the repository's `README.md`.
+[hosted attendee walkthrough](../tracks/HOSTED-WORKSHOP.md).
 
 The main workshop path provisions shared AWS infrastructure plus one isolated
 Confluent Cloud environment per attendee. Organizers run the infrastructure;
@@ -46,20 +46,22 @@ brew install --cask docker-desktop
 
 The simulator writes `car_telemetry` and `race_standings`. A shared Postgres CDC connector supplies `driver_race_history`. During the labs, attendees build `car_state`, detect the front-left tire anomaly, create the streaming pit-strategy agent, and write its output to `pit_decisions`.
 
-The SQL reference copies live in [`docs/demo-reference/`](../demo-reference/), while the attendee [README.md](../../README.md) keeps every attendee statement inline. The former split lab files remain under [`docs/deprecated/`](../deprecated/) for historical reference.
+The SQL reference copies live in [`docs/demo-reference/`](../demo-reference/), while the [hosted attendee walkthrough](../tracks/HOSTED-WORKSHOP.md) keeps every attendee statement inline.
 
-Read [docs/USE-CASE.md](../USE-CASE.md) for the scenario, source data, and intended pit-wall outcome.
+Read the [use case](../reference/USE-CASE.md) for the scenario, source data, and intended pit-wall outcome.
 
 ## Repository structure
 
 ```text
 demo-confluent-intelligence-f1/
-├── README.md               # Complete attendee workshop (what attendees follow)
+├── README.md               # Track chooser
 ├── docs/
-│   ├── backup/             # Self-service fallback
-│   ├── deprecated/         # Retired split lab guides
+│   ├── backup/             # Compatibility links for old URLs
 │   ├── demo-reference/     # Maintainer copies of the Flink SQL
-│   └── organizer/          # This organizer guide, prerequisites, and run of show
+│   ├── maintainers/        # Constraints and implementation notes
+│   ├── organizer/          # This organizer guide, prerequisites, and run of show
+│   ├── reference/          # Scenario and background material
+│   └── tracks/             # Attendee walkthroughs
 ├── scripts/                # Workshop and self-service commands
 └── terraform/              # Shared and per-attendee infrastructure
 ```
@@ -72,13 +74,12 @@ uv run ruff check .
 terraform fmt -check -recursive terraform
 ```
 
-Read [docs/constraints.md](../constraints.md) before changing the scenario or Flink design. It records the workshop behavior that must stay fixed.
+Read the [hosted workshop constraints](../maintainers/CONSTRAINTS.md) before changing the scenario or Flink design.
 
 ## Related references
 
-- [Attendee walkthrough](../../README.md) — what attendees follow (the repo `README.md`).
-- [Local self-service guide](../backup/LOCAL-SELF-SERVICE.md) — backup if the
-  pre-provisioned environments fail.
-- [Other tracks](../OTHER-TRACKS.md) — solo demos and smoke-test entry points.
-- [Scenario and use case](../USE-CASE.md) — source data and intended outcome.
-- [Constraints](../constraints.md) — workshop behavior that must stay fixed.
+- [Hosted attendee walkthrough](../tracks/HOSTED-WORKSHOP.md) — what attendees with instructor-provided logins follow.
+- [Self-service workshop walkthrough](../tracks/SELF-SERVICE.md) — what attendees using their own Confluent Cloud accounts follow.
+- [Scenario and use case](../reference/USE-CASE.md) — source data and intended outcome.
+- [Constraints](../maintainers/CONSTRAINTS.md) — hosted workshop behavior that must stay fixed.
+- [Technical notes](../maintainers/TECHNICAL-NOTES.md) — implementation traps and current service behavior.

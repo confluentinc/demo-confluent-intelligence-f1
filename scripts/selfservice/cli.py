@@ -358,8 +358,8 @@ def up(args: argparse.Namespace) -> None:
     print("3. Open the live dashboard:")
     print("     uv run f1-pitwall")
     if not (args.with_labs and labs_ok):
-        print("\nWork through README.md: LAB 1 → LAB 4, then LAB 6.")
-    print("Optional LAB 5 (watsonx Orchestrate) — see README.md.")
+        print("\nContinue in docs/tracks/SELF-SERVICE.md at section 5.")
+    print("Optional LAB 5 (watsonx Orchestrate) is also covered in that walkthrough.")
     print("\nTear down when finished:  uv run selfservice down")
 
     if not (seeded and labs_ok):
