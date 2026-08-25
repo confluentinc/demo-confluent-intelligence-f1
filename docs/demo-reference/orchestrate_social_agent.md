@@ -110,7 +110,7 @@ a knowledge source if you want richer, more consistent posts. Not required.
 ## Expected behavior
 
 The agent calls `get_race_feed`, then drafts a post citing real data, e.g. around
-the lap-22 anomaly:
+the lap-24 anomaly:
 
 > 🚨 Drama at Silverstone! A front-left tire issue forces the #88 into the pits —
 > John Doe boxes from P8. Fresh mediums on, time to charge back. 💪

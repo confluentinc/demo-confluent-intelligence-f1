@@ -1,31 +1,14 @@
 # Standalone Demo — End-to-End Walkthrough
 
+![F1 Pit Wall Confluent Intelligence architecture](../assets/architecture.png)
+
 One person, one Confluent Cloud environment, real AWS infrastructure, deployed with
 `uv run deploy`. This is the whole path: provision, run the labs, tear down.
 
 Everything here is copy-paste. Paths and IDs are pulled from Terraform outputs, so
 there is nothing to look up or substitute.
 
-**What you build:** live car telemetry + race standings stream into Kafka → Flink SQL
-joins them and flags a front-left tire anomaly → an AI Streaming Agent (Bedrock/Claude)
-calls the pit stop and explains why.
-
-```
-Race simulator (ECS Fargate, always on)
-  ├── car_telemetry    (car #88, Avro)      ─┐
-  └── race_standings   (22 cars, Avro, keyed)┤
-                                             │
-Shared Postgres ─ CDC ─ driver_race_history  │
-                                             │
-                          LAB B  30s window + temporal join
-                                 ML_DETECT_ANOMALIES  →  car_state
-                                             │
-                          LAB C  CREATE AGENT + AI_RUN_AGENT
-                                                      →  pit_decisions
-```
-
-The workshop's LAB 5 (IBM watsonx Orchestrate) is optional here — the agent itself needs
-an Orchestrate account, but you can stand up and test the feed it reads from. See §8.
+The race simulator writes live telemetry and standings to Kafka. In the labs, Flink SQL creates `car_state`, then a Streaming Agent writes `pit_decisions`.
 
 ---
 
@@ -87,11 +70,11 @@ first.
 > unattended. To keep the existing shared infrastructure under a new attendee prefix:
 > `export F1_SHARED_PREFIX=<the deployed name>`.
 
-On pacing: the default is **30s/lap**, which makes a 60-lap race take 30 minutes and
-puts the anomaly — the payoff of the whole demo — ~11 minutes in (lap 22). This must
-match the fixed 30-second `TUMBLE` window in the LAB 3 SQL (one window per lap), so
+On pacing: the default is **20s/lap**, which makes a 60-lap race take 20 minutes and
+puts the anomaly — the payoff of the whole demo — ~8 minutes in (lap 24). This must
+match the fixed 20-second `TUMBLE` window in the LAB 3 SQL (one window per lap), so
 changing the pace requires a matching SQL-window change. Below 10s/lap
-`ML_DETECT_ANOMALIES` can't accumulate its 12 training windows before lap 22 and the
+`ML_DETECT_ANOMALIES` can't accumulate its 12 training windows before lap 24 and the
 anomaly never fires.
 
 **Want the pipeline built for you** instead of typing LAB B and LAB C yourself?
@@ -222,35 +205,87 @@ SHOW CONNECTIONS;   -- the Bedrock connections behind them
 
 ## 4. LAB B — Enrichment + anomaly detection → `car_state`
 
-This joins telemetry to standings by event time, tumbles into 30-second windows, and
-runs `ML_DETECT_ANOMALIES` on the front-left tire temperature.
+Paste this entire statement into the `f1-sql` shell. Leave it running.
 
-> **Deployed with `--with-labs`?** This statement is already running — skip the submit
-> below and go straight to **Verify**. `SHOW TABLES;` will list `car_state` already.
-
-The canonical SQL is [`docs/demo-reference/enrichment_anomaly.sql`](../demo-reference/enrichment_anomaly.sql).
-Submit it whole, without copy-pasting — from a **separate terminal** (not inside the
-shell):
-
-```bash
-uv run f1-sql --file docs/demo-reference/enrichment_anomaly.sql
+```sql
+CREATE TABLE `car_state`
+WITH ('changelog.mode' = 'append')
+AS
+WITH enriched AS (
+  SELECT
+    t.car_number, t.event_time, t.lap,
+    t.tire_temp_fl_c, t.tire_temp_fr_c, t.tire_temp_rl_c, t.tire_temp_rr_c,
+    t.tire_pressure_fl_psi, t.tire_pressure_fr_psi,
+    t.tire_pressure_rl_psi, t.tire_pressure_rr_psi,
+    t.engine_temp_c, t.brake_temp_fl_c, t.brake_temp_fr_c,
+    t.battery_charge_pct, t.fuel_remaining_kg,
+    r.`position`, r.gap_to_ahead_sec, r.gap_to_leader_sec,
+    r.pit_stops, r.tire_compound, r.tire_age_laps
+  FROM `car_telemetry` t
+  JOIN `race_standings` FOR SYSTEM_TIME AS OF t.event_time AS r
+    ON t.car_number = r.car_number
+),
+windowed AS (
+  SELECT
+    window_start, window_end, window_time, car_number,
+    MAX(lap) AS lap,
+    AVG(tire_temp_fl_c) AS tire_temp_fl_c,
+    AVG(tire_temp_fr_c) AS tire_temp_fr_c,
+    AVG(tire_temp_rl_c) AS tire_temp_rl_c,
+    AVG(tire_temp_rr_c) AS tire_temp_rr_c,
+    AVG(tire_pressure_fl_psi) AS tire_pressure_fl_psi,
+    AVG(tire_pressure_fr_psi) AS tire_pressure_fr_psi,
+    AVG(tire_pressure_rl_psi) AS tire_pressure_rl_psi,
+    AVG(tire_pressure_rr_psi) AS tire_pressure_rr_psi,
+    AVG(engine_temp_c) AS engine_temp_c,
+    AVG(brake_temp_fl_c) AS brake_temp_fl_c,
+    AVG(brake_temp_fr_c) AS brake_temp_fr_c,
+    AVG(battery_charge_pct) AS battery_charge_pct,
+    AVG(fuel_remaining_kg) AS fuel_remaining_kg,
+    MAX(`position`) AS `position`,
+    MAX(gap_to_ahead_sec) AS gap_to_ahead_sec,
+    MAX(gap_to_leader_sec) AS gap_to_leader_sec,
+    MAX(pit_stops) AS pit_stops,
+    MAX(tire_compound) AS tire_compound,
+    MAX(tire_age_laps) AS tire_age_laps
+  FROM TABLE(
+    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
+  )
+  GROUP BY window_start, window_end, window_time, car_number
+),
+anomaly AS (
+  SELECT
+    *,
+    ML_DETECT_ANOMALIES(tire_temp_fl_c, window_time,
+      JSON_OBJECT('minTrainingSize' VALUE 12,
+                  'maxTrainingSize' VALUE 50,
+                  'confidencePercentage' VALUE 99.99,
+                  'enableStl' VALUE FALSE))
+      OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+      AS anomaly_tire_temp_fl_result
+  FROM windowed
+)
+SELECT
+  car_number, lap,
+  tire_temp_fl_c, tire_temp_fr_c, tire_temp_rl_c, tire_temp_rr_c,
+  tire_pressure_fl_psi, tire_pressure_fr_psi,
+  tire_pressure_rl_psi, tire_pressure_rr_psi,
+  engine_temp_c, brake_temp_fl_c, brake_temp_fr_c,
+  battery_charge_pct, fuel_remaining_kg,
+  CASE
+    WHEN anomaly_tire_temp_fl_result.is_anomaly
+         AND anomaly_tire_temp_fl_result.actual_value
+             > anomaly_tire_temp_fl_result.upper_bound
+    THEN true
+    ELSE false
+  END AS anomaly_tire_temp_fl,
+  `position`, gap_to_ahead_sec, gap_to_leader_sec,
+  pit_stops, tire_compound, tire_age_laps
+FROM anomaly
+WHERE lap > 0;
 ```
 
-Expected output: `RUNNING  (statement left running)` plus the statement name.
-
-### Why it's built this way
-
-- **Temporal join before the windows.** `FOR SYSTEM_TIME AS OF t.event_time` must run on
-  the raw rowtime. After `TUMBLE`/`OVER`, `window_time` loses its rowtime attribute and
-  the join silently returns **zero rows** — no error, just nothing.
-- **Only `tire_temp_fl_c` goes through `ML_DETECT_ANOMALIES`.** The other sensors are
-  noisier and produce false positives.
-- **`actual_value > upper_bound`** keeps only the *overheating* spike, not the cold drop
-  after the pit stop (a recovery, not a problem).
-
-### Verify
-
-Back in the interactive shell:
+Verify it in a second SQL shell:
 
 ```sql
 SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
@@ -258,67 +293,223 @@ SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
 FROM `car_state`;
 ```
 
-`car_state` begins emitting after the first 30-second window closes. During the
-first 12 windows, `anomaly_tire_temp_fl` remains `false` while the model builds
-its training context. At the default pace, that context is ready around lap 13.
+`car_state` begins emitting after the first 20-second window closes. The race itself may take up to ~20 seconds to emit lap 1 (it aligns to the next 20-second wall-clock boundary before starting), so the first window can land one interval later than expected. The anomaly model needs 12 windows of context; at lap 24, the front-left tire reaches about 145°C and the flag becomes `true`.
 
-Around **lap 22**, `anomaly_tire_temp_fl` flips to `true` and `tire_temp_fl_c` spikes to
-~145°C. The **ANOMALY DETECTION** panel on your dashboard unlocks.
+### Optional: forecast tire temperature
+
+Run this after `car_state` produces rows. Stop the query after inspecting the result so Lab C can use the compute pool.
+
+```sql
+WITH windowed AS (
+  SELECT
+    window_start,
+    window_end,
+    window_time,
+    car_number,
+    MAX(lap) AS lap,
+    AVG(tire_temp_fl_c) AS tire_temp_fl_c
+  FROM TABLE(
+    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
+  )
+  GROUP BY window_start, window_end, window_time, car_number
+),
+forecasted AS (
+  SELECT
+    *,
+    AI_FORECAST(
+      tire_temp_fl_c,
+      window_time,
+      JSON_OBJECT(
+        'model' VALUE 'ttm',
+        'horizon' VALUE 20,
+        'minContextSize' VALUE 20,
+        'maxContextSize' VALUE 50,
+        'rmseWindowSize' VALUE 5
+      )
+    ) OVER (
+      PARTITION BY car_number
+      ORDER BY window_time
+      RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS forecast_result
+  FROM windowed
+)
+SELECT
+  lap,
+  window_time AS forecast_generated_at,
+  tire_temp_fl_c AS current_tire_temperature_c,
+  forecast_result.forecast[1].`timestamp` AS next_point_at,
+  forecast_result.forecast[1].mean AS next_point_c,
+  forecast_result.forecast AS full_forecast,
+  forecast_result.metadata AS forecast_metadata
+FROM forecasted
+WHERE CARDINALITY(forecast_result.forecast) > 0;
+```
 
 ---
 
 ## 5. LAB C — Streaming agent → `pit_decisions`
 
-> **Deployed with `--with-labs`?** Both statements below are already applied —
-> `SHOW AGENTS;` lists `pit_strategy_agent` and `pit_decisions` exists. Read on for what
-> they do, then jump to **What to expect**.
+Run these two statements in order. The first creates the agent.
 
-Two statements. First create the agent (its full prompt lives in
-[`docs/demo-reference/streaming_agent_create_agent.sql`](../demo-reference/streaming_agent_create_agent.sql)):
+```sql
+CREATE AGENT `pit_strategy_agent`
+USING MODEL `llm_textgen_model`
+USING PROMPT 'OUTPUT FORMAT — respond with exactly these 7 labeled lines in this order. No markdown, no asterisks, no bold, plain text only.
 
-```bash
-uv run f1-sql --file docs/demo-reference/streaming_agent_create_agent.sql
+Suggestion: [PIT NOW | PIT SOON | STAY OUT]
+Condition Summary: [one sentence describing current car condition]
+Race Context: [one sentence on race situation based on competitor standings in the input]
+Recommended Compound: [SOFT | MEDIUM | HARD | N/A if STAY OUT]
+Recommended Stint Laps: [integer expected laps on new tires | N/A if STAY OUT]
+Recommended Reason: [one sentence explaining compound choice | N/A if STAY OUT]
+Reasoning: [2-4 sentences full explanation of your decision]
+
+Correct STAY OUT example:
+Suggestion: STAY OUT
+Condition Summary: Front-left tire temperature is nominal at 107C with 18 laps of age on SOFT compound.
+Race Context: Currently P3. No competitors in top 10 have pitted yet. Leader is 8.2s ahead.
+Recommended Compound: N/A
+Recommended Stint Laps: N/A
+Recommended Reason: N/A
+Reasoning: Tire temps and pressures are within normal operating windows for a SOFT at this age. Track position P3 is strong. Pitting now would surrender 4-6 seconds and drop John behind cars currently behind us.
+
+Correct PIT NOW example:
+Suggestion: PIT NOW
+Condition Summary: Front-left tire temperature anomaly at 145C, 20C above expected upper bound — failure risk imminent.
+Race Context: Currently P8. P4 and P5 already pitted 3 laps ago and are pushing on fresh mediums.
+Recommended Compound: MEDIUM
+Recommended Stint Laps: 36
+Recommended Reason: Mediums will carry John to the flag across the remaining 36 laps and give him the pace to recover positions lost during the stop.
+Reasoning: The FL anomaly flag indicates the SOFT has gone past its operating limit with blowout risk. Pitting now onto mediums avoids tire failure. Based on historical data, John averages +2.75 positions on SOFT-MEDIUM — this is his strongest strategy.
+
+---
+
+You are the AI pit wall strategist for River Racing at the 2026 British Grand Prix (Silverstone, 60 laps).
+Driver: John Doe, Car #88.
+
+DECISION ALGORITHM — apply these rules in order. Do not deviate.
+
+Step 1: If anomaly_tire_temp_fl = true → Suggestion: PIT NOW. Stop.
+Step 2: Else if pit_stops > 0 → Suggestion: STAY OUT. Stop.
+Step 3: Else if tire_compound = SOFT AND tire_age_laps >= 21 → Suggestion: PIT SOON. Stop.
+Step 4: Else → Suggestion: STAY OUT. Stop.
+
+These rules are absolute. The race context, gap, competitor pit timing, and tire
+temperatures are inputs FOR YOUR REASONING TEXT ONLY — they MUST NOT change the
+Suggestion field. Reason about strategy in the Reasoning field, but the Suggestion
+itself is fully determined by Steps 1–4 above.
+
+FORBIDDEN PATTERNS — these are bugs, not options:
+- Outputting PIT NOW when anomaly_tire_temp_fl = false. No exceptions.
+- Outputting PIT SOON when tire_age_laps < 21.
+- Outputting PIT SOON after pit_stops > 0.
+- Outputting anything other than STAY OUT when tire_age_laps < 20 AND anomaly_tire_temp_fl = false.
+- Justifying PIT NOW with phrases like "approaching cliff", "blowout risk", "tires near limit",
+  "performance falling off" — these are PIT SOON or STAY OUT signals, never PIT NOW.
+
+SELF-CHECK before responding: re-read Steps 1–4 with the actual input values.
+The input includes REQUIRED SUGGESTION, computed by Flink SQL from those rules.
+Copy that exact value into Suggestion. If your prose conflicts with it, fix the
+prose before outputting.
+
+COMPETITOR CONTEXT:
+Current top-10 standings are provided at the end of each input. Use them to identify:
+- Which competitors have already pitted (and are now on fresher rubber)
+- Who is still on old tires and likely to pit soon
+- Whether John is at risk of being undercut, or has an overcut opportunity
+
+TIRE STRATEGY at Silverstone (60-lap race):
+- SOFT: High-grip compound. Optimal window is laps 1-19. Still competitive laps 20-22 with some pace loss and position drops — but no failure risk unless the anomaly sensor fires. Performance cliff begins around lap 18-20.
+- MEDIUM: Balanced compound, best for a 30-40 lap second stint after a SOFT first stint. Enables clean 1-stop strategy.
+- HARD: Very durable but slow. Only consider if 40+ laps remain at the second stop.
+- John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. The pit wall warns at laps 21-23, calls PIT NOW only when the lap-24 anomaly fires, then lets the fresh MEDIUM stint run.
+
+REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
+-- USING TOOLS `race_standings_tool`  -- uncomment when RTCE is active
+WITH ('max_iterations' = '10');
 ```
 
-The prompt pins the agent to a strict decision algorithm:
-
-```
-Step 1: anomaly_tire_temp_fl = true         → PIT NOW
-Step 2: else SOFT and tire_age_laps >= 26   → PIT SOON
-Step 3: else                                → STAY OUT
-```
-
-…while the LLM writes the condition summary, race context, recommended compound/stint,
-and reasoning in its own words. Confirm it exists:
+Confirm it exists, then create the decision stream:
 
 ```sql
 SHOW AGENTS;
 ```
 
-Then run the agent over `car_state`
-([`docs/demo-reference/streaming_agent_pit_decisions.sql`](../demo-reference/streaming_agent_pit_decisions.sql)):
-
-```bash
-uv run f1-sql --file docs/demo-reference/streaming_agent_pit_decisions.sql
+```sql
+CREATE TABLE `pit_decisions`
+WITH ('changelog.mode' = 'append')
+AS
+SELECT
+  cs.car_number,
+  cs.lap,
+  cs.`position`,
+  cs.tire_compound AS tire_compound_current,
+  cs.tire_age_laps,
+  cs.anomaly_tire_temp_fl,
+  CASE
+    WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
+    WHEN cs.pit_stops > 0 THEN 'STAY OUT'
+    WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 21 THEN 'PIT SOON'
+    ELSE 'STAY OUT'
+  END AS suggestion,
+  TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Condition Summary:\*{0,2}\s*([^\n]+)', 1)) AS condition_summary,
+  TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Race Context:\*{0,2}\s*([^\n]+)', 1)) AS race_context,
+  NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Compound:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS recommended_tire_compound,
+  CAST(NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Stint Laps:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS INT) AS recommended_stint_laps,
+  NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Reason:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS recommended_reason,
+  TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Reasoning:\*{0,2}\s*([\s\S]+?)$', 1)) AS reasoning,
+  CAST(response AS STRING) AS raw_response
+FROM `car_state` /*+ OPTIONS('scan.startup.mode'='earliest-offset') */ cs,
+LATERAL TABLE(AI_RUN_AGENT(
+  `pit_strategy_agent`,
+  CONCAT(
+    'CAR STATE — Lap ', CAST(cs.lap AS STRING), ' of 60 | Silverstone British Grand Prix\n',
+    'Driver: John Doe (#', CAST(cs.car_number AS STRING), ') | Current Position: P', CAST(cs.`position` AS STRING), '\n',
+    'REQUIRED SUGGESTION — copy exactly: ',
+    CASE
+      WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
+      WHEN cs.pit_stops > 0 THEN 'STAY OUT'
+      WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 21 THEN 'PIT SOON'
+      ELSE 'STAY OUT'
+    END, '\n',
+    '\nTIRE DATA:\n',
+    '  Compound: ', cs.tire_compound, ' | Age: ', CAST(cs.tire_age_laps AS STRING), ' laps\n',
+    '  FL Temp: ', CAST(ROUND(cs.tire_temp_fl_c, 1) AS STRING), 'C',
+    '  FR: ', CAST(ROUND(cs.tire_temp_fr_c, 1) AS STRING), 'C',
+    '  RL: ', CAST(ROUND(cs.tire_temp_rl_c, 1) AS STRING), 'C',
+    '  RR: ', CAST(ROUND(cs.tire_temp_rr_c, 1) AS STRING), 'C\n',
+    '  FL Pressure: ', CAST(ROUND(cs.tire_pressure_fl_psi, 1) AS STRING), 'psi',
+    '  FR: ', CAST(ROUND(cs.tire_pressure_fr_psi, 1) AS STRING), 'psi',
+    '  RL: ', CAST(ROUND(cs.tire_pressure_rl_psi, 1) AS STRING), 'psi',
+    '  RR: ', CAST(ROUND(cs.tire_pressure_rr_psi, 1) AS STRING), 'psi\n',
+    '  FL Tire Anomaly Detected: ', CAST(cs.anomaly_tire_temp_fl AS STRING), '\n',
+    '\nCAR SYSTEMS:\n',
+    '  Engine Temp: ', CAST(ROUND(cs.engine_temp_c, 1) AS STRING), 'C',
+    '  Brake FL: ', CAST(ROUND(cs.brake_temp_fl_c, 1) AS STRING), 'C',
+    '  Brake FR: ', CAST(ROUND(cs.brake_temp_fr_c, 1) AS STRING), 'C\n',
+    '  Battery: ', CAST(ROUND(cs.battery_charge_pct, 1) AS STRING), '%',
+    '  Fuel Remaining: ', CAST(ROUND(cs.fuel_remaining_kg, 1) AS STRING), 'kg\n',
+    '\nRACE CONTEXT:\n',
+    '  Gap to Leader: ', CAST(ROUND(cs.gap_to_leader_sec, 2) AS STRING), 's',
+    '  Gap to Car Ahead: ', CAST(ROUND(cs.gap_to_ahead_sec, 2) AS STRING), 's\n',
+    '  Pit Stops Taken: ', CAST(cs.pit_stops AS STRING), '\n',
+    '  Laps Remaining: ', CAST(60 - cs.lap AS STRING)
+  ),
+  MAP['debug', 'true']
+));
 ```
 
-This formats each `car_state` row into a prompt, calls `AI_RUN_AGENT`, and parses the
-labeled response into columns. It reads with `scan.startup.mode=earliest-offset`, so it
-processes laps that already happened — you don't have to have started it first.
+`pit_decisions` reads `car_state` from the earliest offset, so it also processes laps that have already arrived.
 
 ### What to expect
 
 | Lap | Position | Suggestion | What's happening |
-|-----|----------|-----------|------------------|
-| 1–15 | P3 | STAY OUT | Competitive, stable |
-| 16–19 | P3 → P1 | STAY OUT | Leaders pit, John briefly leads |
-| 20–21 | P1 → P8 | PIT SOON | Tire cliff bites |
-| **22** | **P8** | **PIT NOW** | **Front-left anomaly at 145°C** |
-| 24 | P12 | STAY OUT | Fresh MEDIUMs |
-| 25–60 | P12 → P2 | STAY OUT | Fastest car on track, climbs back |
-
-P8 at the call → P2 at the flag. The **AI PIT STRATEGIST** panel unlocks and the banner
-flips to a flashing red **PIT NOW** at lap 22.
+|---|---|---|---|
+| 1–20 | P3 → P1 | STAY OUT | Competitive, stable |
+| 21–23 | P1 → P8 | PIT SOON | Aging SOFTs need a stop soon |
+| **24** | **P8** | **PIT NOW** | **Front-left anomaly at about 145°C triggers the scheduled stop** |
+| 25 | P14 | STAY OUT | Fresh MEDIUMs after the stop |
+| 26–60 | P14 → P1–P2 | STAY OUT | Recovery on fresh MEDIUMs |
 
 ---
 
@@ -392,7 +583,7 @@ race pacing" below).
 
 Your Flink jobs keep running across the pause, and the simulator restarts at lap 0, so
 `car_state` and `pit_decisions` just get a second pass over laps 1–60 — including a
-second lap-22 anomaly. That's fine for a re-demo. Use the reset below when you want a
+second lap-24 anomaly. That's fine for a re-demo. Use the reset below when you want a
 genuinely clean run.
 
 **Start the demo over** — one command, nothing to sequence:
@@ -434,7 +625,7 @@ clearing underneath it — `--force` overrides that.
 Clearing `car_telemetry` matters more than it looks. The simulator loops races back to
 back, so the topic accumulates finished races — and LAB B reads what's already there.
 Re-run it against a full topic and `car_state` sprints through several old races in
-under a minute, surfacing the lap-22 anomaly immediately instead of when the live race
+under a minute, surfacing the lap-24 anomaly immediately instead of when the live race
 reaches it. Pass `--keep-source` if you *want* that history retained.
 
 `race_standings` is compacted, so Kafka won't let its records be deleted; `reset` says
@@ -579,7 +770,8 @@ they're gone after `uv run reset`, which drops them by design. Rebuild everythin
 `uv run reset --with-labs`, or re-run the `--file` commands from §4 and §5 in order.
 
 **`car_state` is empty.** Almost always the `ML_DETECT_ANOMALIES` warmup — it needs 12
-× 30-second windows (~6 min of live data). If it's still empty after 8 minutes, check
+× 20-second windows (~4 min of live data). Note the race can also take up to ~20 seconds
+to emit lap 1, since it aligns to a 20-second wall-clock boundary before starting. If it's still empty after 6 minutes, check
 that telemetry is arriving (`SELECT * FROM car_telemetry;`) and that the table itself was
 created (`DESCRIBE car_state;`). If the table is missing, the LAB B statement failed —
 re-run the `--file` command and read the error it prints.
@@ -588,7 +780,7 @@ re-run the `--file` command and read the error it prints.
 nothing arrives for several minutes, run `uv run race status` (is a task actually
 running?), check the ECS logs (§7), or bounce it with `uv run race restart`.
 
-**No anomaly around lap 22.** Confirm the spike exists at all:
+**No anomaly around lap 24.** Confirm the spike exists at all:
 
 ```sql
 SELECT lap, tire_temp_fl_c FROM `car_state` WHERE lap BETWEEN 20 AND 24;

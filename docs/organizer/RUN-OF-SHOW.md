@@ -32,7 +32,7 @@ Cloud account, and that all SQL runs in the browser workspace.
 |---|---|---|
 | 1 | Open the assigned environment and Pit Wall | Each attendee sees the three source tables |
 | 2 | Inspect telemetry, standings, CDC history, models, and connections | History reaches 198 rows and live data advances |
-| 3 | Build `car_state`; offer Granite forecasting only if time permits | `car_state` produces one 30-second window per lap and the optional forecast is stopped afterward |
+| 3 | Build `car_state`; offer Granite forecasting only if time permits | `car_state` produces one 20-second window per lap and the optional forecast is stopped afterward |
 | 4 | Create the streaming agent and `pit_decisions` | Decisions appear and the Pit Wall AI panel unlocks |
 | 5 | Build the watsonx Orchestrate social agent | The imported tool returns the live race state |
 | 6 | Inspect the important decision and recap the pipeline | Attendees can trace source data to the final output |
@@ -40,7 +40,7 @@ Cloud account, and that all SQL runs in the browser workspace.
 ## Lab 3 notes
 
 The required path uses `ML_DETECT_ANOMALIES`. The Granite `AI_FORECAST` query is
-optional and uses a 20-step horizon. With 30-second, one-per-lap windows, it
+optional and uses a 20-step horizon. With 20-second, one-per-lap windows, it
 projects roughly 20 laps ahead. Ask attendees to stop that temporary query before
 Lab 4 so it does not occupy the shared compute pool.
 

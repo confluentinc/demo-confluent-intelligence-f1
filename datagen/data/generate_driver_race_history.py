@@ -2,7 +2,7 @@
 
 Designed correlation: drivers running SOFT-MEDIUM (1-stop) gain the most positions
 on average. John Doe's record on SOFT-MEDIUM is +2.75; on other strategies, -2.4.
-This matches the simulator's lap-33 anomaly-forced 1-stop pit onto MEDIUM today.
+This matches the simulator's lap-24 anomaly-triggered 1-stop pit onto MEDIUM today.
 
 Strategy distribution per race (22 drivers):
    6x SOFT-MEDIUM        (1-stop)  — winners, avg +2.5

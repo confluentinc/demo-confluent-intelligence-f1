@@ -257,8 +257,8 @@ class EndToEndTests(unittest.TestCase):
     def env_file(self) -> str:
         return (self.root / "confluent-mcp.env").read_text()
 
-    def test_default_run_registers_claude_only_from_the_resolved_card(self):
-        fake = self.run_main([])
+    def test_client_claude_registers_claude_only_from_the_resolved_card(self):
+        fake = self.run_main(["--client", "claude"])
 
         agent = fake.agent_calls()
         self.assertEqual([c[0] for c in agent], ["claude", "claude"])
@@ -271,12 +271,12 @@ class EndToEndTests(unittest.TestCase):
     def test_successful_registration_tells_the_user_to_restart_the_agent(self):
         output = io.StringIO()
         with redirect_stdout(output):
-            self.run_main([])
+            self.run_main(["--client", "claude"])
 
         self.assertIn("Restart your coding agent to pick the server up.", output.getvalue())
 
     def test_generated_env_carries_the_cards_values(self):
-        self.run_main([])
+        self.run_main(["--client", "claude"])
         body = self.env_file()
         self.assertIn('BOOTSTRAP_SERVERS="pkc-abc12.us-east-1.aws.confluent.cloud:9092"', body)
         self.assertIn('KAFKA_REST_ENDPOINT="https://pkc-abc12.us-east-1.aws.confluent.cloud:443"', body)
@@ -285,7 +285,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn('SCHEMA_REGISTRY_API_KEY="SRKEY7"', body)
 
     def test_env_file_is_owner_only(self):
-        self.run_main([])
+        self.run_main(["--client", "claude"])
         self.assertEqual((self.root / "confluent-mcp.env").stat().st_mode & 0o777, 0o600)
 
     def test_cloud_api_keys_come_from_credentials_env_tf_vars(self):
@@ -294,19 +294,19 @@ class EndToEndTests(unittest.TestCase):
             "TF_VAR_confluent_cloud_api_secret=CLOUDSECRET\n"
             f"F1_CARD=runs/solo/credentials/{self.card.name}\n"
         )
-        self.run_main([])
+        self.run_main(["--client", "claude"])
         self.assertIn('CONFLUENT_CLOUD_API_KEY="CLOUDKEY"', self.env_file())
         self.assertIn('CONFLUENT_CLOUD_API_SECRET="CLOUDSECRET"', self.env_file())
 
     def test_absent_credentials_env_is_not_an_error(self):
-        self.run_main([])  # no credentials.env in the temp root at all
+        self.run_main(["--client", "claude"])  # no credentials.env in the temp root at all
         self.assertIn('CONFLUENT_CLOUD_API_KEY=""', self.env_file())
 
     def test_rerun_is_idempotent(self):
-        first = self.run_main([])
+        first = self.run_main(["--client", "claude"])
         body_after_first = self.env_file()
 
-        second = self.run_main([])
+        second = self.run_main(["--client", "claude"])
 
         # Byte-identical env file: written whole, never appended.
         self.assertEqual(body_after_first, self.env_file())
@@ -341,7 +341,7 @@ class EndToEndTests(unittest.TestCase):
 
     def test_failed_registration_exits_nonzero(self):
         with self.assertRaises(SystemExit) as ctx:
-            self.run_main([], fake=FakeRun(add_returncode=1))
+            self.run_main(["--client", "claude"], fake=FakeRun(add_returncode=1))
         self.assertNotEqual(ctx.exception.code, 0)
 
     def test_missing_agent_cli_exits_nonzero_without_crashing(self):
@@ -352,12 +352,12 @@ class EndToEndTests(unittest.TestCase):
                 return super().__call__(argv, **kwargs)
 
         with self.assertRaises(SystemExit) as ctx:
-            self.run_main([], fake=NoCli())
+            self.run_main(["--client", "claude"], fake=NoCli())
         self.assertNotEqual(ctx.exception.code, 0)
 
     def test_old_node_aborts_before_anything_is_written(self):
         with self.assertRaises(SystemExit):
-            self.run_main([], fake=FakeRun(node_version="18.20.4", node_abi=108))
+            self.run_main(["--client", "claude"], fake=FakeRun(node_version="18.20.4", node_abi=108))
         self.assertFalse((self.root / "confluent-mcp.env").exists())
 
     def test_ambiguous_cards_refuse_to_guess(self):
@@ -366,15 +366,40 @@ class EndToEndTests(unittest.TestCase):
         second.write_text(CARD_BODY)
 
         with self.assertRaises(SystemExit) as ctx:
-            self.run_main([])
+            self.run_main(["--client", "claude"])
         self.assertIn("Multiple credential cards", str(ctx.exception))
+
+    def test_omitted_client_prompts_and_defaults_to_claude_on_enter(self):
+        with patch.object(setup_mcp, "input", return_value="", create=True):
+            fake = self.run_main([])
+        self.assertEqual([c[0] for c in fake.agent_calls()], ["claude", "claude"])
+
+    def test_omitted_client_prompt_choice_2_selects_codex(self):
+        with patch.object(setup_mcp, "input", return_value="2", create=True):
+            fake = self.run_main([])
+        self.assertEqual([c[0] for c in fake.agent_calls()], ["codex", "codex"])
+
+    def test_omitted_client_prompt_choice_both_selects_both(self):
+        with patch.object(setup_mcp, "input", return_value="both", create=True):
+            fake = self.run_main([])
+        self.assertEqual([c[0] for c in fake.agent_calls()], ["claude", "claude", "codex", "codex"])
+
+    def test_omitted_client_prompt_falls_back_on_eof(self):
+        with patch.object(setup_mcp, "input", side_effect=EOFError, create=True):
+            fake = self.run_main([])
+        self.assertEqual([c[0] for c in fake.agent_calls()], ["claude", "claude"])
+
+    def test_explicit_client_flag_skips_the_prompt(self):
+        with patch.object(setup_mcp, "input", side_effect=AssertionError("should not prompt"), create=True):
+            fake = self.run_main(["--client", "codex"])
+        self.assertEqual([c[0] for c in fake.agent_calls()], ["codex", "codex"])
 
     def test_incomplete_card_warns_and_still_writes(self):
         self.card.write_text("F1_KAFKA_API_KEY=KKEY7\n")
         missing = setup_mcp.warn_on_empty_card_fields({"F1_KAFKA_API_KEY": "KKEY7"})
         self.assertIn("F1_KAFKA_BOOTSTRAP", missing)
 
-        self.run_main([])
+        self.run_main(["--client", "claude"])
         self.assertIn('KAFKA_API_KEY="KKEY7"', self.env_file())
 
 

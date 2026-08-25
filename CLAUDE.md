@@ -122,8 +122,7 @@ with raw VARCHAR and BYTES keys. Four things that are easy to get wrong:
 
 ## Flink Jobs (the labs)
 
-Jobs 1 & 2 are **not** pre-deployed — attendees write them in LAB 3 / LAB 4. The
-canonical SQL is in `docs/demo-reference/` and reproduced in the hosted attendee `docs/tracks/HOSTED-WORKSHOP.md`.
+Jobs 1 & 2 are **not** pre-deployed — attendees write them in LAB 3 / LAB 4. The executable SQL source of truth is `docs/demo-reference/`; it is reproduced in all three attendee walkthroughs: `HOSTED-WORKSHOP.md`, `SELF-SERVICE.md`, and `STANDALONE-DEMO.md`.
 
 | Job | SQL file | Input → Output |
 |-----|----------|----------------|
@@ -133,7 +132,7 @@ canonical SQL is in `docs/demo-reference/` and reproduced in the hosted attendee
 | 2b | `docs/demo-reference/streaming_agent_pit_decisions.sql` | `car_state` → `pit_decisions` |
 
 **Job 1 has two implementations, and only one of them works.** The default is the GA
-`ML_DETECT_ANOMALIES` (ARIMA), which flags lap 22 and only lap 22. The
+`ML_DETECT_ANOMALIES` (ARIMA), which flags lap 24 and only lap 24. The
 foundation-model `AI_DETECT_ANOMALIES` variant (`'model' VALUE 'ttm'`; `'flowstate'`,
 `'patchtstfm'`, and Google's `'timesfm-2.5'` are one-word swaps) is kept as an opt-in
 — `F1_ANOMALY_FN=ai` on any `--with-labs` path, or submit `enrichment_anomaly_ai.sql`
@@ -181,19 +180,25 @@ rowtime attribute and the join silently returns zero rows.
 telemetry producer writes a string message key; do not add a PK that would
 register an Avro int key schema.
 
-**Anomaly cadence and warmup:** canonical LAB 3 SQL uses a 30-second TUMBLE to
-match the workshop's 30-second laps. Preserve that equality: `car_state` feeds
+**Anomaly cadence and warmup:** canonical LAB 3 SQL uses a 20-second TUMBLE to
+match the workshop's 20-second laps. Preserve that equality: `car_state` feeds
 `AI_RUN_AGENT` directly, so a shorter window causes multiple paid agent calls per
 lap. Both anomaly variants emit rows immediately with a false/null-backed flag,
 then gain full context after 12 windows (about lap 13; `minTrainingSize`/
-`minContextSize` are both 12). The anomaly is injected at lap 22, comfortably past
+`minContextSize` are both 12). The anomaly is injected at lap 24, comfortably past
 that warmup. The simulator's lap-0 warmup laps do **not** prime that context because
 they carry telemetry but no `race_standings`; LAB 3's inner temporal join drops them
 before TUMBLE/OVER. Their only purpose is a producer/schema smoke test. A
-non-30-second `SECONDS_PER_LAP` override no longer preserves one-window-per-lap
+non-20-second `SECONDS_PER_LAP` override no longer preserves one-window-per-lap
 semantics and must be accompanied by a matching SQL-window change.
 `f1-race` therefore sets `PRE_RACE_WARMUP_LAPS=0` (`scripts/selfservice/race.py`,
 overridable via the env var); the ECS path keeps the default 4.
+
+**Scheduled-stop sequencing:** the race engine internally applies #88's scheduled
+lap-24 stop while advancing state. `datagen/simulator.py` deliberately publishes the
+pre-stop SOFT snapshot and anomaly for lap 24, then exposes the post-stop MEDIUM state
+at lap 25. Keep the Pit Wall mock on the same helper and preserve this order: it is what
+makes the anomaly trigger the stop rather than appear after it.
 
 **SR hard-delete after DROP TABLE:** dropping a Flink table leaves `<topic>-key`
 and `<topic>-value` subjects. `scripts/reset.py` deletes them with `--permanent`.
@@ -253,9 +258,7 @@ attendee passwords live are all in the **`wsa-provisioning`** skill
 
 ## File Sync Rule
 
-`docs/demo-reference/*.sql`, `docs/demo-reference/orchestrate_social_agent.md`, and the
-corresponding examples in the attendee `docs/tracks/HOSTED-WORKSHOP.md` must stay in sync. The organizer
-run-of-show links to the walkthrough and must not duplicate attendee SQL.
+`docs/demo-reference/*.sql` is the executable Flink SQL source of truth. Its `CREATE TABLE car_state`, `CREATE AGENT pit_strategy_agent`, `CREATE TABLE pit_decisions`, and optional `AI_FORECAST` statements must match the copy/paste SQL in all three attendee walkthroughs: `docs/tracks/HOSTED-WORKSHOP.md`, `docs/tracks/SELF-SERVICE.md`, and `docs/tracks/STANDALONE-DEMO.md`. When changing a statement, update the source file and every walkthrough copy in the same change, then compare the fenced SQL with the source before merging. `docs/demo-reference/orchestrate_social_agent.md` remains the source of truth for the non-SQL Lab 5 configuration. The organizer run-of-show links to the walkthrough and must not duplicate attendee SQL.
 
 The old split lab files remain in git history and aren't part of the sync set.
 Do not restore `labs/instructor-led/` or copy SQL into organizer docs. The default

@@ -39,8 +39,8 @@ replace or silently reconfigure the shared database.
 > The `shared_*` naming contract is stated in the root `CLAUDE.md` because it also
 > governs `wsa-spec-aws.yaml` and `scripts/workshop/wsa.py`, outside `terraform/`.
 
-`flink_max_cfu` (default 10), `seconds_per_lap` (default 30 → 30-minute race; must
-match the fixed 30s TUMBLE window in the LAB 3 SQL), `race_loop` (default true)
+`flink_max_cfu` (default 10), `seconds_per_lap` (default 20 → 20-minute race; must
+match the fixed 20s TUMBLE window in the LAB 3 SQL), `race_loop` (default true)
 tune cost/pacing.
 
 The Flink maximum is an autoscaling ceiling, not reserved capacity. Pools are

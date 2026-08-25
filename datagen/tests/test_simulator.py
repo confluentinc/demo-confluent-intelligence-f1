@@ -67,6 +67,38 @@ def test_event_time_is_epoch_millis():
     assert telemetry["event_time"] > 1_000_000_000_000
 
 
+def test_anomaly_lap_publishes_pre_stop_soft_state_then_mediums_next_lap():
+    """The lap-24 anomaly is evaluated before the scheduled stop is exposed."""
+    before_stop = {
+        "lap": 23,
+        "tire_compound": "SOFT",
+        "tire_age_laps": 23,
+        "pit_stops": 0,
+        "in_pit_lane": False,
+    }
+    after_stop = {
+        "lap": 24,
+        "tire_compound": "MEDIUM",
+        "tire_age_laps": 1,
+        "pit_stops": 1,
+        "in_pit_lane": False,
+    }
+
+    reported, post_pit = sim._source_state_for_lap(before_stop, after_stop, 24)
+
+    assert reported["lap"] == 24
+    assert reported["tire_compound"] == "SOFT"
+    assert reported["tire_age_laps"] == 24
+    assert reported["pit_stops"] == 0
+    assert post_pit is False
+
+    reported, post_pit = sim._source_state_for_lap(before_stop, after_stop, 25)
+    assert reported is after_stop
+    assert reported["tire_compound"] == "MEDIUM"
+    assert reported["pit_stops"] == 1
+    assert post_pit is True
+
+
 def test_produce_standings_emits_one_record_per_car_to_standings_topic():
     """All standings are produced to the race_standings topic with an event_time."""
     producer = MagicMock()
@@ -111,3 +143,30 @@ def test_standings_key_fn_handles_record_schema():
 
     payload = avro_serializer.call_args.args[0]
     assert payload == {"car_number": 44}
+
+
+def test_next_epoch_boundary_on_boundary_returns_itself():
+    """An exact multiple of seconds_per_lap is already a boundary."""
+    assert sim._next_epoch_boundary(1000.0, 20) == 1000.0
+
+
+def test_next_epoch_boundary_rounds_up_mid_window():
+    """A mid-window timestamp rounds up to the next boundary."""
+    assert sim._next_epoch_boundary(1003.2, 20) == 1020.0
+    assert sim._next_epoch_boundary(1019.999, 20) == 1020.0
+
+
+def test_lap_deadline_has_constant_spacing_with_no_drift():
+    """Consecutive lap deadlines are always exactly seconds_per_lap apart."""
+    race_start = 1000.0
+    spl = 20
+    for n in range(2, 61):
+        assert sim._lap_deadline(race_start, n, spl) - sim._lap_deadline(race_start, n - 1, spl) == 20
+
+
+def test_lap_deadline_first_and_last_lap():
+    """Lap 1 starts at race_start; lap 60 starts 59 laps later."""
+    race_start = 1000.0
+    spl = 20
+    assert sim._lap_deadline(race_start, 1, spl) == 1000.0
+    assert sim._lap_deadline(race_start, 60, spl) == 1000.0 + 59 * 20

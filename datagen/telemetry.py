@@ -1,4 +1,4 @@
-"""Generates realistic car telemetry metrics with a single anomaly at lap 22."""
+"""Generates realistic car telemetry metrics with a single anomaly at lap 24."""
 
 import random
 
@@ -14,7 +14,7 @@ TIRE_TEMP_GRADIENT_PER_LAP = {"fl": 0.42, "fr": 0.45, "rl": 0.39, "rr": 0.35}
 TIRE_PRESSURE_BASE = {"fl": 22.0, "fr": 22.0, "rl": 21.0, "rr": 21.0}
 TIRE_PRESSURE_DROP_PER_LAP = 0.05
 
-ANOMALY_LAP = 22
+ANOMALY_LAP = 24
 ANOMALY_TEMP = 145.0
 
 
@@ -38,7 +38,7 @@ def generate_telemetry(lap, tire_age, tire_compound, post_pit):
         gradient = TIRE_TEMP_GRADIENT_PER_LAP[pos]
         tire_temps[pos] = base + (gradient * tire_age) + _noise(1.0)
 
-    # ANOMALY: front-left tire temp spikes at lap 22 (only if pre-pit)
+    # ANOMALY: front-left tire temp spikes on the pre-stop lap 24.
     if lap == ANOMALY_LAP and not post_pit:
         tire_temps["fl"] = ANOMALY_TEMP + _noise(2.0)
 

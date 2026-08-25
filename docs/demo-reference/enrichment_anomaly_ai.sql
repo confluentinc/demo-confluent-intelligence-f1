@@ -10,7 +10,7 @@
 -- `forecast_value`, and `rmse` correctly. It does NOT populate `is_anomaly`,
 -- `upper_bound`, or `lower_bound` — all three stay NULL. The CASE at the bottom
 -- therefore can never be true, and NOTHING ERRORS: the statement runs, `car_state`
--- fills normally, and every row carries `anomaly_tire_temp_fl = false`. The lap-22
+-- fills normally, and every row carries `anomaly_tire_temp_fl = false`. The lap-24
 -- anomaly is therefore never flagged by this variant.
 -- This is the optional foundation-model version of LAB 3. It retains the same
 -- car_state schema as the default implementation, making it suitable for
@@ -21,7 +21,7 @@
 -- the social feed cannot tell which one produced it (only whether it ever fires).
 --
 -- Input: car_telemetry (stream), race_standings (versioned table)
--- Output: car_state (one record per 30-second race lap)
+-- Output: car_state (one record per 20-second race lap)
 --
 -- Design notes (learned from live debugging — keep!):
 --
@@ -42,9 +42,9 @@
 --    `minContextSize`/`maxContextSize` here, and because `ttm` is a pretrained
 --    foundation model there is no per-partition training phase at all:
 --    `minContextSize` is an emission gate, not a training size. Held at 12 so the
---    per-lap sampling stays consistent and the gate clears well before the lap-22
+--    per-lap sampling stays consistent and the gate clears well before the lap-24
 --    anomaly — measured at the old size 20, `forecast_value` started populating at
---    about row 21; at 12 it clears around row 13 (roughly 6-7 minutes at 30s/lap).
+--    about row 21; at 12 it clears around row 13 (roughly 4-5 minutes at 20s/lap).
 --    `maxContextSize=50` keeps the ARIMA version's *rolling* 50-window context: at
 --    60 windows per race, a larger value would condition the model on the cool
 --    early laps, dragging the forecast below a monotonic 0.42°C/lap gradient.
@@ -52,7 +52,7 @@
 --    UNVERIFIED here — it cannot be tuned while the bounds it controls are NULL.
 --
 -- 4. The CASE filter restricts anomalies to `actual_value > upper_bound`.
---    On the ARIMA version this is what suppresses the post-pit drop at lap 24
+--    On the ARIMA version this is what suppresses the post-pit drop after lap 24
 --    (145°C → 95°C), which is semantically a recovery, not a problem. Keep it when
 --    the bounds start populating — a foundation model emits that excursion too.
 --
@@ -102,7 +102,7 @@ windowed AS (
     MAX(tire_compound) AS tire_compound,
     MAX(tire_age_laps) AS tire_age_laps
   FROM TABLE(
-    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '30' SECOND)
+    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
   )
   GROUP BY window_start, window_end, window_time, car_number
 ),

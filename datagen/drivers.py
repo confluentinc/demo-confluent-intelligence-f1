@@ -9,9 +9,9 @@ Top 8 cars are closely matched (0.00-0.18s). Midfield (P9-P14) is ~0.5-0.8s slow
 Back markers (P15-P22) are 1.0-1.5s slower. This creates natural tiers so that
 front-runners battle each other while the midfield stays separate.
 
-Pit laps are compressed for a 30-second-per-lap race so the hero arc lands early:
-#88 stays out latest (pit lap 24) while rivals pit laps 10-22, its softs hit the
-cliff, and the front-left tire anomaly fires at lap 22 while it is still pre-pit.
+Pit laps are compressed for a 20-second-per-lap race so the hero arc lands early:
+#88 stays out latest (scheduled pit lap 24) while rivals pit laps 10-22. Its softs
+hit the cliff, the front-left anomaly fires on the pre-stop lap, and it then stops.
 """
 
 GRID = [

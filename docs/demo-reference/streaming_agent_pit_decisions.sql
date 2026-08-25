@@ -20,7 +20,7 @@
 -- DEPLOYMENT ORDER: Run CREATE AGENT first (streaming_agent_create_agent.sql),
 -- then start the race simulator, then run this CREATE TABLE.
 -- Uses earliest-offset so it processes all race laps. car_state emits one row
--- per 30-second race lap, so the agent is called once per lap.
+-- per 20-second race lap, so the agent is called once per lap.
 
 CREATE TABLE `pit_decisions`
 WITH ('changelog.mode' = 'append')
@@ -34,7 +34,8 @@ SELECT
   cs.anomaly_tire_temp_fl,
   CASE
     WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
-    WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 26 THEN 'PIT SOON'
+    WHEN cs.pit_stops > 0 THEN 'STAY OUT'
+    WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 21 THEN 'PIT SOON'
     ELSE 'STAY OUT'
   END AS suggestion,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Condition Summary:\*{0,2}\s*([^\n]+)', 1)) AS condition_summary,
@@ -53,7 +54,8 @@ LATERAL TABLE(AI_RUN_AGENT(
     'REQUIRED SUGGESTION — copy exactly: ',
     CASE
       WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
-      WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 26 THEN 'PIT SOON'
+      WHEN cs.pit_stops > 0 THEN 'STAY OUT'
+      WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 21 THEN 'PIT SOON'
       ELSE 'STAY OUT'
     END, '\n',
     '\nTIRE DATA:\n',

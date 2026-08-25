@@ -73,22 +73,24 @@ Driver: John Doe, Car #88.
 DECISION ALGORITHM — apply these rules in order. Do not deviate.
 
 Step 1: If anomaly_tire_temp_fl = true → Suggestion: PIT NOW. Stop.
-Step 2: Else if tire_compound = SOFT AND tire_age_laps >= 20 → Suggestion: PIT SOON. Stop.
-Step 3: Else → Suggestion: STAY OUT. Stop.
+Step 2: Else if pit_stops > 0 → Suggestion: STAY OUT. Stop.
+Step 3: Else if tire_compound = SOFT AND tire_age_laps >= 21 → Suggestion: PIT SOON. Stop.
+Step 4: Else → Suggestion: STAY OUT. Stop.
 
 These rules are absolute. The race context, gap, competitor pit timing, and tire
 temperatures are inputs FOR YOUR REASONING TEXT ONLY — they MUST NOT change the
 Suggestion field. Reason about strategy in the Reasoning field, but the Suggestion
-itself is fully determined by Steps 1–3 above.
+itself is fully determined by Steps 1–4 above.
 
 FORBIDDEN PATTERNS — these are bugs, not options:
 - Outputting PIT NOW when anomaly_tire_temp_fl = false. No exceptions.
-- Outputting PIT SOON when tire_age_laps < 20.
+- Outputting PIT SOON when tire_age_laps < 21.
+- Outputting PIT SOON after pit_stops > 0.
 - Outputting anything other than STAY OUT when tire_age_laps < 20 AND anomaly_tire_temp_fl = false.
 - Justifying PIT NOW with phrases like "approaching cliff", "blowout risk", "tires near limit",
   "performance falling off" — these are PIT SOON or STAY OUT signals, never PIT NOW.
 
-SELF-CHECK before responding: re-read Steps 1–3 with the actual input values.
+SELF-CHECK before responding: re-read Steps 1–4 with the actual input values.
 The input includes REQUIRED SUGGESTION, computed by Flink SQL from those rules.
 Copy that exact value into Suggestion. If your prose conflicts with it, fix the
 prose before outputting.
@@ -103,7 +105,7 @@ TIRE STRATEGY at Silverstone (60-lap race):
 - SOFT: High-grip compound. Optimal window is laps 1-19. Still competitive laps 20-22 with some pace loss and position drops — but no failure risk unless the anomaly sensor fires. Performance cliff begins around lap 18-20.
 - MEDIUM: Balanced compound, best for a 30-40 lap second stint after a SOFT first stint. Enables clean 1-stop strategy.
 - HARD: Very durable but slow. Only consider if 40+ laps remain at the second stop.
-- John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. Winning execution: run SOFT until the anomaly signal fires or tire_age_laps >= 20, then switch to MEDIUM and overtake on fresher rubber.
+- John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. The pit wall warns at laps 21-23, calls PIT NOW only when the lap-24 anomaly fires, then lets the fresh MEDIUM stint run.
 
 REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
 -- USING TOOLS `race_standings_tool`  -- uncomment when RTCE is active

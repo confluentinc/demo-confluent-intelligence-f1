@@ -14,10 +14,12 @@ the shipped rule drifts.
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from scripts.workshop.sql_shell import (
+    FlinkSession,
     is_durable,
     is_terminator,
     run_file,
@@ -83,6 +85,50 @@ def test_is_durable(sql: str, durable: bool) -> None:
 )
 def test_is_terminator(line: str, terminates: bool) -> None:
     assert is_terminator(line) is terminates
+
+
+# --- FlinkSession.submit: request shape ------------------------------------
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict, status_code: int = 200) -> None:
+        self.status_code = status_code
+        self._payload = payload
+        self.text = str(payload)
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def test_submit_posts_the_scalar_compute_pool_id_field() -> None:
+    """The Statements API ignores a nested `compute_pool: {"id": ...}` and only
+    honors the scalar `compute_pool_id` field — regression guard for that shape."""
+    creds = {
+        "F1_FLINK_REST_ENDPOINT": "https://flink.example",
+        "F1_ORGANIZATION_ID": "org-1",
+        "F1_ENVIRONMENT_ID": "env-1",
+        "F1_COMPUTE_POOL_ID": "lfcp-1",
+        "F1_CATALOG": "my-env",
+        "F1_DATABASE": "my-cluster",
+        "F1_FLINK_API_KEY": "FK",
+        "F1_FLINK_API_SECRET": "FS",
+    }
+    session = FlinkSession(creds)
+    captured = {}
+
+    def fake_post(url, json=None, auth=None, timeout=None):
+        captured["url"] = url
+        captured["body"] = json
+        captured["auth"] = auth
+        return _FakeResponse({"name": "f1sql-1", "status": {"phase": "PENDING"}})
+
+    with patch("scripts.workshop.sql_shell.requests.post", side_effect=fake_post):
+        name = session.submit("SELECT 1")
+
+    assert name
+    body = captured["body"]
+    assert body["spec"]["compute_pool_id"] == "lfcp-1"
+    assert "compute_pool" not in body["spec"]
 
 
 # --- splitting a multi-statement file -------------------------------------
