@@ -416,7 +416,7 @@ def _build_labs_and_restart(tf: dict, root) -> bool:
         print("  built, but car_state may be missing the laps produced before they started.")
         print("  `uv run reset --with-labs` gives a clean start.")
 
-    print("\n2. Building lab objects from demo-reference/ (car_state -> agent -> pit_decisions)...")
+    print("\n2. Building lab objects from docs/demo-reference/ (car_state -> agent -> pit_decisions)...")
     if not create_lab_objects(tf, root):
         print("\nLab build FAILED — see the error above. The environment is up and the")
         print("simulator is stopped; fix the SQL problem, then `uv run reset --with-labs`.")
@@ -443,7 +443,7 @@ def main():
         action="store_true",
         default=False,
         help=(
-            "Also build the LAB 3 / LAB 4 Flink objects from demo-reference/ and restart "
+            "Also build the LAB 3 / LAB 4 Flink objects from docs/demo-reference/ and restart "
             "the race behind them — a ready-to-demo environment in one command. Omit to "
             "get a bare environment (what the workshop hands attendees)."
         ),

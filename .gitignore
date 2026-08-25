@@ -54,6 +54,7 @@ Thumbs.db
 .claude/*
 !.claude/skills/
 !.claude/skills/**
+.claude/skills/.DS_Store
 CLAUDE.md
 claude-*
 
@@ -183,7 +184,7 @@ api-key-*.txt
 /RTCE-CURRENT-TOPICS.postman_collection.json
 # Local validation notes can include internal product behavior and live-run
 # observations. Keep them available to organizers without publishing them.
-/docs/technical-discoveries.md
+/docs/maintainers/LOCAL-VALIDATION.md
 /docs/QR Code - Elevate Demo Accounts.png
 
 # Internal recording script and early-access launch notes.

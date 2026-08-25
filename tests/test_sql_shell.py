@@ -25,7 +25,7 @@ from scripts.workshop.sql_shell import (
     strip_leading_comments,
 )
 
-REFERENCE_DIR = Path(__file__).resolve().parents[1] / "demo-reference"
+REFERENCE_DIR = Path(__file__).resolve().parents[1] / "docs" / "demo-reference"
 REFERENCE_SQL = sorted(REFERENCE_DIR.glob("*.sql"))
 TEMPORARY_REFERENCE_SQL = {"granite_tire_forecast.sql"}
 DURABLE_REFERENCE_SQL = [path for path in REFERENCE_SQL if path.name not in TEMPORARY_REFERENCE_SQL]
@@ -228,7 +228,7 @@ def test_run_file_reports_a_file_with_no_sql(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("path", REFERENCE_SQL, ids=lambda p: p.name)
 def test_run_file_submits_reference_sql_verbatim(path: Path) -> None:
-    """What `--file demo-reference/x.sql` sends must match what the lab guides
+    """What `--file docs/demo-reference/x.sql` sends must match what the lab guides
     show, minus the trailing ';' — the same normalization create_lab_objects does."""
     session = _FakeSession()
 

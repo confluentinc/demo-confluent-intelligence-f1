@@ -1,4 +1,4 @@
-"""Static contracts for the retained video-only RTCE UPSERT demo."""
+"""Static contracts for the retained RTCE UPSERT recording demo."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-REFERENCE = ROOT / "demo-reference"
-SETUP = (REFERENCE / "rtce_upsert_verification_setup.sql").read_text()
-FEED = (REFERENCE / "rtce_upsert_verification_feed.sql").read_text()
-RUNBOOK = (REFERENCE / "rtce_upsert_verification.md").read_text()
+DEMO = ROOT / "docs" / "demos" / "rtce-upsert"
+SETUP = (DEMO / "setup.sql").read_text()
+FEED = (DEMO / "feed.sql").read_text()
+RUNBOOK = (DEMO / "README.md").read_text()
 
 STANDINGS_FIELDS = (
     "car_number",
@@ -68,11 +68,11 @@ def test_feed_applies_one_hour_state_ttl_to_the_aggregation_input() -> None:
 
 
 def test_demo_has_no_destructive_or_delete_policy_fixture() -> None:
-    names = {path.name for path in REFERENCE.glob("rtce_upsert_verification*")}
+    names = {path.name for path in DEMO.iterdir()}
     assert names == {
-        "rtce_upsert_verification.md",
-        "rtce_upsert_verification_feed.sql",
-        "rtce_upsert_verification_setup.sql",
+        "README.md",
+        "feed.sql",
+        "setup.sql",
     }
     combined = SETUP + FEED + RUNBOOK
     assert "kafka.cleanup-policy' = 'delete" not in combined

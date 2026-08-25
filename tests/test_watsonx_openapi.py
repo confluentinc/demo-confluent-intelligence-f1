@@ -2,8 +2,7 @@ import json
 from pathlib import Path
 from urllib.parse import urlparse
 
-
-SPEC_PATH = Path(__file__).parents[1] / "f1-race-feed-openapi.json"
+SPEC_PATH = Path(__file__).parents[1] / "docs" / "assets" / "orchestrate" / "f1-race-feed-openapi.json"
 
 
 def load_spec() -> dict:

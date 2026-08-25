@@ -3,11 +3,11 @@
   "info": {
     "title": "F1 Race Feed",
     "version": "1.0.0",
-    "description": "Read-only live race data for the River Racing social-media agent."
+    "description": "Live race data for the read-only River Racing social-media agent."
   },
   "servers": [
     {
-      "url": "https://small-underpass-refinery.ngrok-free.dev"
+      "url": "https://REPLACE-WITH-YOUR-PUBLIC-URL.example.com"
     }
   ],
   "paths": {

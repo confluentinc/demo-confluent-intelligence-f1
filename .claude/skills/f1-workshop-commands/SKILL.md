@@ -69,7 +69,7 @@ RTCE_API_KEY=... RTCE_API_SECRET=... uv run f1-social-feed-rtce --probe --creds 
 # Standalone demo: single environment (smoke test / presenter) — shared then attendee
 uv run deploy                  # prompts → credentials.env → terraform/aws-shared → terraform/aws
 uv run deploy --automated      # same, no prompts (reads credentials.env)
-uv run deploy --with-labs      # also build LAB 3 + LAB 4 from demo-reference/ and restart the
+uv run deploy --with-labs      # also build LAB 3 + LAB 4 from docs/demo-reference/ and restart the
                                #   race behind them — ready to demo. Omit for a bare environment
                                #   (what the workshop hands attendees).
                                # Prefix is derived from $USER (+ track suffix) and pinned in
@@ -86,7 +86,7 @@ uv run destroy                 # pick which local deployment(s) to tear down, co
 # Self-service (solo): Confluent-only, NO AWS infra (no Postgres/CDC/ECS/ECR/Docker)
 uv run selfservice up          # apply terraform/self-service → credential card → seed driver_race_history
 uv run selfservice up --automated   # no prompts (reads credentials.env)
-uv run selfservice up --with-labs   # also prebuild LAB 3 + LAB 4 from demo-reference/
+uv run selfservice up --with-labs   # also prebuild LAB 3 + LAB 4 from docs/demo-reference/
 uv run selfservice down        # tear down terraform/self-service (--yes to skip the prompt)
 uv run f1-race                 # local simulator (ECS stand-in); --once, --seconds-per-lap N, --20
                                #   Pacing: flag > runs/<track>/deployment.env > 20. Minimum 10s/lap.
@@ -122,7 +122,7 @@ uv run reset                   # blank slate for a new race: drops lab objects (
                                #   running (unless --with-labs needs it stopped).
                                #   --track standalone|selfservice — required only when both
                                #   tracks have Terraform state in this checkout.
-uv run reset --with-labs       # same, then REBUILDS the lab objects from demo-reference/
+uv run reset --with-labs       # same, then REBUILDS the lab objects from docs/demo-reference/
                                #   and restarts this deployment's race — one command to a
                                #   ready-to-demo environment. Standalone/solo demos only:
                                #   plain `reset` leaves the labs dropped because building

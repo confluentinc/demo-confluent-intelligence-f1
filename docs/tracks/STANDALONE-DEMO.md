@@ -17,7 +17,7 @@ Race simulator (ECS Fargate, always on)
                                              │
 Shared Postgres ─ CDC ─ driver_race_history  │
                                              │
-                          LAB B  10s window + temporal join
+                          LAB B  30s window + temporal join
                                  ML_DETECT_ANOMALIES  →  car_state
                                              │
                           LAB C  CREATE AGENT + AI_RUN_AGENT
@@ -100,7 +100,7 @@ anomaly never fires.
 uv run deploy --with-labs
 ```
 
-Same deploy, plus the three lab objects from `demo-reference/` submitted for you and the
+Same deploy, plus the three lab objects from `docs/demo-reference/` submitted for you and the
 race restarted behind them (in that order — see §7 for why). §4 and §5 then become
 verification steps rather than build steps. Omit the flag to get exactly what a workshop
 attendee gets: a bare environment where building `car_state` and `pit_decisions` *is* the
@@ -228,12 +228,12 @@ runs `ML_DETECT_ANOMALIES` on the front-left tire temperature.
 > **Deployed with `--with-labs`?** This statement is already running — skip the submit
 > below and go straight to **Verify**. `SHOW TABLES;` will list `car_state` already.
 
-The canonical SQL is [`demo-reference/enrichment_anomaly.sql`](../../demo-reference/enrichment_anomaly.sql).
+The canonical SQL is [`docs/demo-reference/enrichment_anomaly.sql`](../demo-reference/enrichment_anomaly.sql).
 Submit it whole, without copy-pasting — from a **separate terminal** (not inside the
 shell):
 
 ```bash
-uv run f1-sql --file demo-reference/enrichment_anomaly.sql
+uv run f1-sql --file docs/demo-reference/enrichment_anomaly.sql
 ```
 
 Expected output: `RUNNING  (statement left running)` plus the statement name.
@@ -274,10 +274,10 @@ Around **lap 22**, `anomaly_tire_temp_fl` flips to `true` and `tire_temp_fl_c` s
 > they do, then jump to **What to expect**.
 
 Two statements. First create the agent (its full prompt lives in
-[`demo-reference/streaming_agent_create_agent.sql`](../../demo-reference/streaming_agent_create_agent.sql)):
+[`docs/demo-reference/streaming_agent_create_agent.sql`](../demo-reference/streaming_agent_create_agent.sql)):
 
 ```bash
-uv run f1-sql --file demo-reference/streaming_agent_create_agent.sql
+uv run f1-sql --file docs/demo-reference/streaming_agent_create_agent.sql
 ```
 
 The prompt pins the agent to a strict decision algorithm:
@@ -296,10 +296,10 @@ SHOW AGENTS;
 ```
 
 Then run the agent over `car_state`
-([`demo-reference/streaming_agent_pit_decisions.sql`](../../demo-reference/streaming_agent_pit_decisions.sql)):
+([`docs/demo-reference/streaming_agent_pit_decisions.sql`](../demo-reference/streaming_agent_pit_decisions.sql)):
 
 ```bash
-uv run f1-sql --file demo-reference/streaming_agent_pit_decisions.sql
+uv run f1-sql --file docs/demo-reference/streaming_agent_pit_decisions.sql
 ```
 
 This formats each `car_state` row into a prompt, calls `AI_RUN_AGENT`, and parses the
@@ -403,7 +403,7 @@ uv run reset --with-labs
 
 It stops the simulator, drops `car_state` / `pit_decisions` / the agent along with their
 topics and Schema Registry subjects, clears the race data out of `car_telemetry`,
-rebuilds all three lab objects from `demo-reference/`, and starts a fresh race from lap
+rebuilds all three lab objects from `docs/demo-reference/`, and starts a fresh race from lap
 0. When it prints `Environment is ready`, everything in this walkthrough exists and is
 running.
 
@@ -488,7 +488,7 @@ posts from the live feed, reading it through an OpenAPI tool. You can reproduce 
 side solo; the agent side still needs an Orchestrate account.
 
 Two interchangeable backends serve the identical `/race-feed/{prefix}` surface,
-so Orchestrate uses the same root `f1-race-feed-openapi.json` file either way:
+so Orchestrate uses the same `docs/assets/orchestrate/f1-race-feed-openapi.json` file either way:
 
 ```bash
 # A. Straight from Kafka (no extra Confluent features needed)
@@ -510,12 +510,13 @@ easier to debug than a failed tool import. RTCE has to be available on your org;
 probe fails, use backend A, which needs nothing beyond the topics you already have.
 
 Orchestrate has to reach the API over the internet, so expose port 8080 with a
-tunnel (`ngrok`, Cloudflare Tunnel), set that HTTPS URL in `servers[0].url` in
-`f1-race-feed-openapi.json`, and upload the JSON file. It can't consume RTCE's MCP endpoint directly — it supports only
+tunnel (`ngrok`, Cloudflare Tunnel), then edit `docs/assets/orchestrate/f1-race-feed-openapi.json`
+(ships with a placeholder `servers[0].url`) to point at that HTTPS URL, and
+upload the JSON file. It can't consume RTCE's MCP endpoint directly — it supports only
 *local* MCP servers, which is the whole reason this REST shim exists. Agent
 configuration (persona, prompts, tool wiring):
-[`demo-reference/orchestrate_social_agent.md`](../../demo-reference/orchestrate_social_agent.md)
-and [Lab 5 in the walkthrough](../../README.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
+[`docs/demo-reference/orchestrate_social_agent.md`](../demo-reference/orchestrate_social_agent.md)
+and [Lab 5 in the hosted workshop walkthrough](./HOSTED-WORKSHOP.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
 
 ---
 

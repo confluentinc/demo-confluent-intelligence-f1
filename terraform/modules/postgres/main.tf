@@ -67,7 +67,7 @@ resource "aws_instance" "postgres" {
   # Seed SQL is injected as gzip+base64 (EC2 user_data has a 16KB limit;
   # the 198-row driver_race_history seed exceeds that uncompressed).
   user_data = templatefile("${path.module}/user_data.sh", {
-    driver_race_history_seed_b64 = base64gzip(file("${path.module}/../../../data/driver_race_history_seed.sql"))
+    driver_race_history_seed_b64 = base64gzip(file("${path.module}/../../../datagen/data/driver_race_history_seed.sql"))
     max_replication_slots        = var.max_replication_slots
     postgres_password            = random_password.postgres.result
   })

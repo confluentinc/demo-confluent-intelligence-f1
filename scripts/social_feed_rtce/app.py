@@ -130,8 +130,8 @@ async def _probe(client: RTCEClient) -> None:
         print("\nlistTopics →")
         for block in getattr(topics, "content", None) or []:
             print(" ", getattr(block, "text", block))
-        rows = await client.query("race_standings")
-        print(f"\nqueryData race_standings → {len(rows)} row(s)")
+        rows = await client.query("car_telemetry", '"CAR_NUMBER" = 88', max_rows=3)
+        print(f"\nqueryData car_telemetry → {len(rows)} row(s)")
         print(json.dumps(rows[:3], indent=2, default=str))
     except Exception as e:
         causes = "\n".join(f"  - {c}" for c in _root_causes(e))

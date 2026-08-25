@@ -24,7 +24,7 @@ Every `uv run` command in this repo — organizer provisioning, credential cards
 race control, reset, standalone deploy, self-service, pitwall, social feed,
 setup-mcp, tests and lint — is in the **`f1-workshop-commands`** skill
 (`.claude/skills/f1-workshop-commands/SKILL.md`). Load it before running or
-explaining any of them. The checked-in references are `README.md` (the attendee
+explaining any of them. The checked-in references are `docs/tracks/HOSTED-WORKSHOP.md` (the hosted attendee
 walkthrough), `docs/organizer/RUN-OF-SHOW.md` (presenter cues),
 `docs/organizer/WORKSHOP-GUIDE.md` (organizer lifecycle), and the
 `[project.scripts]` table in `pyproject.toml` (every entry point).
@@ -41,7 +41,7 @@ Race Simulator (ECS Fargate service, one per attendee, RACE_LOOP=true)
 Shared Postgres → CDC Debezium (per-attendee slot) → driver_race_history
                                                          │
                               LAB 3 — Flink SQL (attendee-written)
-                              10s tumbling window + temporal join
+                              30s tumbling window + temporal join
                               ML_DETECT_ANOMALIES(tire_temp_fl_c) → car_state
                                                          │
                               LAB 4 — Flink SQL (attendee-written)
@@ -84,7 +84,7 @@ tier of its shared inputs, and it also governs `wsa-spec-aws.yaml` and
 | `car_telemetry` | AVRO, no PRIMARY KEY, string message key. **RTCE-enabled** |
 | `race_standings` | AVRO, PRIMARY KEY(car_number), upsert — produced directly by the simulator. Not RTCE-enabled: this org/region rejects compacted-topic queries with `MT_UPSERT_NOT_SUPPORTED`. |
 | `driver_race_history` | 198 historical rows, from the per-attendee CDC connector |
-| `car_state` | LAB 3 output, one record per 10s window. RTCE is the attendee's optional Console toggle (LAB 3 Step 4) |
+| `car_state` | LAB 3 output, one record per 30s lap window. RTCE is the attendee's optional Console toggle (LAB 3 Step 4) |
 | `pit_decisions` | LAB 4 output — agent decisions |
 
 The first three are created by Terraform (Flink CREATE TABLE, except
@@ -123,14 +123,14 @@ with raw VARCHAR and BYTES keys. Four things that are easy to get wrong:
 ## Flink Jobs (the labs)
 
 Jobs 1 & 2 are **not** pre-deployed — attendees write them in LAB 3 / LAB 4. The
-canonical SQL is in `demo-reference/` and reproduced in the attendee `README.md`.
+canonical SQL is in `docs/demo-reference/` and reproduced in the hosted attendee `docs/tracks/HOSTED-WORKSHOP.md`.
 
 | Job | SQL file | Input → Output |
 |-----|----------|----------------|
-| 1 | `demo-reference/enrichment_anomaly.sql` | `car_telemetry` + `race_standings` → `car_state` |
-| 1 (opt-in) | `demo-reference/enrichment_anomaly_ai.sql` | same, Granite `AI_DETECT_ANOMALIES` instead of ARIMA |
-| 2a | `demo-reference/streaming_agent_create_agent.sql` | creates `pit_strategy_agent` |
-| 2b | `demo-reference/streaming_agent_pit_decisions.sql` | `car_state` → `pit_decisions` |
+| 1 | `docs/demo-reference/enrichment_anomaly.sql` | `car_telemetry` + `race_standings` → `car_state` |
+| 1 (opt-in) | `docs/demo-reference/enrichment_anomaly_ai.sql` | same, Granite `AI_DETECT_ANOMALIES` instead of ARIMA |
+| 2a | `docs/demo-reference/streaming_agent_create_agent.sql` | creates `pit_strategy_agent` |
+| 2b | `docs/demo-reference/streaming_agent_pit_decisions.sql` | `car_state` → `pit_decisions` |
 
 **Job 1 has two implementations, and only one of them works.** The default is the GA
 `ML_DETECT_ANOMALIES` (ARIMA), which flags lap 22 and only lap 22. The
@@ -141,18 +141,18 @@ directly — but on the build measured 2026-07-31 it **runs without error and ne
 flags anything**: `is_anomaly`, `upper_bound`, and `lower_bound` all stay NULL, so the
 `CASE` can never be true and `car_state` carries `anomaly_tire_temp_fl = false` for the
 whole race. It forecasts fine (`actual_value`/`forecast_value`/`rmse` populate). Do not
-make it the default again without re-running the probe in
-`docs/technical-discoveries.md` item 13b. Both emit the identical `car_state` schema, so
+make it the default again without repeating the validation described in
+`docs/maintainers/TECHNICAL-NOTES.md`. Both emit the identical `car_state` schema, so
 LAB 4/5, the pit wall, and the social feed cannot tell them apart. **Their config keys
 differ:** `minTrainingSize`/`maxTrainingSize` vs `minContextSize`/`maxContextSize`, and
-`enableStl` exists only on `ML_` — see `docs/technical-discoveries.md` item 13.
+`enableStl` exists only on `ML_`; see `docs/maintainers/TECHNICAL-NOTES.md`.
 
 `llm_textgen_model` / `llm_embedding_model` are pre-deployed per environment by
 `terraform/aws`.
 
 **LAB 5 is not Flink** — it's a no-code IBM watsonx Orchestrate agent that reads
 the live feed via an OpenAPI tool served by `scripts/social_feed/` (`f1-social-feed`).
-Canonical agent config: `demo-reference/orchestrate_social_agent.md`. Lab order is
+Canonical agent config: `docs/demo-reference/orchestrate_social_agent.md`. Lab order is
 now LAB 1–4 (Flink/SQL) → LAB 5 (Orchestrate) → LAB 6 (wrap-up).
 
 The OpenAPI tool has **two interchangeable backends** behind the identical
@@ -210,10 +210,10 @@ laps already in `car_state`.
 inline hint. `race_standings` does **not** — it starts from `latest`. That asymmetry is
 why LAB 3 must be RUNNING before the simulator starts producing: standings rows written
 beforehand are never seen, those laps have no version for the temporal join, and
-`car_state` silently loses its first laps. Reading only the `demo-reference/*.sql` files
+`car_state` silently loses its first laps. Reading only the `docs/demo-reference/*.sql` files
 will mislead you here; check the CREATE TABLE options too.
 
-Full technical discoveries: `docs/technical-discoveries.md`.
+Current implementation notes: `docs/maintainers/TECHNICAL-NOTES.md`.
 
 ---
 
@@ -253,15 +253,15 @@ attendee passwords live are all in the **`wsa-provisioning`** skill
 
 ## File Sync Rule
 
-`demo-reference/*.sql`, `demo-reference/orchestrate_social_agent.md`, and the
-corresponding examples in the attendee `README.md` must stay in sync. The organizer
+`docs/demo-reference/*.sql`, `docs/demo-reference/orchestrate_social_agent.md`, and the
+corresponding examples in the attendee `docs/tracks/HOSTED-WORKSHOP.md` must stay in sync. The organizer
 run-of-show links to the walkthrough and must not duplicate attendee SQL.
 
-The split lab files under `docs/deprecated/` are historical references, not part
-of the sync set. Do not restore `labs/instructor-led/` or copy SQL into organizer
-docs. The default ARIMA `ML_DETECT_ANOMALIES` and optional 20-step Granite
-`AI_FORECAST` examples each have a checked-in source under `demo-reference/`
-and an attendee copy in the `README.md`. The experimental Granite
+The old split lab files remain in git history and aren't part of the sync set.
+Do not restore `labs/instructor-led/` or copy SQL into organizer docs. The default
+ARIMA `ML_DETECT_ANOMALIES` and optional 20-step Granite
+`AI_FORECAST` examples each have a checked-in source under `docs/demo-reference/`
+and an attendee copy in `docs/tracks/HOSTED-WORKSHOP.md`. The experimental Granite
 `AI_DETECT_ANOMALIES` query is maintainer-only and must not be added to the
 attendee walkthrough.
 
@@ -276,7 +276,7 @@ attendee walkthrough.
 | `scripts/race_control.py` | `uv run race status\|start\|stop\|restart` — scoped to THIS deployment's one ECS service |
 | `scripts/setup_mcp.py` | `uv run setup-mcp` — register `@confluentinc/mcp-confluent` with Claude Code (project-local) or Codex (user-global) from a credential card |
 | `scripts/common/deployment_meta.py` | Track definitions, derived prefixes, `runs/<track>/deployment.env`, pacing validation, `retire_track` |
-| `scripts/common/simulator_control.py` | Shared `--with-labs` machinery: submits the `demo-reference/` SQL and waits for RUNNING/COMPLETED; owns the `F1_ANOMALY_FN` ARIMA/Granite switch (`anomaly_sql_filename`) |
+| `scripts/common/simulator_control.py` | Shared `--with-labs` machinery: submits the `docs/demo-reference/` SQL and waits for RUNNING/COMPLETED; owns the `F1_ANOMALY_FN` ARIMA/Granite switch (`anomaly_sql_filename`) |
 | `scripts/workshop/create.py` | `create-workshop` — one-command workshop provisioning: preflight, secrets, validate, build, cards, next-steps |
 | `scripts/workshop/teardown.py` | `teardown-workshop` — one-command teardown: secrets, confirm, clean, card cleanup |
 | `scripts/workshop/reset.py` | `workshop reset-races` — fleet-level reset: stop all feeds, fan out per-card reset, leave feeds stopped |
@@ -289,8 +289,8 @@ attendee walkthrough.
 | `terraform/modules/environment/main.tf` | The environment, plus the `grant_console_access`-gated `confluent_user` lookup + EnvironmentAdmin binding that makes an attendee login useful |
 | `scripts/workshop/onboard.py` | `f1-onboard` — self-serve: wsa claim-email values → local `credentials.env` |
 | `scripts/workshop/validate.py` | `workshop validate` — API-key health checks against one or many cards |
-| `demo-reference/enrichment_anomaly_ai.sql` | LAB 3's Granite/`AI_DETECT_ANOMALIES` variant — `F1_ANOMALY_FN=ai`. EAP-gated, and currently never flags an anomaly (docs/technical-discoveries.md 13b) |
-| `demo-reference/orchestrate_social_agent.md` | Canonical LAB 5 Orchestrate agent config (persona, tool, prompts) |
+| `docs/demo-reference/enrichment_anomaly_ai.sql` | LAB 3's Granite/`AI_DETECT_ANOMALIES` variant — `F1_ANOMALY_FN=ai`. EAP-gated, and currently never flags an anomaly; see `docs/maintainers/TECHNICAL-NOTES.md`. |
+| `docs/demo-reference/orchestrate_social_agent.md` | Canonical LAB 5 Orchestrate agent config (persona, tool, prompts) |
 
 ---
 

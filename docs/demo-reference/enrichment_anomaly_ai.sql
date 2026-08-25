@@ -3,7 +3,7 @@
 -- OPT-IN, NOT THE DEFAULT. The canonical LAB 3 path is `enrichment_anomaly.sql`
 -- (GA `ML_DETECT_ANOMALIES`, ARIMA). Select this one with:
 --   F1_ANOMALY_FN=ai uv run reset --with-labs
---   uv run f1-sql --file demo-reference/enrichment_anomaly_ai.sql
+--   uv run f1-sql --file docs/demo-reference/enrichment_anomaly_ai.sql
 --
 -- KNOWN LIMITATION — READ BEFORE DEMOING THIS FILE. On the build measured here,
 -- `AI_DETECT_ANOMALIES` resolves, is accepted, and populates `actual_value`,

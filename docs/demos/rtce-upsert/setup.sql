@@ -1,4 +1,4 @@
--- Create the retained RTCE serving table once in the f1wp050 video environment.
+-- Create the retained RTCE serving table once in the f1wp050 recording environment.
 -- Never drop and recreate this topic under the same name: RTCE can retain stale
 -- data-provider state for that lifecycle.
 CREATE TABLE IF NOT EXISTS `race_standings_rtce` (

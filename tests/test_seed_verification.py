@@ -111,7 +111,7 @@ class SeedTestCase(unittest.TestCase):
 
 class ExpectedRowsTests(unittest.TestCase):
     def test_expected_count_comes_from_the_generator(self):
-        """198 is asserted against data/, not hardcoded twice."""
+        """198 is asserted against datagen/data/, not hardcoded twice."""
         self.assertEqual(seed.expected_rows(), 198)
 
 

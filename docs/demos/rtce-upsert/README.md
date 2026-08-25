@@ -1,4 +1,4 @@
-# Video-only RTCE UPSERT demo
+# RTCE UPSERT recording demo
 
 This is the reusable recording runbook for the existing `f1wp050` deployment.
 It is deliberately separate from workshop provisioning, attendee materials,
@@ -31,11 +31,11 @@ Create the raw-key, compacted serving table:
 
 ```bash
 uv run f1-sql --creds runs/f7zxf/credentials/f1wp050.env \
-  --file demo-reference/rtce_upsert_verification_setup.sql
+  --file docs/demos/rtce-upsert/setup.sql
 ```
 
 Before submitting the continuous feed, paste the contents of
-`demo-reference/rtce_upsert_verification_feed.sql` after `EXPLAIN` in the Flink
+`docs/demos/rtce-upsert/feed.sql` after `EXPLAIN` in the Flink
 SQL workspace. The plan is acceptable only when it reports:
 
 - derived upsert key `[key]` and sink primary key `[key]`;
@@ -53,7 +53,7 @@ Submit the unchanged feed only after the plan passes:
 
 ```bash
 uv run f1-sql --creds runs/f7zxf/credentials/f1wp050.env \
-  --file demo-reference/rtce_upsert_verification_feed.sql
+  --file docs/demos/rtce-upsert/feed.sql
 ```
 
 Save the printed Flink statement name; that is the only statement stopped after

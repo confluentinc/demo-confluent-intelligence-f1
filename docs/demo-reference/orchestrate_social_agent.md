@@ -1,7 +1,7 @@
 # Reference — River Racing Social-Media Agent (IBM watsonx Orchestrate)
 
 Canonical configuration for the **LAB 5** no-code agent. Keep this in sync with
-the attendee `README.md` (see the File Sync Rule
+the attendee `docs/tracks/HOSTED-WORKSHOP.md` (see the File Sync Rule
 in `CLAUDE.md`). Nothing here is Flink SQL — the agent is built entirely in the
 watsonx Orchestrate **Agent Builder** UI and reads live race data from the
 `f1-social-feed` service via an OpenAPI tool.
@@ -13,7 +13,7 @@ watsonx Orchestrate **Agent Builder** UI and reads live race data from the
 The shared `f1-social-feed` service exposes one read-only endpoint. Agent Builder
 imports the repository's upload-ready OpenAPI 3.0 file:
 
-- Spec file: [`f1-race-feed-openapi.json`](../f1-race-feed-openapi.json)
+- Spec file: [`f1-race-feed-openapi.json`](../assets/orchestrate/f1-race-feed-openapi.json)
 - Operation: `GET /race-feed/{prefix}` → `operation_id: get_race_feed`
 - Path parameter: `prefix` — the attendee's own prefix (e.g. `f1wp001`)
 
@@ -25,7 +25,10 @@ imports the repository's upload-ready OpenAPI 3.0 file:
 >
 > 1. Host one instance: `uv run f1-social-feed --creds-glob 'runs/*/credentials/*.env'` (binds `:8080`).
 > 2. Expose it at a public HTTPS URL — a tunnel (`ngrok http 8080`, `cloudflared`) for a quick session, or a load balancer / reverse proxy for a durable one.
-> 3. Set `servers[0].url` in `f1-race-feed-openapi.json` to that public HTTPS URL.
+> 3. `docs/assets/orchestrate/f1-race-feed-openapi.json` ships with a placeholder `servers[0].url`
+>    (`https://REPLACE-WITH-YOUR-PUBLIC-URL.example.com`) — edit it in place to
+>    your own public HTTPS URL from step 2. Do not commit your real URL back;
+>    it's a per-run value.
 > 4. Share the updated JSON file with attendees.
 >
 > The file contains no attendee credentials. Its server URL is deliberately

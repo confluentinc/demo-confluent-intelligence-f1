@@ -222,7 +222,7 @@ def create_lab_objects(tf: dict, root: Path) -> bool:
         if filename == ANOMALY_SQL:
             filename = anomaly_sql_filename()
 
-        path = root / "demo-reference" / filename
+        path = root / "docs" / "demo-reference" / filename
         if not path.exists():
             print(f"  {creates}: missing {path}")
             return False

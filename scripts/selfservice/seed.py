@@ -3,7 +3,7 @@
 The multi-attendee path (``terraform/aws``) feeds ``driver_race_history`` through
 a Postgres CDC connector. Self-service has no Postgres, so we render the same 198
 historical rows — from the single source of truth in
-``data/generate_driver_race_history.py`` (``build_all_rows``) — as one bounded
+``datagen/data/generate_driver_race_history.py`` (``build_all_rows``) — as one bounded
 Flink ``INSERT`` and run it through the environment's own Flink SQL session
 (reusing ``FlinkSession`` from the ``f1-sql`` shell).
 
@@ -51,8 +51,8 @@ COUNT_MAX_ROWS = 2000
 
 
 def _load_rows() -> list[dict]:
-    """Import ``build_all_rows`` from data/ (not a package) by file path."""
-    path = get_project_root() / "data" / "generate_driver_race_history.py"
+    """Import ``build_all_rows`` from datagen/data/ (not a package) by file path."""
+    path = get_project_root() / "datagen" / "data" / "generate_driver_race_history.py"
     spec = importlib.util.spec_from_file_location("generate_driver_race_history", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
