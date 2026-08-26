@@ -9,26 +9,29 @@
 -- 1. RTCE Connection — for later when RTCE is fully enabled.
 --    Competitor context is currently provided via a direct JOIN with race_standings
 --    (see CREATE TABLE pit_decisions below). Uncomment once your RTCE endpoint is active.
+--    RTCE is only enabled on car_telemetry, not the compacted race_standings topic
+--    (MT_UPSERT_NOT_SUPPORTED) — see docs/maintainers/TECHNICAL-NOTES.md.
 --
 -- CREATE CONNECTION `rtce-connection`
 -- WITH (
 --   'type' = 'MCP_SERVER',
 --   'endpoint' = '<YOUR_RTCE_ENDPOINT>',
---   'transport-type' = 'STREAMABLE_HTTP'
+--   'transport-type' = 'STREAMABLE_HTTP',
+--   'username' = '<YOUR_RTCE_API_KEY>',
+--   'password' = '<YOUR_RTCE_API_SECRET>'
 -- );
 
 -- 2. RTCE Tool — for later when RTCE is fully enabled.
---    Uncomment once rtce-connection is active, then add USING TOOLS `race_standings_tool`
+--    Uncomment once rtce-connection is active, then add USING TOOLS `car_telemetry_tool`
 --    to the CREATE AGENT below and replace the competitor standings JOIN with tool calls.
 --
--- CREATE TOOL `race_standings_tool`
+-- CREATE TOOL `car_telemetry_tool`
 -- USING CONNECTION `rtce-connection`
 -- WITH (
 --   'type' = 'mcp',
---   'description' = 'Look up current race standings for any car by car_number. Returns
---                    position, gap to leader, gap to car ahead, pit stops, tire compound,
---                    and tire age laps. Use to assess undercut/overcut opportunities and
---                    check whether competitors have already pitted.'
+--   'description' = 'Query live sensor telemetry for car #88: tire temps and pressures,
+--                    engine and brake temps, battery, fuel, DRS, speed, throttle, brake.
+--                    Many rows per lap. Use for car condition and tire wear context.'
 -- );
 
 -- 3. Pit Strategy Agent
@@ -108,5 +111,5 @@ TIRE STRATEGY at Silverstone (60-lap race):
 - John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. The pit wall warns at laps 21-23, calls PIT NOW only when the lap-24 anomaly fires, then lets the fresh MEDIUM stint run.
 
 REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
--- USING TOOLS `race_standings_tool`  -- uncomment when RTCE is active
+-- USING TOOLS `car_telemetry_tool`  -- uncomment when RTCE is active
 WITH ('max_iterations' = '10');

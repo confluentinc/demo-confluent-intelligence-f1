@@ -319,7 +319,9 @@ def up(args: argparse.Namespace) -> None:
     # Credential card (reuse the workshop generator so the card format matches).
     creds_dir = root / "runs" / RUN_NAME / "credentials"
     creds_dir.mkdir(parents=True, exist_ok=True)
-    fields = creds_mod._card_fields(cfg["prefix"], cfg["owner_email"], out, social_feed_url="", region=REGION)
+    fields = creds_mod._card_fields(
+        cfg["prefix"], cfg["owner_email"], out, social_feed_url="", region=REGION, rtce_keys=True
+    )
     creds_mod._write_env(creds_dir, fields)
     creds_mod._write_md(creds_dir, fields)
     card_path = creds_dir / f"{cfg['prefix']}.env"
@@ -357,9 +359,12 @@ def up(args: argparse.Namespace) -> None:
     print("     uv run f1-sql")
     print("3. Open the live dashboard:")
     print("     uv run f1-pitwall")
+    if fields.get("rtce_api_key"):
+        print("4. (optional) Connect an AI agent to the live feed via RTCE:")
+        print("     uv run setup-rtce")
     if not (args.with_labs and labs_ok):
         print("\nContinue in docs/tracks/SELF-SERVICE.md at section 5.")
-    print("Optional LAB 5 (watsonx Orchestrate) is also covered in that walkthrough.")
+    print("Optional LAB 5 (watsonx Orchestrate) and LAB 6 (RTCE) are also covered in that walkthrough.")
     print("\nTear down when finished:  uv run selfservice down")
 
     if not (seeded and labs_ok):

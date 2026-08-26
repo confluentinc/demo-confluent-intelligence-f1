@@ -8,20 +8,15 @@
 
 ## Before you start
 
-You need a Confluent Cloud account that can create an environment, Kafka cluster, Flink compute pool, API keys, connections, and models. You also need AWS credentials that can call Bedrock in `us-east-1` - your instructor will likely provide these. Lab 5 needs IBM watsonx Orchestrate access and a public race-feed URL.
+You need a [Confluent Cloud account](https://confluent.cloud/signup), as well as AWS Bedrock API keys in `us-east-1` region - your instructor will likely provide these.
 
-This walkthrough supports macOS. Install the command-line tools, then check that the shell can find them:
+`brew install` the prerequisites:
 
 ```bash
 brew install git uv
 brew tap hashicorp/tap
 brew install hashicorp/tap/terraform
 brew install --cask confluent-cli
-
-git --version
-uv --version
-terraform version
-confluent version
 ```
 
 ## 1. Clone, install, and provision
@@ -29,8 +24,6 @@ confluent version
 ```bash
 git clone https://github.com/confluentinc/demo-confluent-intelligence-f1.git
 cd demo-confluent-intelligence-f1
-uv venv
-uv sync
 ```
 
 If the workshop owner did not provide a Confluent Cloud API key and secret, sign in first:
@@ -47,18 +40,9 @@ uv run selfservice up
 
 The command asks for your Confluent credentials, email, a resource prefix, and AWS Bedrock credentials. It writes an ignored credential card under `runs/selfservice/credentials/` and seeds 198 historical race rows.
 
-Open the SQL workspace in the Confluent Cloud Console. Select `RIVER-RACING-<your-prefix>-ENV` as the catalog and `RIVER-RACING-<your-prefix>-CLUSTER` as the database. Confirm the setup:
+Open the [SQL workspace](https://confluent.cloud/workspaces/) in the Confluent Cloud Console. Select `RIVER-RACING-<your-prefix>-ENV` as the catalog and `RIVER-RACING-<your-prefix>-CLUSTER` as the database. Confirm the setup:
 
-```sql
-SHOW TABLES;
-SELECT COUNT(*) FROM driver_race_history;
-SHOW MODELS;
-SHOW CONNECTIONS;
-```
-
-The history count should reach 198.
-
-## 2. Create `car_state`, then start the race
+## 2. Create `car_state` with `ML_DETECT_ANOMALIES`, then start the race
 
 Paste this statement into one SQL cell and run it. Wait for it to show **Running**.
 
@@ -146,13 +130,22 @@ Now start the local race in its own terminal:
 uv run f1-race
 ```
 
-Leave it running. `f1-race` phase-locks to the next 20-second epoch boundary, so it may wait up to 20 seconds before emitting lap 1, aligning its cadence with the `car_state` window. `car_state` emits one row per 20-second window. After 12 windows it has enough history to detect the lap-24 front-left tire anomaly.
+Leave it running. `car_state` emits one row per 20-second window. After 12 windows it has enough history to detect temperature anomalies of the left front tire.
+
+In a **second terminal**, open the Pit Wall dashboard:
+
+```bash
+uv run f1-pitwall
+```
+
+A browser opens at http://localhost:8000 with the Silverstone track map, the live leaderboard, and car #88's tyre/fuel gauges. The **ANOMALY DETECTION** and **AI PIT STRATEGIST** panels stay locked until `car_state` and `pit_decisions` exist:
+
+![Pit Wall dashboard showing a nominal front-left tire temperature](../assets/self-service/pitwall-nominal.png)
 
 Verify the stream in a new SQL cell:
 
 ```sql
-SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
-       anomaly_tire_temp_fl, tire_temp_fl_c
+SELECT car_number, lap, `position`, tire_compound, tire_age_laps, anomaly_tire_temp_fl, tire_temp_fl_c
 FROM `car_state`;
 ```
 
@@ -286,7 +279,7 @@ TIRE STRATEGY at Silverstone (60-lap race):
 - John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. The pit wall warns at laps 21-23, calls PIT NOW only when the lap-24 anomaly fires, then lets the fresh MEDIUM stint run.
 
 REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
--- USING TOOLS `race_standings_tool`  -- uncomment when RTCE is active
+-- USING TOOLS `car_telemetry_tool`  -- uncomment when RTCE is active
 WITH ('max_iterations' = '10');
 ```
 
@@ -370,6 +363,8 @@ SELECT lap, `position`, suggestion, condition_summary, reasoning
 FROM `pit_decisions`;
 ```
 
+![Flink SQL workspace showing pit_decisions results progressing from PIT SOON to PIT NOW](../assets/self-service/pit-decisions-query.png)
+
 ```sql
 SELECT lap, `position`, tire_compound_current, tire_age_laps,
        anomaly_tire_temp_fl, suggestion,
@@ -378,7 +373,15 @@ FROM `pit_decisions`
 WHERE anomaly_tire_temp_fl = true;
 ```
 
-At lap 24, the result should include the only `PIT NOW`, for the front-left tire anomaly. Laps 21–23 show `PIT SOON`; lap 25 returns to `STAY OUT` on fresh MEDIUMs. The Pit Wall unlocks its anomaly and AI strategist panels as the tables begin producing.
+![Flink SQL workspace showing the lap 24 PIT NOW row with the agent's full reasoning](../assets/self-service/pit-decisions-anomaly-query.png)
+
+> [!NOTE]
+>
+> At lap 24, the result should include the only `PIT NOW`, for the front-left tire anomaly. Laps 21–23 show `PIT SOON`; lap 25 returns to `STAY OUT` on fresh MEDIUMs. The Pit Wall unlocks its anomaly and AI strategist panels as the tables begin producing:
+>
+> ![Pit Wall dashboard showing the lap 24 anomaly and unlocked AI Pit Strategist panel](../assets/self-service/pitwall-anomaly.png)
+
+
 
 ## 5A. (optional) Connect race feed to WatsonX Orchestrate
 
@@ -389,6 +392,31 @@ uv run f1-social-feed --creds runs/selfservice/credentials/<prefix>.env
 ```
 
 Expose port 8080 through an approved HTTPS tunnel, set `servers[0].url` in `docs/assets/orchestrate/f1-race-feed-openapi.json` to that public URL, and follow [Lab 5 in the hosted walkthrough](./HOSTED-WORKSHOP.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
+
+## 6. (optional) Expose `car_telemetry` to AI agents with Real-Time Context Engine
+
+Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP-compatible AI agent can query the live stream directly — no consumer group, no Kafka client code. `uv run selfservice up` already enabled it on `car_telemetry` for you (Terraform's `enable_rtce`, default `true`) and minted an RTCE API key onto your credential card — there's nothing to toggle.
+
+Point your coding agent at it in one command:
+
+```bash
+uv run setup-rtce
+```
+
+This registers RTCE as an MCP server with Claude Code (or prints a config snippet for Codex CLI), using the `F1_RTCE_MCP_ENDPOINT`/`F1_RTCE_API_KEY`/`F1_RTCE_API_SECRET` fields already on your card. Then just ask, in plain English: *"What are car 88's front-left tire temperatures over the last few laps?"*
+
+If you'd rather confirm the toggle yourself, it's under your environment's cluster, **Topics** — `car_telemetry` shows Real-Time Context Engine already **On**:
+
+![Topics list with the Real-Time Context Engine column](../assets/self-service/rtce-topics-list.png)
+![Turn on Real-Time Context Engine confirmation dialog](../assets/self-service/rtce-confirm-dialog.png)
+
+The panel shows the enablement details — environment, cluster, cloud, and region — that an MCP client needs to reach it:
+
+![Real-Time Context Engine enabled for car_telemetry](../assets/self-service/rtce-enabled.png)
+
+> [!NOTE]
+>
+> Only `car_telemetry` is queryable through RTCE in this workshop. You can also toggle it on for `race_standings`, but queries against it fail with `MT_UPSERT_NOT_SUPPORTED` — RTCE doesn't yet support the compacted, upsert-keyed topic.
 
 ## Run the workshop again or tear it down
 
