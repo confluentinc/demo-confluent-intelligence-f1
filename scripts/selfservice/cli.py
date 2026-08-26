@@ -55,11 +55,18 @@ REQUIRED = {
 # recorded here so the two agree across re-runs and so `f1-race` needs no flag.
 DEFAULT_SECONDS_PER_LAP = "20"
 
+# Self-service is one person / one checkout / one deployment at a time, and the
+# prefix is only a Confluent Cloud display label + local file-naming
+# convenience (see deployment_meta.py's resolve_prefix precedence for the real
+# isolation guarantees), so there's no need to derive or prompt for one — fix
+# it and skip the question.
+DEFAULT_PREFIX = "DEMO"
+
 _PREFIX_SOURCES = {
     "state": "already deployed — cannot be changed without tearing down first",
     "saved": f"reused from runs/{RUN_NAME}/deployment.env",
     "explicit": "from the exported TF_VAR_prefix",
-    "derived": "derived from your identity, stable across re-runs",
+    "derived": f"the default self-service prefix ({DEFAULT_PREFIX!r})",
 }
 
 
@@ -126,6 +133,11 @@ def _resolve_prefix(root, owner_email: str, explicit: str | None) -> tuple[str, 
     if error:
         print(f"\nError: {error}")
         sys.exit(1)
+    # Nothing deployed or saved yet and no explicit override: self-service has
+    # no per-user identity requirement, so use the fixed default rather than
+    # deriving one from $USER/email and asking the operator to confirm it.
+    if source == "derived":
+        prefix = DEFAULT_PREFIX
     # Live state wins over saved metadata, but say so rather than silently
     # correcting: metadata that disagrees with state means an interrupted run or a
     # hand-edited file, and the operator should know which name is authoritative.
@@ -220,22 +232,14 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
         "aws_session_token": "",
     }
 
-    # Suggested, not imposed. The old default was credentials.env's TF_VAR_prefix
-    # falling back to the literal `solo`, so everyone who accepted it deployed
-    # under the same name — and after a `uv run deploy` it silently inherited
-    # standalone's prefix instead.
-    suggested, source = _resolve_prefix(root, cfg["owner_email"], _explicit_prefix())
-    print(f"  (prefix {suggested!r} — {_PREFIX_SOURCES[source]})")
-    while True:
-        prefix = prompt_with_default(f"Environment prefix (alphanumeric, max {meta.MAX_PREFIX_LEN})", suggested)
-        problem = meta.validate_prefix(prefix)
-        if not problem:
-            break
-        print(f"  {problem}")
-    # An answered prompt is explicit, so re-resolve: refuse a value that
-    # contradicts live state rather than orphaning the deployed resources.
-    resolved, _source = _resolve_prefix(root, cfg["owner_email"], prefix)
+    # Not prompted: self-service pins a fixed prefix (see DEFAULT_PREFIX) unless
+    # a deployment already exists, one was saved from a prior run, or the
+    # operator exported TF_VAR_prefix — `_resolve_prefix` still honors all of
+    # those ahead of the default so a rerun never silently renames a live
+    # deployment.
+    resolved, source = _resolve_prefix(root, cfg["owner_email"], _explicit_prefix())
     cfg["prefix"] = _validated_prefix_or_exit(resolved)
+    print(f"  Prefix: {cfg['prefix']}  ({_PREFIX_SOURCES[source]})")
     cfg["seconds_per_lap"] = _seconds_per_lap(root, creds)
 
     if cfg["aws_bedrock_key"].startswith("ASIA"):

@@ -342,7 +342,7 @@ def _rtce_command(f: dict[str, str]) -> str:
         return ""
     token = base64.b64encode(f"{f['rtce_api_key']}:{f['rtce_api_secret']}".encode()).decode()
     return (
-        f"claude mcp add --transport http rtce {f['rtce_mcp_endpoint']} "
+        f"claude mcp add --transport http real-time-context-engine {f['rtce_mcp_endpoint']} "
         f'--header "Authorization: Basic {token}"'
     )
 

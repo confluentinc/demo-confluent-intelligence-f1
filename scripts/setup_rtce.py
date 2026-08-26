@@ -16,12 +16,17 @@ exist when the card was minted with RTCE keys (`selfservice up`, or
 Claude Code: registered live via `claude mcp add --transport http`, the same
 command `scripts/workshop/creds.py::_rtce_command` already puts on the printed
 card — this script just runs it instead of asking you to paste it. Safe to
-rerun (remove-then-add, one entry: "rtce").
+rerun (remove-then-add, one entry: "real-time-context-engine").
 
 Codex CLI: no confirmed flag sets an arbitrary Basic-auth header (its `mcp add
 --url` only takes `--bearer-token-env-var`, and RTCE requires Basic, not
-Bearer), so this script prints a `~/.codex/config.toml` snippet to paste by
-hand rather than risk corrupting your existing config with an unverified edit.
+Bearer), so there's no `codex` CLI invocation that can express this — unlike
+Claude Code above, or `setup-mcp`'s Codex path, which registers a local stdio
+server and never needs a header at all. This script instead edits
+`~/.codex/config.toml` directly with `tomlkit`, which preserves the rest of
+the file (comments, other tables, formatting) on round-trip. If the existing
+file can't be parsed, it falls back to printing the snippet instead of
+guessing.
 """
 
 from __future__ import annotations
@@ -31,11 +36,14 @@ import base64
 import shlex
 import subprocess
 import sys
+from pathlib import Path
+
+import tomlkit
 
 from scripts.common.credentials import load_card
 from scripts.common.terraform import get_project_root
 
-_SERVER_NAME = "rtce"
+_SERVER_NAME = "real-time-context-engine"
 
 _EXPECTED_CARD_KEYS = ("F1_RTCE_MCP_ENDPOINT", "F1_RTCE_API_KEY", "F1_RTCE_API_SECRET")
 
@@ -109,10 +117,53 @@ def print_codex_instructions(endpoint: str, token: str) -> None:
     print(codex_config_snippet(endpoint, token))
 
 
+def _codex_config_path() -> Path:
+    return Path.home() / ".codex" / "config.toml"
+
+
+def write_codex_config(endpoint: str, token: str, config_path: Path, dry_run: bool = False) -> bool:
+    """Merge an `[mcp_servers.rtce]` table into `config_path`, in place.
+
+    Preserves everything else already in the file. Safe to rerun (replaces any
+    existing `rtce` table). Falls back to printing the manual snippet if the
+    existing file can't be parsed as TOML, rather than risk corrupting it.
+    """
+    if dry_run:
+        print(f"[dry-run] Codex CLI — would merge into {config_path}:\n")
+        print(codex_config_snippet(endpoint, token))
+        return True
+
+    try:
+        existing_text = config_path.read_text() if config_path.exists() else ""
+        doc = tomlkit.parse(existing_text) if existing_text else tomlkit.document()
+
+        mcp_servers = doc.get("mcp_servers")
+        if mcp_servers is None:
+            mcp_servers = tomlkit.table()
+            doc["mcp_servers"] = mcp_servers
+
+        rtce = tomlkit.table()
+        rtce["url"] = endpoint
+        http_headers = tomlkit.inline_table()
+        http_headers["Authorization"] = f"Basic {token}"
+        rtce["http_headers"] = http_headers
+        mcp_servers[_SERVER_NAME] = rtce
+
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(tomlkit.dumps(doc))
+    except Exception as exc:
+        print(f"Error: couldn't auto-edit {config_path} ({exc}) — add this by hand:\n")
+        print(codex_config_snippet(endpoint, token))
+        return True
+
+    print(f"Registered '{_SERVER_NAME}' in {config_path}")
+    return True
+
+
 def _prompt_for_clients() -> list[str]:
     print("Which coding agent(s) should RTCE be registered with?")
     print("  1) Claude Code")
-    print("  2) Codex CLI (prints a config snippet — no automatic edit)")
+    print("  2) Codex CLI")
     print("  3) Both")
     try:
         choice = input("Choice [1]: ").strip()
@@ -185,8 +236,7 @@ def main() -> None:
         if client == "claude":
             results.append(register_claude(endpoint, token, dry_run=args.dry_run))
         else:
-            print_codex_instructions(endpoint, token)
-            results.append(True)
+            results.append(write_codex_config(endpoint, token, _codex_config_path(), dry_run=args.dry_run))
 
     if not all(results):
         sys.exit(1)

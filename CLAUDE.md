@@ -194,6 +194,13 @@ semantics and must be accompanied by a matching SQL-window change.
 `f1-race` therefore sets `PRE_RACE_WARMUP_LAPS=0` (`scripts/selfservice/race.py`,
 overridable via the env var); the ECS path keeps the default 4.
 
+**Lap-1 phase-lock:** the simulator phase-locks lap 1 to the next 20-second
+wall-clock epoch boundary before emitting anything, then schedules every later lap
+from an absolute deadline (`race_start + (lap-1)*20s`) instead of accumulating
+per-lap sleeps. This keeps exactly one source lap per Flink 20-second `TUMBLE`
+window with no cumulative drift, but means `f1-race` can wait up to one full lap
+interval (~20s) before lap 1 appears.
+
 **Scheduled-stop sequencing:** the race engine internally applies #88's scheduled
 lap-24 stop while advancing state. `datagen/simulator.py` deliberately publishes the
 pre-stop SOFT snapshot and anomaly for lap 24, then exposes the post-stop MEDIUM state

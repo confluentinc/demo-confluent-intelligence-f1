@@ -328,7 +328,7 @@ Enablement takes a few seconds; the description is what an AI agent reads to pic
 **3. Connect your MCP client.** Copy the **MCP Setup Command** from your **credential claim email** (or credential card) and run it in a terminal:
 
 ```bash
-claude mcp add --transport http rtce <YOUR_MCP_ENDPOINT> \
+claude mcp add --transport http real-time-context-engine <YOUR_MCP_ENDPOINT> \
   --header "Authorization: Basic <YOUR_TOKEN>"
 ```
 

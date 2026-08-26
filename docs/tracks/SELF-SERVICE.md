@@ -40,9 +40,9 @@ Finally, provision the environment with the following command:
 uv run selfservice up
 ```
 
-The command asks for your Confluent credentials, email, a resource prefix, and AWS Bedrock credentials. It writes an ignored credential card under `runs/selfservice/credentials/` and seeds 198 historical race rows.
+The command asks for your Confluent credentials, email, and AWS Bedrock credentials. It writes an ignored credential card under `runs/selfservice/credentials/` and seeds 198 historical race rows.
 
-Open the [SQL workspace](https://confluent.cloud/workspaces/) in the Confluent Cloud Console. Select `RIVER-RACING-<your-prefix>-ENV` as the catalog and `RIVER-RACING-<your-prefix>-CLUSTER` as the database. Confirm the setup:
+Open the [SQL workspace](https://confluent.cloud/workspaces/) in the Confluent Cloud Console. Select `RIVER-RACING-DEMO-ENV` as the catalog and `RIVER-RACING-DEMO-CLUSTER` as the database. Confirm the setup:
 
 ## 2. Create `car_state` with `ML_DETECT_ANOMALIES`, then start the race
 
@@ -390,7 +390,7 @@ WHERE anomaly_tire_temp_fl = true;
 To run the local race-feed service for watsonx Orchestrate:
 
 ```bash
-uv run f1-social-feed --creds runs/selfservice/credentials/<prefix>.env
+uv run f1-social-feed --creds runs/selfservice/credentials/DEMO.env
 ```
 
 Expose port 8080 through an approved HTTPS tunnel, set `servers[0].url` in `docs/assets/orchestrate/f1-race-feed-openapi.json` to that public URL, and follow [Lab 5 in the hosted walkthrough](./HOSTED-WORKSHOP.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
