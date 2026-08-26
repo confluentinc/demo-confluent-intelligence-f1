@@ -8,7 +8,9 @@
 
 ## Before you start
 
-You need a [Confluent Cloud account](https://confluent.cloud/signup), as well as AWS Bedrock API keys in `us-east-1` region - your instructor will likely provide these.
+You need a [Confluent Cloud account](https://confluent.cloud/signup), as well as AWS Bedrock API keys in `us-east-1` region - **your instructor will likely provide these.** If not, you can easily create them yourself with `uv run api-keys create` if you are logged into the AWS CLI.
+
+## 1. Clone, install, and provision
 
 `brew install` the prerequisites:
 
@@ -19,20 +21,20 @@ brew install hashicorp/tap/terraform
 brew install --cask confluent-cli
 ```
 
-## 1. Clone, install, and provision
+Then, clone the repo:
 
 ```bash
 git clone https://github.com/confluentinc/demo-confluent-intelligence-f1.git
 cd demo-confluent-intelligence-f1
 ```
 
-If the workshop owner did not provide a Confluent Cloud API key and secret, sign in first:
+Sign into Confluent Cloud:
 
 ```bash
 confluent login
 ```
 
-Then, provision the environment with the following command:
+Finally, provision the environment with the following command:
 
 ```bash
 uv run selfservice up
@@ -153,7 +155,7 @@ FROM `car_state`;
 
 Run this only after `car_state` produces rows. Stop the query after you inspect the result so Lab 4 can use the compute pool.
 
-This query uses IBM Granite **TinyTimeMixer** (`'model' VALUE 'ttm'`), a compact pre-trained time-series foundation model that forecasts straight from the stream — no `CREATE MODEL` or `CREATE CONNECTION` required. You can swap the `model` value to try other built-in foundation forecasters; Google's TimesFM 2.5 is the default. See [Forecast Data Trends](https://docs.confluent.io/cloud/current/ai/builtin-functions/forecast.html) in the Confluent Cloud documentation.
+This query uses IBM Granite **TinyTimeMixer** (`'model' VALUE 'ttm'`), a compact pre-trained time-series foundation model. You can swap the `model` value to try other built-in foundation forecasters; Google's TimesFM 2.5 is the default. See [Forecast Data Trends](https://docs.confluent.io/cloud/current/ai/builtin-functions/forecast.html) in the Confluent Cloud documentation.
 
 ```sql
 WITH windowed AS (
@@ -378,8 +380,8 @@ WHERE anomaly_tire_temp_fl = true;
 > [!NOTE]
 >
 > At lap 24, the result should include the only `PIT NOW`, for the front-left tire anomaly. Laps 21–23 show `PIT SOON`; lap 25 returns to `STAY OUT` on fresh MEDIUMs. The Pit Wall unlocks its anomaly and AI strategist panels as the tables begin producing:
->
-> ![Pit Wall dashboard showing the lap 24 anomaly and unlocked AI Pit Strategist panel](../assets/self-service/pitwall-anomaly.png)
+
+![Pit Wall dashboard showing the lap 24 anomaly and unlocked AI Pit Strategist panel](../assets/self-service/pitwall-anomaly.png)
 
 
 
@@ -395,7 +397,7 @@ Expose port 8080 through an approved HTTPS tunnel, set `servers[0].url` in `docs
 
 ## 6. (optional) Expose `car_telemetry` to AI agents with Real-Time Context Engine
 
-Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP-compatible AI agent can query the live stream directly — no consumer group, no Kafka client code. `uv run selfservice up` already enabled it on `car_telemetry` for you (Terraform's `enable_rtce`, default `true`) and minted an RTCE API key onto your credential card — there's nothing to toggle.
+Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP-compatible AI agent can query the topic. `uv run selfservice up` already enabled it on `car_telemetry` for you (Terraform's `enable_rtce`, default `true`) and minted an RTCE API key onto your credential card — there's nothing to toggle.
 
 Point your coding agent at it in one command:
 
@@ -408,15 +410,15 @@ This registers RTCE as an MCP server with Claude Code (or prints a config snippe
 If you'd rather confirm the toggle yourself, it's under your environment's cluster, **Topics** — `car_telemetry` shows Real-Time Context Engine already **On**:
 
 ![Topics list with the Real-Time Context Engine column](../assets/self-service/rtce-topics-list.png)
-![Turn on Real-Time Context Engine confirmation dialog](../assets/self-service/rtce-confirm-dialog.png)
 
 The panel shows the enablement details — environment, cluster, cloud, and region — that an MCP client needs to reach it:
 
 ![Real-Time Context Engine enabled for car_telemetry](../assets/self-service/rtce-enabled.png)
 
-> [!NOTE]
->
-> Only `car_telemetry` is queryable through RTCE in this workshop. You can also toggle it on for `race_standings`, but queries against it fail with `MT_UPSERT_NOT_SUPPORTED` — RTCE doesn't yet support the compacted, upsert-keyed topic.
+Once Real-Time Context Engine is enabled on `car_telemetry`, and you've run `uv run setup-rtce` to connect Claude or Codex, you can ask your LLM questions like:
+
+- *At what lap in the race does the engine temperature peak?*
+- *What is the front right tire temperature at lap 30?*
 
 ## Run the workshop again or tear it down
 
@@ -426,16 +428,14 @@ Stop `f1-race` with Ctrl-C when you finish. Use reset only when you intend to er
 uv run reset
 ```
 
-After reset, recreate `car_state`, wait for it to show **Running**, then start `uv run f1-race` again. Tear down resources when the session ends:
+After reset, recreate `car_state`, wait for it to show **Running**, then start `uv run f1-race` again.
+
+When you're ready to tear down all resources associated with the lab, run:
 
 ```bash
 uv run selfservice down
 ```
 
-## Troubleshooting
+---
 
-**`car_state` stays empty.** Confirm the Lab 3 statement was running before `f1-race` started. The first row appears after the 20-second window closes.
-
-**Bedrock calls fail.** Check that the AWS credentials in `credentials.env` can invoke Bedrock in `us-east-1`; temporary credentials also need a current session token.
-
-**Provisioning reports an existing name.** Run `uv run selfservice down`, confirm it succeeds, then provision again.
+**← Back to Overview**: [Main README](../../README.md)

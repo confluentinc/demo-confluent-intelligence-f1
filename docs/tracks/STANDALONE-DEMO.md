@@ -2,13 +2,9 @@
 
 ![F1 Pit Wall Confluent Intelligence architecture](../assets/architecture.png)
 
-One person, one Confluent Cloud environment, real AWS infrastructure, deployed with
-`uv run deploy`. This is the whole path: provision, run the labs, tear down.
-
-Everything here is copy-paste. Paths and IDs are pulled from Terraform outputs, so
-there is nothing to look up or substitute.
-
-The race simulator writes live telemetry and standings to Kafka. In the labs, Flink SQL creates `car_state`, then a Streaming Agent writes `pit_decisions`.
+> [!NOTE]
+>
+> **Deploying your own single-environment demo with Terraform, outside a workshop?** You're in the right place. **Did your instructor give you a workshop login?** Use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md) instead. **Provisioning your own environment without Terraform, via `uv run selfservice up`?** Use the [self-service workshop walkthrough](./SELF-SERVICE.md) instead.
 
 ---
 
@@ -801,3 +797,7 @@ Bedrock keys and that `bedrock:InvokeModel` is permitted in `us-east-1`.
 
 **`SHOW MODELS;` returns nothing.** You're connected to the wrong environment. The shell
 prints its card on startup — quit (`\q`) and relaunch with `--creds <the right card>`.
+
+---
+
+**← Back to Overview**: [Main README](../../README.md)

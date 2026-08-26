@@ -91,6 +91,13 @@ resource "confluent_tag" "raw_data" {
   depends_on  = [module.topics]
 }
 
+# Confluent's Catalog API deletes tag bindings asynchronously; deleting the tag
+# immediately after can still 409 because the binding removal hasn't propagated.
+resource "time_sleep" "wait_for_tag_binding_removal" {
+  depends_on       = [confluent_tag.raw_data]
+  destroy_duration = "30s"
+}
+
 resource "confluent_tag_binding" "car_telemetry_raw_data" {
   schema_registry_cluster {
     id = module.cluster.schema_registry_id
@@ -104,6 +111,8 @@ resource "confluent_tag_binding" "car_telemetry_raw_data" {
   tag_name    = confluent_tag.raw_data.name
   entity_name = "${module.cluster.schema_registry_id}:${module.cluster.cluster_id}:car_telemetry"
   entity_type = "kafka_topic"
+
+  depends_on = [time_sleep.wait_for_tag_binding_removal]
 }
 
 # --- LLM connections + models (AWS Bedrock) ---

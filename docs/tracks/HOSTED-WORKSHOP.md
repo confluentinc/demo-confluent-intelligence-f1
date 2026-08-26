@@ -664,3 +664,7 @@ If the pre-provisioned environment fails, your instructor may switch you to the 
 > [!IMPORTANT]
 >
 > **Are you the speaker running this workshop?** Setup for provisioning every attendee's environment lives in the **[organizer guide](../organizer/README.md)**.
+
+---
+
+**← Back to Overview**: [Main README](../../README.md)
