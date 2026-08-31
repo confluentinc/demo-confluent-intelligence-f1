@@ -33,6 +33,11 @@ git clone git@github.com:confluentinc/workshop-setup-accelerator.git ../workshop
 make -C ../workshop-setup-accelerator build
 ```
 
+This repo requires WSA **≥ 0.3.0** (the spec sets `wsa_version: ">=0.3.0"` and WSA
+strict-decodes it). Confirm the built binary is current — `../workshop-setup-accelerator/bin/wsa --version`
+should report `0.3.0` or newer. If you already have an older checkout, `git pull`
+and rerun `make build`; a stale binary refuses the spec at load time.
+
 If the checkout lives elsewhere, set `WSA_HOME` to its root.
 
 ## 3. Workshop secrets
@@ -70,12 +75,20 @@ for i in $(seq 1 5); do
 done
 ```
 
-Generate and validate the ignored spec with that real pattern. This is the spec
-used to accept invitations and prevents WSA from reading the committed placeholder:
+Validate the spec with that real pattern. WSA 0.3.0 reads the attendee pattern from
+`WSA_EMAIL_PATTERN` (not the spec), so the wrapper exports it for you — nothing is
+written into a spec:
 
 ```bash
 uv run workshop spec-validate \
   --email-pattern 'organizer+f1wp{N}@example.com'
+```
+
+Export the same pattern for the raw `wsa` calls below, which don't go through the
+wrapper:
+
+```bash
+export WSA_EMAIL_PATTERN='organizer+f1wp{N}@example.com'
 ```
 
 Use the same pattern when `create-workshop` prompts for it. Resource prefixes are
@@ -89,13 +102,14 @@ the invitations. Enable the Gmail API and Google Sheets API, then save the clien
 JSON as `~/.wsa/gmail-credentials.json`. WSA uses a localhost callback on port
 8085.
 
-Accept one invitation first, then process the remaining range:
+Accept one invitation first, then process the remaining range. These read the
+committed spec plus the `WSA_EMAIL_PATTERN` you exported above:
 
 ```bash
-<wsa>/bin/wsa accept-account-invitation -w .wsa-spec-generated.yaml \
+<wsa>/bin/wsa accept-account-invitation -w wsa-spec-aws.yaml \
   --accounts 1 --gmail-credentials ~/.wsa/gmail-credentials.json
 
-<wsa>/bin/wsa accept-account-invitation -w .wsa-spec-generated.yaml \
+<wsa>/bin/wsa accept-account-invitation -w wsa-spec-aws.yaml \
   --accounts 2-5 --gmail-credentials ~/.wsa/gmail-credentials.json
 ```
 
@@ -112,17 +126,35 @@ a broad `f1wp` search can count another organizer's users.
 
 ## 6. Optional account dispenser
 
-The dispenser needs a Google Form and Sheet plus the Apps Script owned by the WSA
-repo. Follow `<wsa>/account-dispenser/SETUP.md`, then put the spreadsheet ID in the
-ignored `wsa.env` file:
+**Skip this if you're handing out credential cards directly** — the workshop works
+fine without a dispenser. Set it up if you want attendees to self-claim an account
+and see their credentials **in the browser** (a single `/exec` link you hand out,
+no cards to distribute).
 
-```bash
-WSA_DISPENSER_SPREADSHEET_ID=<spreadsheet-id>
-```
+WSA 0.3.0's dispenser is an on-screen **Apps Script web app** — deploy it once, and
+`create-workshop` populates it automatically on every build. Three one-time steps:
 
-Keep the Form link out of this repo. `create-workshop` uploads the final credential
-rows after it writes the cards. The workshop works without a dispenser; cards can
-be handed out directly.
+1. **Deploy the web app.** In the sibling WSA checkout, follow
+   `account-dispenser/webapp/SETUP-webapp.md` — create the inventory Sheet, paste in
+   `WebApp.gs` + `Index.html`, and deploy
+   **from a personal Google account** (Confluent Workspace blocks anonymous `Anyone`
+   access, so a Confluent account can't publish a claimable page). You get back an
+   `/exec` URL — that's the claim link.
+
+2. **Point this repo at that Sheet.** Put its ID in the gitignored `wsa.env`:
+
+   ```bash
+   WSA_DISPENSER_SPREADSHEET_ID=<spreadsheet-id>
+   ```
+
+3. **Build.** `create-workshop` writes the credential cards, then uploads the same
+   rows into the Sheet's `AccountInventory` tab — the web app serves them live. No
+   manual paste, no change to the build command.
+
+During the event, hand out the `/exec` URL; attendees enter name + email and get
+their full credential set on screen (including the RTCE MCP setup command). See the
+"Web-app dispenser" section of [WORKSHOP-GUIDE.md](WORKSHOP-GUIDE.md) for the
+attendee-facing flow and teardown/reset behavior.
 
 ## Final preflight
 

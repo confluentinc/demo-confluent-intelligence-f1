@@ -10,6 +10,10 @@ of attendee instructions.
 ## Before attendees arrive
 
 - Validate the exact credential-card set for this run.
+- Have the account-claim link ready. Prefer the web-app dispenser's `/exec` URL so
+  attendees self-claim on screen (no waiting on the claim email); see
+  [WORKSHOP-GUIDE.md](WORKSHOP-GUIDE.md) "Web-app dispenser". Otherwise hand out the
+  per-attendee cards directly.
 - Open the presenter account, Flink SQL workspace, and Pit Wall.
 - Confirm `car_telemetry`, `race_standings`, and `driver_race_history` are healthy.
 - Confirm the shared Lab 5 race-feed URL and watsonx Orchestrate access.
@@ -24,7 +28,9 @@ standings, and historical strategy into a useful decision while the race is
 still unfolding?
 
 Remind attendees that they use a workshop login, not their normal Confluent
-Cloud account, and that all SQL runs in the browser workspace.
+Cloud account, and that all SQL runs in the browser workspace. Hand out the claim
+link (the web-app dispenser `/exec` URL, if deployed) so each attendee pulls up
+their own credentials.
 
 ## Lab cues
 

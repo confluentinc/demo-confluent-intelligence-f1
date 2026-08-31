@@ -29,13 +29,17 @@ uv run workshop build --accounts 1-20 --concurrency 4 \
 #   credential card from that run's build-output.csv — no run-id to copy by hand.
 #   --no-cards to skip the card step, -n/--name for the card directory label.
 uv run workshop clean            # newest non-cleaned run in wsa-output/
-#   --run-id to target another run; --accounts-only / --shared-only;
+#   --run-id to target another run; --accounts-only / --shared-only (the wrapper keeps
+#     these names and maps each to wsa 0.3.0's `--phases accounts` / `--phases shared`);
 #   --no-password-reset --no-dispenser-clear if this run never used the dispenser/Gmail reset.
 #   Also uploads to the dispenser sheet when WSA_DISPENSER_SPREADSHEET_ID is set
 #   in wsa.env (silent no-op otherwise); --no-dispenser-upload skips it.
 # Raw wsa stays fully supported for flags the wrapper doesn't expose — but it does NOT
-#   self-serve secrets, so export the TF_VAR_* set first:
+#   self-serve secrets or export the attendee pattern. wsa >= 0.3.0 reads the pattern from
+#   WSA_EMAIL_PATTERN (env / wsa.env), not the spec, so set both first. Also needs a rebuilt
+#   0.3.0 binary (`cd ../workshop-setup-accelerator && make build`):
 set -a; . ./credentials.env; set +a
+export WSA_EMAIL_PATTERN='organizer+f1wp{N}@example.com'
 <sibling>/bin/wsa build -w <path-to-this-repo>/wsa-spec-aws.yaml ...
 
 # Organizer: cards from an existing wsa run (`workshop build` already does this)

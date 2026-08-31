@@ -22,10 +22,11 @@ from scripts.workshop import create as create_mod
 from scripts.workshop import creds as creds_mod
 from scripts.workshop import wsa as wsa_mod
 
+# wsa >= 0.3.0 rejects a spec that declares email_pattern; the attendee pattern
+# now travels via WSA_EMAIL_PATTERN / WORKSHOP_EMAIL_PATTERN, not the spec.
 SPEC_WITH_CONSOLE = """\
 name: test
 account_count: 5
-email_pattern: "org+f1wp{N}@example.com"
 terraform_vars:
   prefix: f1wp{NNN}
   grant_console_access: "true"
@@ -136,11 +137,16 @@ class AttendeeCountAuthorityTests(unittest.TestCase):
         return argparse.Namespace(**defaults)
 
     def test_forty_attendees_against_a_spec_of_five(self):
+        env = {wsa_mod.EMAIL_PATTERN_ENV: "org+f1wp{N}@example.com"}
         with patch.object(wsa_mod, "build") as build:
-            with patch.dict(os.environ, {}, clear=False):
+            with patch.dict(os.environ, env, clear=False):
                 with contextlib.redirect_stdout(io.StringIO()):
                     create_mod.create(self.args(attendees=40))
                 self.assertEqual(os.environ["TF_VAR_attendee_count"], "40")
+                # The resolved pattern is exported for every downstream wsa call.
+                self.assertEqual(
+                    os.environ[wsa_mod.WSA_EMAIL_PATTERN_ENV], "org+f1wp{N}@example.com"
+                )
         namespace = build.call_args.args[0]
         self.assertEqual(namespace.accounts, "1-40")
         self.assertEqual(namespace.account_count, 40)
@@ -153,14 +159,19 @@ class AttendeeCountAuthorityTests(unittest.TestCase):
                     create_mod.create(self.args(attendees=0))
         build.assert_not_called()
 
-    def test_yes_rejects_the_committed_email_placeholder_before_preflight(self):
-        (self.root / wsa_mod.SPEC_FILE).write_text(
-            f"name: test\nemail_pattern: '{wsa_mod.COMMITTED_EMAIL_PLACEHOLDER}'\n"
-        )
+    def test_yes_rejects_an_unset_email_pattern_before_preflight(self):
+        # --yes is non-interactive: with no pattern resolvable from the
+        # environment or credentials.env, wsa >= 0.3.0 has nothing to build
+        # accounts from, so create must bail before touching the wsa binary.
+        (self.root / wsa_mod.SPEC_FILE).write_text("name: test\naccount_count: 5\n")
         with (
-            patch.dict(os.environ, {wsa_mod.EMAIL_PATTERN_ENV: ""}, clear=False),
+            patch.dict(
+                os.environ,
+                {wsa_mod.EMAIL_PATTERN_ENV: "", wsa_mod.WSA_EMAIL_PATTERN_ENV: ""},
+                clear=False,
+            ),
             patch.object(wsa_mod, "find_wsa") as find_wsa,
-            self.assertRaisesRegex(SystemExit, "still the committed placeholder"),
+            self.assertRaisesRegex(SystemExit, "email pattern is not set"),
         ):
             create_mod.create(self.args(yes=True, email_pattern=""))
         find_wsa.assert_not_called()

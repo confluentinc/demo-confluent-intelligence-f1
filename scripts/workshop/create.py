@@ -415,6 +415,10 @@ def create(args: argparse.Namespace) -> None:
             interactive=True,
         )
     args.email_pattern = email_pattern
+    # wsa >= 0.3.0 reads the attendee pattern from WSA_EMAIL_PATTERN, not the
+    # spec. Export it once here so every downstream wsa call (validate, build)
+    # inherits the same value the organizer just chose.
+    os.environ[wsa_mod.WSA_EMAIL_PATTERN_ENV] = email_pattern
 
     # --- 4. Collect secrets ---
     print("\n=== Secrets ===")
@@ -426,11 +430,12 @@ def create(args: argparse.Namespace) -> None:
     _check_env_name_collisions(prefix, attendees)
 
     # --- 4c. Attendee Console logins must already exist in 1Password ---
-    invitation_spec = wsa_mod._derive_spec(root, email_pattern=email_pattern)
+    # The console-password precheck reads grant_console_access + account numbers
+    # from the committed spec; it does not need the email pattern (which now
+    # travels via WSA_EMAIL_PATTERN, exported above), so no derived spec here.
     wsa_mod._check_console_accounts(
         root,
         list(range(1, attendees + 1)),
-        spec_path=invitation_spec,
     )
 
     # --- 5. Spec validation ---

@@ -18,8 +18,17 @@ and uploads them to the optional dispenser.
 The email pattern must contain `{N}` and must match the accepted Confluent Cloud
 users prepared earlier. A neutral example is
 `organizer+f1wp{N}@example.com`. A value supplied at the prompt or with
-`--email-pattern` is remembered in ignored `credentials.env` and written to the
-derived `.wsa-spec-generated.yaml`; the committed spec remains reusable.
+`--email-pattern` is remembered in ignored `credentials.env`. WSA 0.3.0 no longer
+accepts the pattern in the spec, so the wrappers export it as `WSA_EMAIL_PATTERN`
+before each WSA call instead of writing it into a derived spec; the committed spec
+remains reusable. You can also set `WSA_EMAIL_PATTERN` (or `WORKSHOP_EMAIL_PATTERN`)
+in `wsa.env` / your shell to skip the prompt.
+
+> **Rebuild the WSA binary first.** This repo targets WSA **≥ 0.3.0** (the spec
+> declares `wsa_version: ">=0.3.0"` and WSA strict-decodes it). If your sibling
+> `workshop-setup-accelerator` checkout still has an older built binary, run
+> `cd ../workshop-setup-accelerator && make build` and confirm `./bin/wsa --version`
+> reports `0.3.0` before creating a workshop, or the spec is refused at load.
 
 Useful options:
 
@@ -95,6 +104,31 @@ For dispenser uploads, keep the Google Form link out of the repo and store
 `WSA_DISPENSER_SPREADSHEET_ID` in ignored `wsa.env`. The response tab needs the
 exact headers `Timestamp`, `First Name`, and `Email Address`. `create-workshop`
 uploads only after card generation so RTCE fields reach the Sheet.
+
+### Web-app dispenser (recommended)
+
+WSA 0.3.0 ships an on-screen **Apps Script web app** (`account-dispenser/webapp/`
+in the WSA repo) that hands attendees their credentials **in the browser** instead
+of relying on the claim email. This avoids the Gmail `421` deferral that used to
+delay the email-only flow; email becomes a best-effort backup. It reads the same
+`AccountInventory` tab this repo already populates via `create-workshop`'s dispenser
+upload, so no change to our build pipeline is needed — adopting it is a one-time
+deploy.
+
+One-time setup (organizer):
+
+1. In the WSA repo, follow `account-dispenser/webapp/SETUP-webapp.md` to deploy the
+   Apps Script web app **from a personal Google account** — Confluent Workspace
+   policy blocks anonymous `Anyone` access, so a Workspace account can't publish a
+   claimable web app.
+2. Container-bind (or point) the script at the inventory Sheet whose ID you set in
+   `WSA_DISPENSER_SPREADSHEET_ID`, using the `AccountInventory` tab.
+3. Copy the deployment's `/exec` URL. This is the claim link you hand out.
+
+During the event, attendees open the `/exec` URL, enter their name and email, and
+see their full credential set on screen — including the RTCE MCP setup command,
+grouped from its `Real-Time Context Engine / MCP Setup Command` column. Re-claiming
+with the same email returns the same account, so a refresh is safe.
 
 ## 4. Run the workshop
 
