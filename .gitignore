@@ -185,6 +185,8 @@ api-key-*.txt
 # Local validation notes can include internal product behavior and live-run
 # observations. Keep them available to organizers without publishing them.
 /docs/maintainers/LOCAL-VALIDATION.md
+# Operator-local 1Password CLI login workaround (machine-specific, no secrets).
+/docs/maintainers/OP-LOGIN-LOCAL.md
 /docs/QR Code - Elevate Demo Accounts.png
 
 # Internal recording script and early-access launch notes.

@@ -71,8 +71,11 @@ in the **`f1-terraform-layout`** skill
 **The one contract that reaches outside `terraform/`:** every `shared_*` variable name
 in `terraform/aws` must exactly match an output name in
 `terraform/aws-shared/outputs.tf` (`shared_X` ← output `X`), since `wsa` injects them by
-that naming convention as `TF_VAR_shared_X`. Breaking it silently starves the attendee
-tier of its shared inputs, and it also governs `wsa-spec-aws.yaml` and
+that naming convention as `TF_VAR_shared_X`. Under the wsa >= 0.3.0 phases model this is
+the `shared`-phase form of `wsa`'s general `TF_VAR_<phase>_<output>` rule — the once-phase
+in `wsa-spec-aws.yaml` **must stay named `shared`** for the mapping to hold, which is why
+the 0.3.0 migration needed zero Terraform changes. Breaking it silently starves the
+attendee tier of its shared inputs, and it also governs `wsa-spec-aws.yaml` and
 `scripts/workshop/wsa.py`.
 
 ---
@@ -253,10 +256,17 @@ touching credential cards, `workshop creds`, `deployment.env`, or `f1-onboard`.
 
 Provisioning and teardown are owned by `wsa`
 (confluentinc/workshop-setup-accelerator) in a **sibling checkout**, wrapped by
-`uv run workshop spec-validate|build|clean`. Binary discovery, the
-`wsa-spec-aws.yaml` contract, `account_count` vs `--attendees`, the dispenser
-upload, and the teardown gotcha where a missing Google OAuth client leaves
-attendee passwords live are all in the **`wsa-provisioning`** skill
+`uv run workshop spec-validate|build|clean`. The spec is on wsa's **>= 0.3.0
+phases model** (`wsa_version: ">=0.3.0"`, an ordered `phases:` list, strict
+decoding); the attendee login pattern is operator config (`WSA_EMAIL_PATTERN`,
+resolved from our `WORKSHOP_EMAIL_PATTERN` / `--email-pattern` and exported by the
+wrappers), not a spec field; and the primary attendee claim path is wsa's on-screen
+web-app dispenser. An organizer must rebuild the binary (`make build` in the sibling
+checkout → `0.3.0`) before the migrated spec will load. Binary discovery, the
+`wsa-spec-aws.yaml` phases contract, `account_count` vs `--attendees`, the
+`WSA_EMAIL_PATTERN` convention, the web-app + CSV dispenser, and the teardown gotcha
+where a missing Google OAuth client leaves attendee passwords live are all in the
+**`wsa-provisioning`** skill
 (`.claude/skills/wsa-provisioning/SKILL.md`). The checked-in references are
 `docs/organizer/WORKSHOP-GUIDE.md`, `wsa-spec-aws.yaml` itself, and
 `scripts/workshop/wsa.py`.
@@ -295,7 +305,7 @@ attendee walkthrough.
 | `scripts/pitwall/` | `f1-pitwall` live web dashboard — Kafka consumer → FastAPI/websocket → animated browser view; progressive reveal of LAB 3/4 panels; `--mock` offline feed |
 | `scripts/social_feed/` | `f1-social-feed` shared HTTP service for LAB 5 — tails each attendee's Kafka topics, serves `GET /race-feed/{prefix}` + auto OpenAPI spec for the watsonx Orchestrate tool; reuses pitwall consumer; `--mock` offline feed |
 | `scripts/social_feed_rtce/` | `f1-social-feed-rtce` — same OpenAPI tool, but an MCP client to the Real-Time Context Engine (RTCE) instead of Kafka. Reuses `social_feed`'s `FeedState`+`create_app`; new bits are the RTCE MCP client + poller. Global API key via `RTCE_API_KEY/SECRET`; per-attendee endpoint from card `F1_RTCE_MCP_ENDPOINT`; `--probe` validates the live contract |
-| `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md`; `--resolve-op` pulls Console passwords from 1Password; `--rtce-keys` mints each attendee's RTCE Global API key (`_mint_rtce_key`, replace-not-accumulate) and prints the `claude mcp add` line. Also appends `Real-Time Context Engine / MCP Setup Command` back into build-output.csv so dispenser claim emails carry it (`_add_dispenser_column`, `--no-dispenser-column`) — the `" / "` in that header is what makes the dispenser's Apps Script email it |
+| `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md`; `--resolve-op` pulls Console passwords from 1Password; `--rtce-keys` mints each attendee's RTCE Global API key (`_mint_rtce_key`, replace-not-accumulate) and prints the `claude mcp add` line. Also appends `Real-Time Context Engine / MCP Setup Command` back into build-output.csv so the dispenser carries it (`_add_dispenser_column`, `--no-dispenser-column`) — the `" / "` in that header is the `Provider / Field` slash convention the dispenser's Apps Script groups on: it drives the on-screen web-app credential grouping (`buildCredentialGroups_` in `WebApp.gs`) and the email backup |
 | `terraform/modules/environment/main.tf` | The environment, plus the `grant_console_access`-gated `confluent_user` lookup + EnvironmentAdmin binding that makes an attendee login useful |
 | `scripts/workshop/onboard.py` | `f1-onboard` — self-serve: wsa claim-email values → local `credentials.env` |
 | `scripts/workshop/validate.py` | `workshop validate` — API-key health checks against one or many cards |

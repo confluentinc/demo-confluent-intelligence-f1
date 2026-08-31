@@ -255,9 +255,9 @@ class EmailPatternResolutionTests(unittest.TestCase):
         self._tmp = TemporaryDirectory()
         self.root = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
-        (self.root / wsa_mod.SPEC_FILE).write_text(
-            f"name: test\nemail_pattern: '{wsa_mod.COMMITTED_EMAIL_PLACEHOLDER}'\n"
-        )
+        # wsa >= 0.3.0 rejects email_pattern in a spec, so the committed spec
+        # carries no pattern — resolution comes from override / env / creds only.
+        (self.root / wsa_mod.SPEC_FILE).write_text("name: test\n")
 
     def test_flag_wins_and_is_persisted(self):
         (self.root / "credentials.env").write_text(
@@ -289,10 +289,25 @@ class EmailPatternResolutionTests(unittest.TestCase):
             chosen = wsa_mod.resolve_email_pattern(self.root, interactive=False)
         self.assertEqual(chosen, "env+f1wp{N}@example.com")
 
-    def test_noninteractive_placeholder_fails(self):
-        with patch.dict(os.environ, {wsa_mod.EMAIL_PATTERN_ENV: ""}, clear=False):
-            with self.assertRaisesRegex(SystemExit, "still the committed placeholder"):
+    def test_noninteractive_unset_pattern_fails(self):
+        with patch.dict(
+            os.environ,
+            {wsa_mod.EMAIL_PATTERN_ENV: "", wsa_mod.WSA_EMAIL_PATTERN_ENV: ""},
+            clear=False,
+        ):
+            with self.assertRaisesRegex(SystemExit, "email pattern is not set"):
                 wsa_mod.resolve_email_pattern(self.root, interactive=False)
+
+    def test_wsa_email_pattern_env_is_accepted_as_a_source(self):
+        with patch.dict(
+            os.environ,
+            {wsa_mod.EMAIL_PATTERN_ENV: "", wsa_mod.WSA_EMAIL_PATTERN_ENV: "wsa+f1wp{N}@example.com"},
+            clear=False,
+        ):
+            self.assertEqual(
+                wsa_mod.resolve_email_pattern(self.root, interactive=False),
+                "wsa+f1wp{N}@example.com",
+            )
 
     def test_reading_an_exported_pattern_does_not_create_credentials_file(self):
         with patch.dict(
@@ -346,13 +361,12 @@ class AccountSelectionTests(unittest.TestCase):
             wsa_mod._account_numbers("one-two", 3)
 
 
-class SpecValidateDerivedSpecTests(unittest.TestCase):
-    def test_real_email_pattern_is_written_and_validated_via_the_generated_spec(self):
-        with TemporaryDirectory() as tmp:
+class SpecValidateEmailPatternTests(unittest.TestCase):
+    def test_email_pattern_is_exported_as_wsa_env_not_a_generated_spec(self):
+        with TemporaryDirectory() as tmp, patch.dict(os.environ, {}, clear=False):
             root = Path(tmp)
-            (root / wsa_mod.SPEC_FILE).write_text(
-                f"name: test\nemail_pattern: '{wsa_mod.COMMITTED_EMAIL_PLACEHOLDER}'\n"
-            )
+            # No email_pattern in the spec — wsa >= 0.3.0 rejects it there.
+            (root / wsa_mod.SPEC_FILE).write_text("name: test\n")
             with (
                 patch.object(wsa_mod, "get_project_root", return_value=root),
                 patch.object(wsa_mod, "find_wsa", return_value=Path("/fake/bin/wsa")),
@@ -366,11 +380,14 @@ class SpecValidateDerivedSpecTests(unittest.TestCase):
                     )
                 )
 
+            # The pattern travels to wsa via WSA_EMAIL_PATTERN, and no derived
+            # spec is written (validate runs against the committed spec).
             self.assertEqual(
-                yaml.safe_load((root / wsa_mod.GENERATED_SPEC).read_text())["email_pattern"],
+                os.environ[wsa_mod.WSA_EMAIL_PATTERN_ENV],
                 "organizer+f1wp{N}@example.com",
             )
-            self.assertEqual(stream.call_args.kwargs["spec_path"], root / wsa_mod.GENERATED_SPEC)
+            self.assertFalse((root / wsa_mod.GENERATED_SPEC).exists())
+            self.assertIsNone(stream.call_args.kwargs.get("spec_path"))
 
 
 def sample_csv(path: Path, prefixes: list[str]) -> None:
@@ -414,8 +431,18 @@ class BuildHandoffTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         # No dispenser unless a test asks for one — otherwise these assertions would
-        # depend on whether the developer's shell exports a spreadsheet id.
-        patcher = patch.dict(os.environ, {wsa_mod.DISPENSER_ID_ENV: ""}, clear=False)
+        # depend on whether the developer's shell exports a spreadsheet id. A default
+        # attendee pattern is provided too: wsa >= 0.3.0 requires one, and build()
+        # now errors non-interactively when none resolves.
+        patcher = patch.dict(
+            os.environ,
+            {
+                wsa_mod.DISPENSER_ID_ENV: "",
+                wsa_mod.EMAIL_PATTERN_ENV: "org+f1wp{N}@example.com",
+                wsa_mod.WSA_EMAIL_PATTERN_ENV: "",
+            },
+            clear=False,
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -434,6 +461,8 @@ class BuildHandoffTests(unittest.TestCase):
             no_cards=False,
             prefix="",
             account_count=None,
+            email_pattern="",
+            email_pattern_interactive=False,
         )
         defaults.update(overrides)
         return argparse.Namespace(**defaults)
@@ -535,20 +564,24 @@ class BuildHandoffTests(unittest.TestCase):
         self.assertEqual(derived["terraform_vars"]["prefix"], "f1ws{NNN}")
         self.assertEqual(derived["account_count"], 40)
 
-    def test_email_pattern_override_lands_in_the_derived_spec(self):
-        (self.root / wsa_mod.SPEC_FILE).write_text(
-            f"name: test\nemail_pattern: '{wsa_mod.COMMITTED_EMAIL_PLACEHOLDER}'\n"
-        )
-        with self.fake_build(), patch.object(creds_mod, "creds"):
+    def test_email_pattern_override_is_exported_not_written_to_a_spec(self):
+        # No prefix/account_count override -> no derived spec at all; the pattern
+        # travels via WSA_EMAIL_PATTERN, which is what wsa >= 0.3.0 reads.
+        (self.root / wsa_mod.SPEC_FILE).write_text("name: test\n")
+        with (
+            patch.dict(os.environ, {}, clear=False),
+            self.fake_build(),
+            patch.object(creds_mod, "creds"),
+        ):
             with contextlib.redirect_stdout(io.StringIO()):
                 wsa_mod.build(
                     self.build_args(email_pattern="organizer+f1wp{N}@example.com")
                 )
-        derived = yaml.safe_load((self.root / wsa_mod.GENERATED_SPEC).read_text())
-        self.assertEqual(
-            derived["email_pattern"],
-            "organizer+f1wp{N}@example.com",
-        )
+            self.assertEqual(
+                os.environ[wsa_mod.WSA_EMAIL_PATTERN_ENV],
+                "organizer+f1wp{N}@example.com",
+            )
+        self.assertFalse((self.root / wsa_mod.GENERATED_SPEC).exists())
 
     def test_prefix_matching_the_spec_is_not_an_override(self):
         # --prefix equal to the committed value uses the committed spec, no file.
@@ -903,7 +936,16 @@ class SecretCollectionTests(unittest.TestCase):
             patcher = patch.object(wsa_mod, name, return_value=value)
             patcher.start()
             self.addCleanup(patcher.stop)
-        patcher = patch.dict(os.environ, {wsa_mod.DISPENSER_ID_ENV: ""}, clear=False)
+        patcher = patch.dict(
+            os.environ,
+            {
+                wsa_mod.DISPENSER_ID_ENV: "",
+                # build()/clean() now resolve the attendee pattern from the
+                # environment (wsa >= 0.3.0 no longer takes it from the spec).
+                wsa_mod.EMAIL_PATTERN_ENV: "org+f1wp{N}@example.com",
+            },
+            clear=False,
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
 

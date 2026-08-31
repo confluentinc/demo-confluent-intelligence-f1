@@ -462,10 +462,13 @@ full access to your environment.
     (creds_dir / f"{f['prefix']}.md").write_text(md)
 
 
-# The column we append to wsa's build-output.csv so a dispenser claim email
-# carries the RTCE setup command. The " / " is load-bearing: the dispenser's
-# Apps Script (`account-dispenser/Code.gs`) only emails columns whose header
-# splits on " / " into Provider / Field, and skips every other column.
+# The column we append to wsa's build-output.csv so the dispenser carries the
+# RTCE setup command. The " / " is load-bearing: it is the dispenser's
+# `Provider / Field` header convention, and a column is only surfaced when its
+# header splits on " / " into Provider / Field. The Apps Script groups on it in
+# both delivery paths — the on-screen web app (`account-dispenser/webapp/WebApp.gs`
+# `buildCredentialGroups_`) and the email backup (`account-dispenser/Code.gs`) —
+# and skips every column that doesn't split.
 #
 # It must also not contain "claimed by" or "timestamp" — wsa's
 # `ensureDispenserColumns` substring-matches on those to decide whether to append

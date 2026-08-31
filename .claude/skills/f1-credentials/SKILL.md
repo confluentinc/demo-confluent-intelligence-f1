@@ -16,7 +16,9 @@ reading those scripts.
 Workshop attendees sign in to Confluent Cloud as **pool accounts on the organizer's
 configured plus-address pattern** (for example,
 `organizer+f1wp{N}@example.com`, supplied through `--email-pattern` or
-`WORKSHOP_EMAIL_PATTERN`)
+`WORKSHOP_EMAIL_PATTERN` / `credentials.env`, which the wrappers resolve and export
+as `WSA_EMAIL_PATTERN` — where wsa >= 0.3.0 reads it, since the pattern is no longer a
+spec field. See the `wsa-provisioning` skill)
 — not as themselves. Three moving parts, none of which a build creates:
 
 1. **The users.** Invited by hand (`confluent iam user invitation create`), then

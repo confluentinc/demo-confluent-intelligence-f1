@@ -33,6 +33,11 @@ git clone git@github.com:confluentinc/workshop-setup-accelerator.git ../workshop
 make -C ../workshop-setup-accelerator build
 ```
 
+This repo requires WSA **≥ 0.3.0** (the spec sets `wsa_version: ">=0.3.0"` and WSA
+strict-decodes it). Confirm the built binary is current — `../workshop-setup-accelerator/bin/wsa --version`
+should report `0.3.0` or newer. If you already have an older checkout, `git pull`
+and rerun `make build`; a stale binary refuses the spec at load time.
+
 If the checkout lives elsewhere, set `WSA_HOME` to its root.
 
 ## 3. Workshop secrets
@@ -70,12 +75,20 @@ for i in $(seq 1 5); do
 done
 ```
 
-Generate and validate the ignored spec with that real pattern. This is the spec
-used to accept invitations and prevents WSA from reading the committed placeholder:
+Validate the spec with that real pattern. WSA 0.3.0 reads the attendee pattern from
+`WSA_EMAIL_PATTERN` (not the spec), so the wrapper exports it for you — nothing is
+written into a spec:
 
 ```bash
 uv run workshop spec-validate \
   --email-pattern 'organizer+f1wp{N}@example.com'
+```
+
+Export the same pattern for the raw `wsa` calls below, which don't go through the
+wrapper:
+
+```bash
+export WSA_EMAIL_PATTERN='organizer+f1wp{N}@example.com'
 ```
 
 Use the same pattern when `create-workshop` prompts for it. Resource prefixes are
@@ -89,13 +102,14 @@ the invitations. Enable the Gmail API and Google Sheets API, then save the clien
 JSON as `~/.wsa/gmail-credentials.json`. WSA uses a localhost callback on port
 8085.
 
-Accept one invitation first, then process the remaining range:
+Accept one invitation first, then process the remaining range. These read the
+committed spec plus the `WSA_EMAIL_PATTERN` you exported above:
 
 ```bash
-<wsa>/bin/wsa accept-account-invitation -w .wsa-spec-generated.yaml \
+<wsa>/bin/wsa accept-account-invitation -w wsa-spec-aws.yaml \
   --accounts 1 --gmail-credentials ~/.wsa/gmail-credentials.json
 
-<wsa>/bin/wsa accept-account-invitation -w .wsa-spec-generated.yaml \
+<wsa>/bin/wsa accept-account-invitation -w wsa-spec-aws.yaml \
   --accounts 2-5 --gmail-credentials ~/.wsa/gmail-credentials.json
 ```
 

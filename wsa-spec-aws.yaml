@@ -3,10 +3,10 @@
 #
 # Provisions one isolated Confluent Cloud environment + live race simulator per
 # attendee, all sharing a single AWS account's VPC, Postgres and ECR image.
-# Matches the schema in confluentinc/workshop-setup-accelerator's
-# internal/spec/spec.go — see that repo's wsa-spec.example.yaml for the full
-# annotated reference. This file is read by `wsa build`, `wsa clean`, and
-# `wsa validate`.
+# Matches the wsa >= 0.3.0 `phases:` schema — see that repo's
+# wsa-spec.example.yaml and MIGRATING.md for the full annotated reference. This
+# file is read by `wsa build`, `wsa clean`, and `wsa validate`, all of which
+# reject a spec whose fields predate the phases model.
 #
 #   set -a; . ./credentials.env; set +a      # wsa does not collect TF_VAR_* itself
 #   ./bin/wsa validate -w wsa-spec-aws.yaml
@@ -22,11 +22,17 @@
 # email/password on their card, and write their Flink SQL in the browser SQL
 # workspace. The card's API keys are what `uv run f1-pitwall` authenticates with.
 #
-# PREREQUISITE — the logins are NOT created by this spec. Each email_pattern
-# address must already be an accepted Confluent Cloud user with a password in
-# 1Password before `wsa build` runs, or terraform/aws's confluent_user lookup
-# fails at plan time. One-time per account number; see docs/organizer/WORKSHOP-GUIDE.md.
+# PREREQUISITE — the logins are NOT created by this spec. Each attendee address
+# (from WSA_EMAIL_PATTERN, below) must already be an accepted Confluent Cloud
+# user with a password in 1Password before `wsa build` runs, or terraform/aws's
+# confluent_user lookup fails at plan time. One-time per account number; see
+# docs/organizer/WORKSHOP-GUIDE.md.
 # =============================================================================
+
+# Minimum wsa release this spec needs. wsa refuses to build/validate a spec
+# outside this range, so the phases model below can't be run on a pre-0.3.0
+# binary. A lower bound never goes stale as compatible releases ship.
+wsa_version: ">=0.3.0"
 
 name: confluent-intelligence-f1
 description: F1 Pit Wall AI Workshop — Confluent Cloud + Flink Streaming Agents
@@ -41,15 +47,25 @@ cloud: AWS
 # banner, and that default account list — --accounts decides what gets built.
 account_count: 5
 
-# {N} is replaced with the account number (1..account_count). The workshop
-# commands prompt for the organizer's pattern and override this placeholder.
-email_pattern: "bheintz+f1wp{N}@confluent.io"
+# Attendee login pattern is NOT declared here — wsa >= 0.3.0 rejects a spec that
+# does. It is operator config: WSA_EMAIL_PATTERN (with a {N} account placeholder)
+# in wsa.env, or resolved by the workshop wrappers from WORKSHOP_EMAIL_PATTERN /
+# credentials.env / --email-pattern and injected as WSA_EMAIL_PATTERN at call
+# time. See scripts/workshop/wsa.py:resolve_email_pattern.
 
-# Terraform source. terraform_repo/terraform_ref omitted for local-copy mode
-# (build straight from this local checkout — useful while iterating on
-# terraform/ before pushing).
-terraform_path: terraform/aws/
-shared_infra_path: terraform/aws-shared/
+# Terraform phases — applied in declaration order, destroyed in reverse.
+# terraform_repo/terraform_ref omitted for local-copy mode (build straight from
+# this local checkout — useful while iterating on terraform/ before pushing).
+# The `shared` phase's outputs reach the per-account apply as TF_VAR_shared_<output>
+# (wsa's TF_VAR_<phase>_<output> rule), matching terraform/aws's variable "shared_*"
+# blocks — so the phase MUST stay named `shared`.
+phases:
+  - name: shared
+    scope: once
+    path: terraform/aws-shared/
+  - name: accounts
+    scope: per_account
+    path: terraform/aws/
 
 # Files the shared Terraform reads from OUTSIDE the terraform/ tree via relative
 # paths, staged into the run dir preserving layout:
@@ -57,8 +73,10 @@ shared_infra_path: terraform/aws-shared/
 #   - terraform/modules/postgres seeds from datagen/data/driver_race_history_seed.sql
 # Required for local-copy mode (terraform_repo omitted); harmless with a full
 # remote clone (the files are already present, just re-overlaid from local disk).
+# Only datagen/ is staged (it recursively carries datagen/data/, the seed's home);
+# wsa >= 0.3.0 strict-validates that each stage_path exists, and there is no
+# top-level data/ directory.
 stage_paths:
-  - data
   - datagen
 
 # Per-account Terraform variables. wsa passes ONLY these (no legacy pass-all)

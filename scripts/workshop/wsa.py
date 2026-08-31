@@ -70,13 +70,20 @@ SPEC_FILE = "wsa-spec-aws.yaml"
 # line — `wsa` reads terraform_vars.prefix and account_count from the spec and has
 # no --var flag. So we write a derived spec next to the committed one, with only
 # those fields changed, and point `-w` at it. It lives at the repo root (same
-# directory as SPEC_FILE) so every relative path in the spec — terraform_path,
-# shared_infra_path, stage_paths — resolves identically.
+# directory as SPEC_FILE) so every relative path in the spec — each phase's
+# `path`, stage_paths — resolves identically. The attendee email pattern is NOT a
+# derived-spec field (wsa >= 0.3.0 rejects it in a spec); it is exported as
+# WSA_EMAIL_PATTERN instead — see build()/spec_validate().
 # Gitignored; `wsa clean` uses the copy staged inside the run dir, not this file.
 GENERATED_SPEC = ".wsa-spec-generated.yaml"
 
+# Our organizer-facing setting name. wsa >= 0.3.0 reads its own WSA_EMAIL_PATTERN
+# (from the environment or wsa.env); we resolve the pattern under our name and
+# hand it to wsa by exporting WSA_EMAIL_PATTERN at call time — see build() /
+# spec_validate(). WSA_EMAIL_PATTERN is also accepted as a source, so an operator
+# who set it wsa's own way still works.
 EMAIL_PATTERN_ENV = "WORKSHOP_EMAIL_PATTERN"
-COMMITTED_EMAIL_PLACEHOLDER = "youremail+f1wp{N}@yourcompany.com"
+WSA_EMAIL_PATTERN_ENV = "WSA_EMAIL_PATTERN"
 _EMAIL_ACCOUNT_PLACEHOLDER_RE = re.compile(r"\{N\}")
 _EXPANDED_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -204,12 +211,6 @@ def _spec_account_count(root: Path) -> int | None:
     return None if raw is None else int(raw)
 
 
-def _spec_email_pattern(root: Path) -> str:
-    """The committed spec's attendee login pattern."""
-    spec = yaml.safe_load(_spec_path(root).read_text()) or {}
-    return str(spec.get("email_pattern") or "").strip()
-
-
 def _validate_email_pattern(pattern: str) -> str | None:
     """Return an actionable error when a pattern cannot name attendee accounts."""
     if not _EMAIL_ACCOUNT_PLACEHOLDER_RE.search(pattern):
@@ -233,27 +234,32 @@ def _persist_email_pattern(creds_file: Path, pattern: str) -> None:
 def resolve_email_pattern(root: Path, override: str = "", interactive: bool = True) -> str:
     """Resolve and, when entered locally, remember the attendee email pattern.
 
-    Precedence is command-line override, environment, ``credentials.env``, then
-    the committed spec. The committed neutral value is a prompt sentinel, never
-    a usable non-interactive default.
+    Precedence is command-line override, then the environment
+    (``WORKSHOP_EMAIL_PATTERN``, then wsa's own ``WSA_EMAIL_PATTERN``), then
+    ``credentials.env``. wsa >= 0.3.0 no longer accepts a pattern in the spec, so
+    there is no committed fallback — an unset pattern prompts interactively and is
+    a hard error otherwise. The resolved value is exported as ``WSA_EMAIL_PATTERN``
+    by the callers, which is where wsa reads it.
     """
     creds_file = root / "credentials.env"
     # A read-only resolution must not create an ignored credentials file. This
     # permits an exported setting to work in a fresh clone without side effects.
     creds = dotenv_values(creds_file) if creds_file.exists() else {}
     explicit = override.strip()
-    from_env = os.environ.get(EMAIL_PATTERN_ENV, "").strip()
+    from_env = (
+        os.environ.get(EMAIL_PATTERN_ENV, "").strip()
+        or os.environ.get(WSA_EMAIL_PATTERN_ENV, "").strip()
+    )
     from_file = str(creds.get(EMAIL_PATTERN_ENV) or "").strip()
-    committed = _spec_email_pattern(root)
-    chosen = explicit or from_env or from_file or committed
+    chosen = explicit or from_env or from_file
 
-    needs_prompt = chosen == COMMITTED_EMAIL_PLACEHOLDER
+    needs_prompt = not chosen
     if needs_prompt:
         if not (interactive and sys.stdin.isatty()):
             raise SystemExit(
-                "The workshop email pattern is still the committed placeholder. "
-                f"Pass --email-pattern or set {EMAIL_PATTERN_ENV} in the "
-                "environment or credentials.env."
+                "The workshop email pattern is not set. "
+                f"Pass --email-pattern or set {EMAIL_PATTERN_ENV} "
+                f"(or {WSA_EMAIL_PATTERN_ENV}) in the environment or credentials.env."
             )
         print("\n=== Attendee email pattern ===\n")
         print("  Use {N} where the attendee account number belongs.")
@@ -379,7 +385,6 @@ def _derive_spec(
     root: Path,
     prefix: str = "",
     account_count: int | None = None,
-    email_pattern: str = "",
 ) -> Path:
     """Write a copy of the committed spec with the given fields overridden.
 
@@ -387,15 +392,15 @@ def _derive_spec(
     writes the whole file, so two separate deriving functions would each clobber
     the other's field. Only the fields passed here change; the file is dumped with
     keys in their original order (comments are dropped — harmless, wsa parses it as
-    data). Returned path is what the build's ``-w`` points at.
+    data). Returned path is what the build's ``-w`` points at. The attendee email
+    pattern is intentionally not overridable here — wsa >= 0.3.0 rejects it in a
+    spec, so it travels as the WSA_EMAIL_PATTERN environment variable instead.
     """
     spec = yaml.safe_load(_spec_path(root).read_text()) or {}
     if prefix:
         spec.setdefault("terraform_vars", {})["prefix"] = prefix
     if account_count is not None:
         spec["account_count"] = account_count
-    if email_pattern:
-        spec["email_pattern"] = email_pattern
     out = root / GENERATED_SPEC
     out.write_text(yaml.safe_dump(spec, sort_keys=False))
     return out
@@ -681,6 +686,10 @@ def build(args: argparse.Namespace) -> None:
         override=getattr(args, "email_pattern", ""),
         interactive=getattr(args, "email_pattern_interactive", sys.stdin.isatty()),
     )
+    # wsa >= 0.3.0 reads the attendee pattern from WSA_EMAIL_PATTERN (env or
+    # wsa.env), not the spec. Export the resolved value so wsa's own resolution
+    # finds it and snapshots it into the run dir (so `clean` matches later).
+    os.environ[WSA_EMAIL_PATTERN_ENV] = email_pattern
     binary = find_wsa(root)
 
     # Terraform needs the TF_VAR_* secrets in the environment. `create-workshop`
@@ -726,23 +735,18 @@ def build(args: argparse.Namespace) -> None:
     if account_count is not None and account_count == _spec_account_count(root):
         account_count = None
 
-    if email_pattern == _spec_email_pattern(root):
-        email_pattern = ""
-
     spec_path = None
-    if prefix or account_count is not None or email_pattern:
+    if prefix or account_count is not None:
         spec_path = _derive_spec(
             root,
             prefix=prefix,
             account_count=account_count,
-            email_pattern=email_pattern,
         )
         changed = ", ".join(
             part
             for part in (
                 f"prefix={prefix}" if prefix else "",
                 f"account_count={account_count}" if account_count is not None else "",
-                f"email_pattern={email_pattern}" if email_pattern else "",
             )
             if part
         )
@@ -808,11 +812,11 @@ def spec_validate(args: argparse.Namespace) -> None:
         override=getattr(args, "email_pattern", ""),
         interactive=getattr(args, "email_pattern_interactive", sys.stdin.isatty()),
     )
-    spec_path = None
-    if email_pattern != _spec_email_pattern(root):
-        spec_path = _derive_spec(root, email_pattern=email_pattern)
-        print(f"Spec override: email_pattern={email_pattern}  (generated spec: {spec_path.name})\n", flush=True)
-    code = _stream_wsa(find_wsa(root), root, "validate", [], spec_path=spec_path)
+    # wsa validate now requires WSA_EMAIL_PATTERN (env or wsa.env); export the
+    # resolved value so validate sees it. No derived spec — the pattern is not a
+    # spec field in wsa >= 0.3.0.
+    os.environ[WSA_EMAIL_PATTERN_ENV] = email_pattern
+    code = _stream_wsa(find_wsa(root), root, "validate", [])
     if code != 0:
         raise SystemExit(code)
 
@@ -956,10 +960,15 @@ def clean(args: argparse.Namespace) -> None:
     else:
         extra += ["--sheets-credentials", str(google_creds)]
 
+    # wsa >= 0.3.0 replaced --accounts-only / --shared-only with per-phase
+    # scoping: --phases <name> tears down only that phase. Our spec names the
+    # per-account phase `accounts` and the run-once shared phase `shared`, so the
+    # two legacy intentions map straight onto them. A full teardown passes
+    # neither and destroys every phase in reverse declaration order.
     if args.accounts_only:
-        extra.append("--accounts-only")
+        extra += ["--phases", "accounts"]
     if args.shared_only:
-        extra.append("--shared-only")
+        extra += ["--phases", "shared"]
 
     code = _stream_wsa(binary, root, "clean", extra)
     if code != 0:
@@ -1007,7 +1016,7 @@ def add_build_arguments(p: argparse.ArgumentParser) -> None:
         "--email-pattern",
         default="",
         help="Attendee login pattern, e.g. organizer+f1wp{N}@example.com. "
-        f"Default: ${EMAIL_PATTERN_ENV}, credentials.env, then the spec.",
+        f"Default: ${EMAIL_PATTERN_ENV} (or $WSA_EMAIL_PATTERN), then credentials.env.",
     )
     p.add_argument("--force", action="store_true", help="Re-run even if this run-id already built successfully")
     p.add_argument(
@@ -1052,15 +1061,15 @@ def add_build_arguments(p: argparse.ArgumentParser) -> None:
 def configure_spec_validate_parser(p: argparse.ArgumentParser) -> None:
     """Set up the `spec-validate` parser.
 
-    An email-pattern override derives the ignored spec used by invitation
-    acceptance and later builds, so WSA never reads the committed placeholder.
+    An email-pattern override is exported as WSA_EMAIL_PATTERN so wsa validate
+    (and the later build / invitation acceptance) read the same attendee pattern.
     """
     p.description = "Run `wsa validate` against this repo's wsa-spec-aws.yaml (spec + local prerequisites)."
     p.add_argument(
         "--email-pattern",
         default="",
         help="Attendee login pattern, e.g. organizer+f1wp{N}@example.com. "
-        f"Default: ${EMAIL_PATTERN_ENV}, credentials.env, then the spec.",
+        f"Default: ${EMAIL_PATTERN_ENV} (or $WSA_EMAIL_PATTERN), then credentials.env.",
     )
 
 
@@ -1077,9 +1086,14 @@ def add_clean_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--accounts-only",
         action="store_true",
-        help="Destroy per-account infra only; keep shared infra for reuse",
+        help="Destroy the per-account phase only, keeping shared infra for reuse "
+        "(maps to wsa's `--phases accounts`)",
     )
-    p.add_argument("--shared-only", action="store_true", help="Destroy shared infra only (no build report required)")
+    p.add_argument(
+        "--shared-only",
+        action="store_true",
+        help="Destroy the shared phase only (maps to wsa's `--phases shared`)",
+    )
     p.add_argument(
         "--google-credentials",
         default="",
