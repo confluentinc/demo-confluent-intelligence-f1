@@ -4,9 +4,11 @@ These are the current implementation traps that aren't obvious from one source f
 
 ## Race cadence
 
-The default race pace is 30 seconds per lap. Lab 3 uses the same 30-second `TUMBLE`, which gives `car_state` one row per lap and limits `AI_RUN_AGENT` to one call per lap. Changing `seconds_per_lap` requires a matching SQL-window change.
+The default race pace is 20 seconds per lap. Lab 3 uses the same 20-second `TUMBLE`, which gives `car_state` one row per lap and limits `AI_RUN_AGENT` to one call per lap. Changing `seconds_per_lap` requires a matching SQL-window change.
 
-The anomaly fires at lap 22. Both anomaly functions need 12 windows of context, so pacing below roughly 10 seconds per lap can reach the anomaly before enough context exists.
+The anomaly fires at lap 24. Both anomaly functions need 12 windows of context, so pacing below roughly 10 seconds per lap can reach the anomaly before enough context exists.
+
+The simulator phase-locks to the 20-second wall-clock epoch: it rounds lap 1's start up to the next 20-second boundary, then schedules every subsequent lap from an absolute deadline (`race_start + (lap-1)*20s`) rather than accumulating per-lap sleeps. This guarantees exactly one source lap per Flink `TUMBLE` window, with no cumulative drift; a missed deadline is logged rather than silently absorbed. The consequence is that `f1-race` may wait up to one full lap interval (~20s) before lap 1 appears. Downstream code and docs that assume telemetry starts the instant `f1-race` is launched must account for that delay.
 
 ## Table startup and temporal-join order
 
@@ -18,7 +20,7 @@ Join raw `car_telemetry` to the versioned `race_standings` table before any `OVE
 
 The attendee path uses `ML_DETECT_ANOMALIES`. The optional `AI_DETECT_ANOMALIES` file keeps the same output schema and can be selected with `F1_ANOMALY_FN=ai`.
 
-During the July 31, 2026 validation run, the `ttm` variant populated forecasts and RMSE but left `is_anomaly`, `upper_bound`, and `lower_bound` null. It never flagged the lap-22 spike. Re-test the current service before making that variant the default.
+During the July 31, 2026 validation run, the `ttm` variant populated forecasts and RMSE but left `is_anomaly`, `upper_bound`, and `lower_bound` null. It never flagged the lap-24 spike. Re-test the current service before making that variant the default.
 
 The functions use different configuration names:
 

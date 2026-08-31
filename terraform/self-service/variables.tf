@@ -30,9 +30,10 @@ variable "region" {
 
 variable "enable_rtce" {
   description = <<-EOT
-    Enable the Real-Time Context Engine on car_telemetry + race_standings so they
-    can be queried from an MCP client. Set TF_VAR_enable_rtce=false for an org or
-    region where RTCE isn't available — see modules/topics/variables.tf.
+    Enable the Real-Time Context Engine on car_telemetry so it can be queried
+    from an MCP client (race_standings is excluded — see modules/topics/main.tf).
+    Set TF_VAR_enable_rtce=false for an org or region where RTCE isn't
+    available — see modules/topics/variables.tf.
   EOT
   type        = bool
   default     = true

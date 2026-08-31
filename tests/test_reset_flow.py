@@ -428,6 +428,32 @@ class DropWaitTests(unittest.TestCase):
         self.assertIn("RUNNING", problems[0])
 
 
+class DropRequestShapeTests(unittest.TestCase):
+    """The Statements API ignores a nested `compute_pool: {"id": ...}` and only
+    honors the scalar `compute_pool_id` field — regression guard for that shape."""
+
+    def setUp(self):
+        self.urlopen = patch("urllib.request.urlopen").start()
+        self.addCleanup(patch.stopall)
+        patch.object(
+            reset,
+            "_get_json",
+            side_effect=lambda url, headers: {"status": {"phase": "COMPLETED"}},
+        ).start()
+        patch("time.sleep").start()
+
+    def test_drop_posts_the_scalar_compute_pool_id_field(self):
+        import json as _json
+
+        reset.drop_flink_objects(STANDALONE_TF, [("label", "DROP TABLE foo")])
+
+        post_calls = [c for c in self.urlopen.call_args_list if c.args[0].get_method() == "POST"]
+        self.assertEqual(len(post_calls), 1)
+        body = _json.loads(post_calls[0].args[0].data)
+        self.assertEqual(body["spec"]["compute_pool_id"], STANDALONE_TF["compute_pool_id"])
+        self.assertNotIn("compute_pool", body["spec"])
+
+
 class TopicClassificationTests(unittest.TestCase):
     """A lab topic that is already gone is the normal case, not a failure.
 

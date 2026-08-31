@@ -3,7 +3,7 @@
 Drives ``RaceState`` without Kafka or a Confluent environment so the UI can be
 built, demoed and verified end-to-end with no cost. It reuses the real race logic
 from ``datagen/`` — the 22-car grid, the cumulative-time race model and the
-telemetry curves (including the front-left spike at lap 22) — so the mock arc
+telemetry curves (including the front-left spike at lap 24) — so the mock arc
 matches what attendees see live.
 
 To exercise progressive reveal it withholds the lab-output streams early on:
@@ -44,9 +44,10 @@ def _import_datagen():
         sys.path.insert(0, str(repo_root))
     from datagen.drivers import GRID
     from datagen.race_script import RaceState as SimRace
+    from datagen.simulator import _source_state_for_lap
     from datagen.telemetry import generate_telemetry
 
-    return GRID, SimRace, generate_telemetry
+    return GRID, SimRace, generate_telemetry, _source_state_for_lap
 
 
 def _now_millis() -> int:
@@ -91,7 +92,11 @@ def _build_decision(car44: dict, anomaly: bool) -> dict:
             25,
             "Mediums will last to the flag and restore pace to fight back.",
         )
-    elif compound == "SOFT" and age >= 26:
+    elif car44["pit_stops"] > 0:
+        suggestion = "STAY OUT"
+        reasoning = "The scheduled stop is complete; fresh tires are on the car."
+        rec_compound, rec_stint, rec_reason = (None, None, None)
+    elif compound == "SOFT" and age >= 21:
         suggestion = "PIT SOON"
         reasoning = "Softs are past their cliff; pace is dropping. Plan a stop in the next few laps."
         rec_compound, rec_stint, rec_reason = ("MEDIUM", 25, "Mediums balance pace and durability for the run home.")
@@ -127,23 +132,26 @@ def _sleep(seconds: float, stop) -> None:
 
 def run_mock(state: RaceState, stop) -> None:
     """Replay races into ``state`` until ``stop`` is set."""
-    grid, sim_race_cls, generate_telemetry = _import_datagen()
+    grid, sim_race_cls, generate_telemetry, source_state_for_lap = _import_datagen()
     seconds_per_lap = float(os.environ.get("PITWALL_MOCK_SECONDS_PER_LAP", "1.2"))
     total_laps = int(os.environ.get("PITWALL_MOCK_TOTAL_LAPS", "60"))
-    logger.info("Mock race feed: %ss/lap, FL anomaly at lap 22", seconds_per_lap)
+    logger.info("Mock race feed: %ss/lap, FL anomaly at lap 24", seconds_per_lap)
 
     while not stop.is_set():
         race = sim_race_cls(grid)
-        post_pit = False
         for lap in range(1, total_laps + 1):
             if stop.is_set():
                 return
+            car44_before = race.get_car(OUR_CAR_NUMBER).copy()
             race.advance_lap()
-            car44 = race.get_car(OUR_CAR_NUMBER)
-            post_pit = post_pit or car44["pit_stops"] > 0
+            car44, post_pit = source_state_for_lap(
+                car44_before, race.get_car(OUR_CAR_NUMBER), lap
+            )
 
             ts = _now_millis()
             for standing in race.get_standings():
+                if standing["car_number"] == OUR_CAR_NUMBER:
+                    standing = car44
                 standing["event_time"] = ts
                 state.update_standing(standing)
 

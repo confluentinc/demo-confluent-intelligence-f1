@@ -1,61 +1,18 @@
 # Self-service workshop walkthrough
 
+![F1 Pit Wall Confluent Intelligence architecture](../assets/architecture.png)
+
 > [!NOTE]
 >
-> **Are you using your own Confluent Cloud account and provisioning your own environment?** You're in the right place. If your instructor gave you a workshop login and your environment is already running, use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md) instead.
+> Use this path when you have your own Confluent Cloud login and password, and will provision your own environment. **If your instructor gave you a workshop login and password,** use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md).
 
-Follow this path for a self-service workshop, a solo Confluent-only run, or as a
-fallback when pre-provisioned attendee environments can't be made usable. Each attendee clones the
-repository, provisions one Confluent Cloud environment, and runs the race
-simulator on their own computer.
-The setup creates Confluent resources only. It doesn't create EC2, ECS, ECR, a
-VPC, Postgres, or a CDC connector, and it doesn't need Docker.
+## Before you start
 
-This is also the canonical guide for a solo Confluent-only run. The workshop
-owner must confirm the credential plan before sending attendees to
-this guide. Every attendee needs permission to create resources in a Confluent
-Cloud organization and credentials that can invoke the workshop's AWS Bedrock
-model. Don't send one shared administrator secret to the room.
+You need a [Confluent Cloud account](https://confluent.cloud/signup), as well as AWS Bedrock API keys in `us-east-1` region - **your instructor will likely provide these.** If not, you can easily create them yourself with `uv run api-keys create` if you are logged into the AWS CLI.
 
-## What changes in self-service mode
+## 1. Clone, install, and provision
 
-| Hosted workshop | Self-service workshop |
-|---|---|
-| Instructor provides an isolated environment | Attendee provisions an environment |
-| Race simulator runs on ECS | `uv run f1-race` runs in a terminal |
-| Postgres CDC loads race history | A bounded Flink insert loads the same 198 rows |
-| Instructor starts and resets the fleet | Attendee stops, resets, and restarts their own race |
-
-The attendee SQL and expected race outcome stay the same. The local simulator
-defaults to 20 seconds per lap, so one race takes about 20 minutes.
-
-## Required accounts and credentials
-
-Prepare these before installing software:
-
-- A Confluent Cloud account in an organization where you may create an
-  environment, Kafka cluster, Flink compute pool, API keys, connections, and
-  models.
-- A Confluent Cloud API key and secret with those permissions. The setup can
-  create a key after a CLI login, or you can paste an existing pair.
-- An AWS access key and secret allowed to call `bedrock:InvokeModel` and
-  `bedrock:InvokeModelWithResponseStream` in `us-east-1`. Temporary AWS
-  credentials also need their session token.
-- IBM watsonx Orchestrate access and the workshop race-feed URL if you plan to
-  complete Lab 5.
-
-The Confluent and AWS credentials are written to the ignored
-`credentials.env` file on your machine. Never paste them into chat, commit them,
-or put them in a slide.
-
-## 1. Install the command-line tools
-
-You need Git, `uv`, Terraform 1.3 or later, and the Confluent CLI. The Confluent
-CLI is optional only when you already have a suitable Confluent Cloud API key.
-
-### macOS
-
-With Homebrew:
+`brew install` the prerequisites:
 
 ```bash
 brew install git uv
@@ -64,304 +21,421 @@ brew install hashicorp/tap/terraform
 brew install --cask confluent-cli
 ```
 
-If you don't use Homebrew, install `uv` with its signed standalone installer and
-download Terraform, Git, and the Confluent CLI from their official install pages.
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-Open a new terminal after the installer finishes.
-
-### Ubuntu or Debian Linux
-
-Install Git and the packages needed by the vendor repositories:
-
-```bash
-sudo apt update
-sudo apt install -y git curl gnupg wget lsb-release
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-Install Terraform from HashiCorp's APT repository:
-
-```bash
-wget -O - https://apt.releases.hashicorp.com/gpg | \
-  sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(. /etc/os-release && echo \"${UBUNTU_CODENAME:-$VERSION_CODENAME}\") main" | \
-  sudo tee /etc/apt/sources.list.d/hashicorp.list
-sudo apt update
-sudo apt install -y terraform
-```
-
-Install the Confluent CLI from Confluent's APT repository:
-
-```bash
-sudo mkdir -p /etc/apt/keyrings
-curl https://packages.confluent.io/confluent-cli/deb/archive.key | \
-  sudo gpg --dearmor -o /etc/apt/keyrings/confluent-cli.gpg
-sudo chmod go+r /etc/apt/keyrings/confluent-cli.gpg
-echo "deb [signed-by=/etc/apt/keyrings/confluent-cli.gpg] https://packages.confluent.io/confluent-cli/deb stable main" | \
-  sudo tee /etc/apt/sources.list.d/confluent-cli.list >/dev/null
-sudo apt update
-sudo apt install -y confluent-cli
-```
-
-Open a new terminal so `uv` is on `PATH`.
-
-### Windows 11
-
-1. Install Git from <https://git-scm.com/install/windows>.
-2. Install `uv` in PowerShell:
-
-   ```powershell
-   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-   ```
-
-3. Download the Windows AMD64 Terraform ZIP from
-   <https://developer.hashicorp.com/terraform/install>, extract
-   `terraform.exe`, and add its directory to your user `PATH`.
-4. Download the Windows Confluent CLI archive from
-   <https://docs.confluent.io/confluent-cli/current/install.html>, extract
-   `confluent.exe`, and add its directory to your user `PATH`.
-5. Close PowerShell and open a new window.
-
-### Check the installation
-
-```bash
-git --version
-uv --version
-terraform version
-confluent version
-```
-
-If `uv` reports that Python is missing, let it install Python 3.12:
-
-```bash
-uv python install 3.12
-```
-
-## 2. Clone and install the repository
+Then, clone the repo:
 
 ```bash
 git clone https://github.com/confluentinc/demo-confluent-intelligence-f1.git
 cd demo-confluent-intelligence-f1
-uv venv
 ```
 
-Activate the virtual environment:
-
-```bash
-# macOS or Linux
-source .venv/bin/activate
-```
-
-```powershell
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
-```
-
-Install exactly the dependencies recorded in `uv.lock`:
-
-```bash
-uv sync
-```
-
-## 3. Sign in to Confluent Cloud if setup will create your API key
-
-Skip this section if the workshop owner gave you a Confluent Cloud API key and
-secret.
+Sign into Confluent Cloud:
 
 ```bash
 confluent login
-confluent organization describe
 ```
 
-For an SSO account, follow the browser login. If automatic browser login isn't
-available, use:
-
-```bash
-confluent login --no-browser
-```
-
-The setup command asks whether to generate a new Cloud API key. Answer `y` only
-after the CLI login succeeds. Otherwise answer `n` and paste the existing key
-and secret supplied by the workshop owner.
-
-## 4. Provision your environment
-
-From the repository root:
+Finally, provision the environment with the following command:
 
 ```bash
 uv run selfservice up
 ```
 
-The command asks for:
+The command asks for your Confluent credentials, email, and AWS Bedrock credentials. It writes an ignored credential card under `runs/selfservice/credentials/` and seeds 198 historical race rows.
 
-- Confluent Cloud API key and secret
-- Your email address
-- A short resource prefix; accept the unique suggestion unless your instructor
-  assigned one
-- AWS Bedrock access key and secret
-- AWS session token when the access key starts with `ASIA`
+Open the [SQL workspace](https://confluent.cloud/workspaces/) in the Confluent Cloud Console. Select `RIVER-RACING-DEMO-ENV` as the catalog and `RIVER-RACING-DEMO-CLUSTER` as the database. Confirm the setup:
 
-Choose the default path that leaves Labs 3 and 4 unbuilt. The command creates
-your environment, writes a credential card under
-`runs/selfservice/credentials/`, and inserts 198 historical race rows. A cold
-Flink pool can make the first seed check time out. If setup says the environment
-exists but seeding is incomplete, run the same command once more.
+## 2. Create `car_state` with `ML_DETECT_ANOMALIES`, then start the race
 
-For a solo demo where the lab objects should be built automatically, use:
-
-```bash
-uv run selfservice up --with-labs
-```
-
-Verify the generated card and tables:
-
-```bash
-uv run f1-sql
-```
+Paste this statement into one SQL cell and run it. Wait for it to show **Running**.
 
 ```sql
-SHOW TABLES;
-SELECT COUNT(*) FROM driver_race_history;
+CREATE TABLE `car_state`
+WITH ('changelog.mode' = 'append')
+AS
+WITH enriched AS (
+  SELECT
+    t.car_number, t.event_time, t.lap,
+    t.tire_temp_fl_c, t.tire_temp_fr_c, t.tire_temp_rl_c, t.tire_temp_rr_c,
+    t.tire_pressure_fl_psi, t.tire_pressure_fr_psi,
+    t.tire_pressure_rl_psi, t.tire_pressure_rr_psi,
+    t.engine_temp_c, t.brake_temp_fl_c, t.brake_temp_fr_c,
+    t.battery_charge_pct, t.fuel_remaining_kg,
+    r.`position`, r.gap_to_ahead_sec, r.gap_to_leader_sec,
+    r.pit_stops, r.tire_compound, r.tire_age_laps
+  FROM `car_telemetry` t
+  JOIN `race_standings` FOR SYSTEM_TIME AS OF t.event_time AS r
+    ON t.car_number = r.car_number
+),
+windowed AS (
+  SELECT
+    window_start, window_end, window_time, car_number,
+    MAX(lap) AS lap,
+    AVG(tire_temp_fl_c) AS tire_temp_fl_c,
+    AVG(tire_temp_fr_c) AS tire_temp_fr_c,
+    AVG(tire_temp_rl_c) AS tire_temp_rl_c,
+    AVG(tire_temp_rr_c) AS tire_temp_rr_c,
+    AVG(tire_pressure_fl_psi) AS tire_pressure_fl_psi,
+    AVG(tire_pressure_fr_psi) AS tire_pressure_fr_psi,
+    AVG(tire_pressure_rl_psi) AS tire_pressure_rl_psi,
+    AVG(tire_pressure_rr_psi) AS tire_pressure_rr_psi,
+    AVG(engine_temp_c) AS engine_temp_c,
+    AVG(brake_temp_fl_c) AS brake_temp_fl_c,
+    AVG(brake_temp_fr_c) AS brake_temp_fr_c,
+    AVG(battery_charge_pct) AS battery_charge_pct,
+    AVG(fuel_remaining_kg) AS fuel_remaining_kg,
+    MAX(`position`) AS `position`,
+    MAX(gap_to_ahead_sec) AS gap_to_ahead_sec,
+    MAX(gap_to_leader_sec) AS gap_to_leader_sec,
+    MAX(pit_stops) AS pit_stops,
+    MAX(tire_compound) AS tire_compound,
+    MAX(tire_age_laps) AS tire_age_laps
+  FROM TABLE(
+    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
+  )
+  GROUP BY window_start, window_end, window_time, car_number
+),
+anomaly AS (
+  SELECT
+    *,
+    ML_DETECT_ANOMALIES(tire_temp_fl_c, window_time,
+      JSON_OBJECT('minTrainingSize' VALUE 12,
+                  'maxTrainingSize' VALUE 50,
+                  'confidencePercentage' VALUE 99.99,
+                  'enableStl' VALUE FALSE))
+      OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+      AS anomaly_tire_temp_fl_result
+  FROM windowed
+)
+SELECT
+  car_number, lap,
+  tire_temp_fl_c, tire_temp_fr_c, tire_temp_rl_c, tire_temp_rr_c,
+  tire_pressure_fl_psi, tire_pressure_fr_psi,
+  tire_pressure_rl_psi, tire_pressure_rr_psi,
+  engine_temp_c, brake_temp_fl_c, brake_temp_fr_c,
+  battery_charge_pct, fuel_remaining_kg,
+  CASE
+    WHEN anomaly_tire_temp_fl_result.is_anomaly
+         AND anomaly_tire_temp_fl_result.actual_value
+             > anomaly_tire_temp_fl_result.upper_bound
+    THEN true
+    ELSE false
+  END AS anomaly_tire_temp_fl,
+  `position`, gap_to_ahead_sec, gap_to_leader_sec,
+  pit_stops, tire_compound, tire_age_laps
+FROM anomaly
+WHERE lap > 0;
 ```
 
-The count should reach 198. Exit the SQL shell after the check.
-
-## 5. Run Labs 1 and 2 with a local race
-
-Start the simulator in its own terminal:
+Now start the local race in its own terminal:
 
 ```bash
 uv run f1-race
 ```
 
-It uses the pacing saved during provisioning (20 seconds per lap by default).
-For a slower race or a single non-looping run:
+Leave it running. `car_state` emits one row per 20-second window. After 12 windows it has enough history to detect temperature anomalies of the left front tire.
 
-```bash
-uv run f1-race --seconds-per-lap 60
-uv run f1-race --once
-```
-
-Open another terminal in the repository and start the Pit Wall:
+In a **second terminal**, open the Pit Wall dashboard:
 
 ```bash
 uv run f1-pitwall
 ```
 
-Sign in to Confluent Cloud with your own account. Open
-`RIVER-RACING-<your-prefix>-ENV`, open the Flink SQL workspace, and set the
-database to `RIVER-RACING-<your-prefix>-CLUSTER`.
+A browser opens at http://localhost:8000 with the Silverstone track map, the live leaderboard, and car #88's tyre/fuel gauges. The **ANOMALY DETECTION** and **AI PIT STRATEGIST** panels stay locked until `car_state` and `pit_decisions` exist:
 
-Use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md) for the shared lab steps. The link back to that file is intentional; apply these self-service substitutions as you work:
+![Pit Wall dashboard showing a nominal front-left tire temperature](../assets/self-service/pitwall-nominal.png)
 
-- Skip Lab 1's credential-claim steps. `selfservice up` already created the
-  local card, and you sign in with your own Confluent Cloud account.
-- In Lab 2, `driver_race_history` came from a bounded Flink insert rather than a
-  Postgres CDC connector. The table still has the same columns and 198 rows.
-- The simulator is your `uv run f1-race` terminal, not an instructor service.
+Verify the stream in a new SQL cell:
 
-## 6. Synchronize the anomaly run
+```sql
+SELECT car_number, lap, `position`, tire_compound, tire_age_laps, anomaly_tire_temp_fl, tire_temp_fl_c
+FROM `car_state`;
+```
 
-After Lab 2, stop `uv run f1-race` with Ctrl-C. Leave the Pit Wall running, then
-clear the old source data:
+## 2B. (Optional) Forecast tire temperature with Granite Time Series models
+
+Run this only after `car_state` produces rows. Stop the query after you inspect the result so Lab 4 can use the compute pool.
+
+This query uses IBM Granite **TinyTimeMixer** (`'model' VALUE 'ttm'`), a compact pre-trained time-series foundation model. You can swap the `model` value to try other built-in foundation forecasters; Google's TimesFM 2.5 is the default. See [Forecast Data Trends](https://docs.confluent.io/cloud/current/ai/builtin-functions/forecast.html) in the Confluent Cloud documentation.
+
+```sql
+WITH windowed AS (
+  SELECT
+    window_start,
+    window_end,
+    window_time,
+    car_number,
+    MAX(lap) AS lap,
+    AVG(tire_temp_fl_c) AS tire_temp_fl_c
+  FROM TABLE(
+    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
+  )
+  GROUP BY window_start, window_end, window_time, car_number
+),
+forecasted AS (
+  SELECT
+    *,
+    AI_FORECAST(
+      tire_temp_fl_c,
+      window_time,
+      JSON_OBJECT(
+        'model' VALUE 'ttm',
+        'horizon' VALUE 20,
+        'minContextSize' VALUE 20,
+        'maxContextSize' VALUE 50,
+        'rmseWindowSize' VALUE 5
+      )
+    ) OVER (
+      PARTITION BY car_number
+      ORDER BY window_time
+      RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS forecast_result
+  FROM windowed
+)
+SELECT
+  lap,
+  window_time AS forecast_generated_at,
+  tire_temp_fl_c AS current_tire_temperature_c,
+  forecast_result.forecast[1].`timestamp` AS next_point_at,
+  forecast_result.forecast[1].mean AS next_point_c,
+  forecast_result.forecast AS full_forecast,
+  forecast_result.metadata AS forecast_metadata
+FROM forecasted
+WHERE CARDINALITY(forecast_result.forecast) > 0;
+```
+
+## 3. Create `pit_strategy_agent` to provide expert advice on when to do a pit stop
+
+Paste and run the agent statement:
+
+```sql
+CREATE AGENT `pit_strategy_agent`
+USING MODEL `llm_textgen_model`
+USING PROMPT 'OUTPUT FORMAT — respond with exactly these 7 labeled lines in this order. No markdown, no asterisks, no bold, plain text only.
+
+Suggestion: [PIT NOW | PIT SOON | STAY OUT]
+Condition Summary: [one sentence describing current car condition]
+Race Context: [one sentence on race situation based on competitor standings in the input]
+Recommended Compound: [SOFT | MEDIUM | HARD | N/A if STAY OUT]
+Recommended Stint Laps: [integer expected laps on new tires | N/A if STAY OUT]
+Recommended Reason: [one sentence explaining compound choice | N/A if STAY OUT]
+Reasoning: [2-4 sentences full explanation of your decision]
+
+Correct STAY OUT example:
+Suggestion: STAY OUT
+Condition Summary: Front-left tire temperature is nominal at 107C with 18 laps of age on SOFT compound.
+Race Context: Currently P3. No competitors in top 10 have pitted yet. Leader is 8.2s ahead.
+Recommended Compound: N/A
+Recommended Stint Laps: N/A
+Recommended Reason: N/A
+Reasoning: Tire temps and pressures are within normal operating windows for a SOFT at this age. Track position P3 is strong. Pitting now would surrender 4-6 seconds and drop John behind cars currently behind us.
+
+Correct PIT NOW example:
+Suggestion: PIT NOW
+Condition Summary: Front-left tire temperature anomaly at 145C, 20C above expected upper bound — failure risk imminent.
+Race Context: Currently P8. P4 and P5 already pitted 3 laps ago and are pushing on fresh mediums.
+Recommended Compound: MEDIUM
+Recommended Stint Laps: 36
+Recommended Reason: Mediums will carry John to the flag across the remaining 36 laps and give him the pace to recover positions lost during the stop.
+Reasoning: The FL anomaly flag indicates the SOFT has gone past its operating limit with blowout risk. Pitting now onto mediums avoids tire failure. Based on historical data, John averages +2.75 positions on SOFT-MEDIUM — this is his strongest strategy.
+
+---
+
+You are the AI pit wall strategist for River Racing at the 2026 British Grand Prix (Silverstone, 60 laps).
+Driver: John Doe, Car #88.
+
+DECISION ALGORITHM — apply these rules in order. Do not deviate.
+
+Step 1: If anomaly_tire_temp_fl = true → Suggestion: PIT NOW. Stop.
+Step 2: Else if pit_stops > 0 → Suggestion: STAY OUT. Stop.
+Step 3: Else if tire_compound = SOFT AND tire_age_laps >= 21 → Suggestion: PIT SOON. Stop.
+Step 4: Else → Suggestion: STAY OUT. Stop.
+
+These rules are absolute. The race context, gap, competitor pit timing, and tire
+temperatures are inputs FOR YOUR REASONING TEXT ONLY — they MUST NOT change the
+Suggestion field. Reason about strategy in the Reasoning field, but the Suggestion
+itself is fully determined by Steps 1–4 above.
+
+FORBIDDEN PATTERNS — these are bugs, not options:
+- Outputting PIT NOW when anomaly_tire_temp_fl = false. No exceptions.
+- Outputting PIT SOON when tire_age_laps < 21.
+- Outputting PIT SOON after pit_stops > 0.
+- Outputting anything other than STAY OUT when tire_age_laps < 20 AND anomaly_tire_temp_fl = false.
+- Justifying PIT NOW with phrases like "approaching cliff", "blowout risk", "tires near limit",
+  "performance falling off" — these are PIT SOON or STAY OUT signals, never PIT NOW.
+
+SELF-CHECK before responding: re-read Steps 1–4 with the actual input values.
+The input includes REQUIRED SUGGESTION, computed by Flink SQL from those rules.
+Copy that exact value into Suggestion. If your prose conflicts with it, fix the
+prose before outputting.
+
+COMPETITOR CONTEXT:
+Current top-10 standings are provided at the end of each input. Use them to identify:
+- Which competitors have already pitted (and are now on fresher rubber)
+- Who is still on old tires and likely to pit soon
+- Whether John is at risk of being undercut, or has an overcut opportunity
+
+TIRE STRATEGY at Silverstone (60-lap race):
+- SOFT: High-grip compound. Optimal window is laps 1-19. Still competitive laps 20-22 with some pace loss and position drops — but no failure risk unless the anomaly sensor fires. Performance cliff begins around lap 18-20.
+- MEDIUM: Balanced compound, best for a 30-40 lap second stint after a SOFT first stint. Enables clean 1-stop strategy.
+- HARD: Very durable but slow. Only consider if 40+ laps remain at the second stop.
+- John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. The pit wall warns at laps 21-23, calls PIT NOW only when the lap-24 anomaly fires, then lets the fresh MEDIUM stint run.
+
+REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
+-- USING TOOLS `car_telemetry_tool`  -- uncomment when RTCE is active
+WITH ('max_iterations' = '10');
+```
+
+Then, confirm that the agent is created and registered properly:
+
+```sql
+SHOW AGENTS;
+```
+## 4. Create `pit_decisions` table and invoke your Streaming Agent with `AI_RUN_AGENT`
+
+Next we create the `pit_decisions` table, which holds the Streaming Agent's recommendations and output. As part of this command, we invoke the Streaming Agent using `AI_RUN_AGENT`. [See documentation for AI_RUN_AGENT here.](https://docs.confluent.io/cloud/current/flink/reference/functions/model-inference-functions.html#ai-run-agent)
+
+```sql
+CREATE TABLE `pit_decisions`
+WITH ('changelog.mode' = 'append')
+AS
+SELECT
+  cs.car_number,
+  cs.lap,
+  cs.`position`,
+  cs.tire_compound AS tire_compound_current,
+  cs.tire_age_laps,
+  cs.anomaly_tire_temp_fl,
+  CASE
+    WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
+    WHEN cs.pit_stops > 0 THEN 'STAY OUT'
+    WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 21 THEN 'PIT SOON'
+    ELSE 'STAY OUT'
+  END AS suggestion,
+  TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Condition Summary:\*{0,2}\s*([^\n]+)', 1)) AS condition_summary,
+  TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Race Context:\*{0,2}\s*([^\n]+)', 1)) AS race_context,
+  NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Compound:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS recommended_tire_compound,
+  CAST(NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Stint Laps:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS INT) AS recommended_stint_laps,
+  NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Reason:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS recommended_reason,
+  TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Reasoning:\*{0,2}\s*([\s\S]+?)$', 1)) AS reasoning,
+  CAST(response AS STRING) AS raw_response
+FROM `car_state` /*+ OPTIONS('scan.startup.mode'='earliest-offset') */ cs,
+LATERAL TABLE(AI_RUN_AGENT(
+  `pit_strategy_agent`,
+  CONCAT(
+    'CAR STATE — Lap ', CAST(cs.lap AS STRING), ' of 60 | Silverstone British Grand Prix\n',
+    'Driver: John Doe (#', CAST(cs.car_number AS STRING), ') | Current Position: P', CAST(cs.`position` AS STRING), '\n',
+    'REQUIRED SUGGESTION — copy exactly: ',
+    CASE
+      WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
+      WHEN cs.pit_stops > 0 THEN 'STAY OUT'
+      WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 21 THEN 'PIT SOON'
+      ELSE 'STAY OUT'
+    END, '\n',
+    '\nTIRE DATA:\n',
+    '  Compound: ', cs.tire_compound, ' | Age: ', CAST(cs.tire_age_laps AS STRING), ' laps\n',
+    '  FL Temp: ', CAST(ROUND(cs.tire_temp_fl_c, 1) AS STRING), 'C',
+    '  FR: ', CAST(ROUND(cs.tire_temp_fr_c, 1) AS STRING), 'C',
+    '  RL: ', CAST(ROUND(cs.tire_temp_rl_c, 1) AS STRING), 'C',
+    '  RR: ', CAST(ROUND(cs.tire_temp_rr_c, 1) AS STRING), 'C\n',
+    '  FL Pressure: ', CAST(ROUND(cs.tire_pressure_fl_psi, 1) AS STRING), 'psi',
+    '  FR: ', CAST(ROUND(cs.tire_pressure_fr_psi, 1) AS STRING), 'psi',
+    '  RL: ', CAST(ROUND(cs.tire_pressure_rl_psi, 1) AS STRING), 'psi',
+    '  RR: ', CAST(ROUND(cs.tire_pressure_rr_psi, 1) AS STRING), 'psi\n',
+    '  FL Tire Anomaly Detected: ', CAST(cs.anomaly_tire_temp_fl AS STRING), '\n',
+    '\nCAR SYSTEMS:\n',
+    '  Engine Temp: ', CAST(ROUND(cs.engine_temp_c, 1) AS STRING), 'C',
+    '  Brake FL: ', CAST(ROUND(cs.brake_temp_fl_c, 1) AS STRING), 'C',
+    '  Brake FR: ', CAST(ROUND(cs.brake_temp_fr_c, 1) AS STRING), 'C\n',
+    '  Battery: ', CAST(ROUND(cs.battery_charge_pct, 1) AS STRING), '%',
+    '  Fuel Remaining: ', CAST(ROUND(cs.fuel_remaining_kg, 1) AS STRING), 'kg\n',
+    '\nRACE CONTEXT:\n',
+    '  Gap to Leader: ', CAST(ROUND(cs.gap_to_leader_sec, 2) AS STRING), 's',
+    '  Gap to Car Ahead: ', CAST(ROUND(cs.gap_to_ahead_sec, 2) AS STRING), 's\n',
+    '  Pit Stops Taken: ', CAST(cs.pit_stops AS STRING), '\n',
+    '  Laps Remaining: ', CAST(60 - cs.lap AS STRING)
+  ),
+  MAP['debug', 'true']
+));
+```
+
+## 5. Inspect `pit_decisions`
+
+```sql
+SELECT lap, `position`, suggestion, condition_summary, reasoning
+FROM `pit_decisions`;
+```
+
+![Flink SQL workspace showing pit_decisions results progressing from PIT SOON to PIT NOW](../assets/self-service/pit-decisions-query.png)
+
+```sql
+SELECT lap, `position`, tire_compound_current, tire_age_laps,
+       anomaly_tire_temp_fl, suggestion,
+       recommended_tire_compound, recommended_stint_laps, reasoning
+FROM `pit_decisions`
+WHERE anomaly_tire_temp_fl = true;
+```
+
+![Flink SQL workspace showing the lap 24 PIT NOW row with the agent's full reasoning](../assets/self-service/pit-decisions-anomaly-query.png)
+
+> [!NOTE]
+>
+> At lap 24, the result should include the only `PIT NOW`, for the front-left tire anomaly. Laps 21–23 show `PIT SOON`; lap 25 returns to `STAY OUT` on fresh MEDIUMs. The Pit Wall unlocks its anomaly and AI strategist panels as the tables begin producing:
+
+![Pit Wall dashboard showing the lap 24 anomaly and unlocked AI Pit Strategist panel](../assets/self-service/pitwall-anomaly.png)
+
+
+
+## 5A. (optional) Connect race feed to WatsonX Orchestrate
+
+To run the local race-feed service for watsonx Orchestrate:
+
+```bash
+uv run f1-social-feed --creds runs/selfservice/credentials/DEMO.env
+```
+
+Expose port 8080 through an approved HTTPS tunnel, set `servers[0].url` in `docs/assets/orchestrate/f1-race-feed-openapi.json` to that public URL, and follow [Lab 5 in the hosted walkthrough](./HOSTED-WORKSHOP.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
+
+## 6. (optional) Expose `car_telemetry` to AI agents with Real-Time Context Engine
+
+Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP-compatible AI agent can query the topic. `uv run selfservice up` already enabled it on `car_telemetry` for you (Terraform's `enable_rtce`, default `true`) and minted an RTCE API key onto your credential card — there's nothing to toggle.
+
+Point your coding agent at it in one command:
+
+```bash
+uv run setup-rtce
+```
+
+This registers RTCE as an MCP server with Claude Code (or prints a config snippet for Codex CLI), using the `F1_RTCE_MCP_ENDPOINT`/`F1_RTCE_API_KEY`/`F1_RTCE_API_SECRET` fields already on your card. Then just ask, in plain English: *"What are car 88's front-left tire temperatures over the last few laps?"*
+
+If you'd rather confirm the toggle yourself, it's under your environment's cluster, **Topics** — `car_telemetry` shows Real-Time Context Engine already **On**:
+
+![Topics list with the Real-Time Context Engine column](../assets/self-service/rtce-topics-list.png)
+
+The panel shows the enablement details — environment, cluster, cloud, and region — that an MCP client needs to reach it:
+
+![Real-Time Context Engine enabled for car_telemetry](../assets/self-service/rtce-enabled.png)
+
+Once Real-Time Context Engine is enabled on `car_telemetry`, and you've run `uv run setup-rtce` to connect Claude or Codex, you can ask your LLM questions like:
+
+- *At what lap in the race does the engine temperature peak?*
+- *What is the front right tire temperature at lap 30?*
+
+## Run the workshop again or tear it down
+
+Stop `f1-race` with Ctrl-C when you finish. Use reset only when you intend to erase the race history and repeat the workshop from a clean slate:
 
 ```bash
 uv run reset
 ```
 
-In the browser SQL workspace, run Lab 3's full `CREATE TABLE car_state`
-statement from the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md). Wait until it shows
-**Running**, then restart the simulator:
+After reset, recreate `car_state`, wait for it to show **Running**, then start `uv run f1-race` again.
 
-```bash
-uv run f1-race
-```
-
-Continue through Labs 3, 4, and 6. Lab 5 remains optional because it needs IBM
-watsonx Orchestrate and a public race-feed service.
-
-### Optional Lab 5
-
-Run the race-feed service against the generated credential card:
-
-```bash
-uv run f1-social-feed --creds runs/selfservice/credentials/<prefix>.env
-```
-
-Expose port 8080 through an approved HTTPS tunnel, then edit
-`docs/assets/orchestrate/f1-race-feed-openapi.json` (ships with a placeholder `servers[0].url`) to
-point at that public URL, upload the JSON file to watsonx Orchestrate, and
-follow
-[Lab 5 in the hosted workshop walkthrough](./HOSTED-WORKSHOP.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
-
-### Optional MCP access
-
-To connect a supported coding client to this environment with the generated
-credential card:
-
-```bash
-uv run setup-mcp
-uv run setup-mcp --client codex
-uv run setup-mcp --client both
-```
-
-## 7. Stop or reset your local workshop
-
-Stop the race with Ctrl-C. To repeat the stream-processing labs:
-
-```bash
-uv run reset
-```
-
-Run Lab 3 again, wait for it to reach **Running**, and then restart
-`uv run f1-race`.
-
-## 8. Tear down
-
-Tear down as soon as the session ends so the Confluent resources stop accruing
-cost:
+When you're ready to tear down all resources associated with the lab, run:
 
 ```bash
 uv run selfservice down
 ```
 
-Confirm the command reports a successful destroy. It removes the generated
-credential card and deployment metadata but leaves `credentials.env` in place.
-Delete or securely archive that local file according to your organization's
-credential policy, and revoke any short-lived Confluent or AWS keys issued for
-the workshop.
+---
 
-## Recovery checks
-
-### `selfservice up` can't authenticate to Confluent
-
-Check that you supplied a Cloud API key, not a Kafka cluster key. Confirm that
-the key's principal may create the resources listed at the start of this guide.
-
-### Terraform reports that a name already exists
-
-Don't choose a new prefix while the first deployment still exists. Run
-`uv run selfservice down`, confirm the destroy succeeds, then provision again.
-
-### `car_state` stays empty
-
-Confirm Lab 3 was running before you restarted `f1-race`. The standings table
-starts at the latest offset, so earlier standings versions aren't available to
-the temporal join. The first `car_state` row appears after its 30-second window
-closes; the anomaly flag needs 12 windows of context before it can fire.
-
-### The Bedrock model fails
-
-Confirm the AWS key can invoke Bedrock in `us-east-1`. If you use temporary
-credentials, check that `TF_VAR_aws_session_token` is present in
-`credentials.env` and hasn't expired.
-
-## Navigation
-
-- **Overview:** [Choose a path](../../README.md)
-- **Hosted workshop:** [Attendee walkthrough](./HOSTED-WORKSHOP.md)
-- **Self-service workshop:** [This walkthrough](#self-service-workshop-walkthrough)
+**← Back to Overview**: [Main README](../../README.md)

@@ -163,7 +163,7 @@ class FlinkSession:
             "name": name,
             "spec": {
                 "statement": sql,
-                "compute_pool": {"id": self.pool},
+                "compute_pool_id": self.pool,
                 "properties": {
                     "sql.current-catalog": self.catalog,
                     "sql.current-database": self.database,

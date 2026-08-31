@@ -1,34 +1,34 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+TRACKS = (
+    "docs/tracks/HOSTED-WORKSHOP.md",
+    "docs/tracks/SELF-SERVICE.md",
+    "docs/tracks/STANDALONE-DEMO.md",
+)
+SQL_SOURCES = (
+    ("docs/demo-reference/enrichment_anomaly.sql", "CREATE TABLE `car_state`"),
+    ("docs/demo-reference/streaming_agent_create_agent.sql", "CREATE AGENT `pit_strategy_agent`"),
+    ("docs/demo-reference/streaming_agent_pit_decisions.sql", "CREATE TABLE `pit_decisions`"),
+    ("docs/demo-reference/granite_tire_forecast.sql", "WITH windowed AS"),
+)
 
 
-def test_car_state_uses_one_30_second_window_per_race_lap():
-    for relative_path in (
-        "docs/demo-reference/enrichment_anomaly.sql",
-        "docs/demo-reference/enrichment_anomaly_ai.sql",
-        "docs/tracks/HOSTED-WORKSHOP.md",
-    ):
-        sql = (ROOT / relative_path).read_text()
-        assert "TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '30' SECOND)" in sql
+def _statement(relative_path: str, marker: str) -> str:
+    source = (ROOT / relative_path).read_text()
+    return source[source.index(marker) :].strip()
 
 
-def test_forecast_uses_the_same_one_per_lap_window():
-    forecast = (ROOT / "docs/demo-reference/granite_tire_forecast.sql").read_text()
-    walkthrough = (ROOT / "docs/tracks/HOSTED-WORKSHOP.md").read_text()
-
-    window = "TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '30' SECOND)"
-    assert window in forecast
-    assert window in walkthrough
+def test_attendee_walkthrough_sql_matches_the_canonical_sources():
+    for source_path, marker in SQL_SOURCES:
+        statement = _statement(source_path, marker)
+        for track_path in TRACKS:
+            assert statement in (ROOT / track_path).read_text()
 
 
-def test_agent_consumes_the_one_row_per_lap_car_state_stream_directly():
-    for relative_path in (
-        "docs/demo-reference/streaming_agent_pit_decisions.sql",
-        "docs/tracks/HOSTED-WORKSHOP.md",
-    ):
-        sql = (ROOT / relative_path).read_text()
-        agent_call = sql.index("LATERAL TABLE(AI_RUN_AGENT")
-        section = sql[:agent_call]
-        assert "FROM `car_state`" in section
-        assert "WITH one_per_lap AS" not in section
+def test_only_the_lap_24_anomaly_can_issue_pit_now():
+    decision_sql = (ROOT / "docs/demo-reference/streaming_agent_pit_decisions.sql").read_text()
+    assert decision_sql.count("WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'") == 2
+    assert decision_sql.count("WHEN cs.pit_stops > 0 THEN 'STAY OUT'") == 2
+    assert decision_sql.count("cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 21") == 2
+    assert "tire_age_laps >= 22 THEN 'PIT NOW'" not in decision_sql

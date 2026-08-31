@@ -4,7 +4,7 @@
 -- `uv run selfservice up --with-labs` submit this exact file instead. There is no
 -- dbt in this repo.
 -- Input: car_telemetry (stream), race_standings (versioned table)
--- Output: car_state (one record per 30-second race lap)
+-- Output: car_state (one record per 20-second race lap)
 --
 -- Design notes (learned from live debugging — keep!):
 --
@@ -24,7 +24,7 @@
 --    seasonal-trend decomposition adds variance the demo doesn't need.
 --
 -- 4. The CASE filter restricts anomalies to `actual_value > upper_bound`.
---    Otherwise the post-pit drop at lap 24 (145°C → 95°C) flags a second
+--    Otherwise the post-pit drop after lap 24 (145°C → 95°C) flags a second
 --    anomaly that's semantically a recovery, not a problem. It also handles the
 --    warmup rows for free: `is_anomaly` is NULL until the training window fills,
 --    and NULL fails the WHEN, so those rows fall through to `false`.
@@ -76,7 +76,7 @@ windowed AS (
     MAX(tire_compound) AS tire_compound,
     MAX(tire_age_laps) AS tire_age_laps
   FROM TABLE(
-    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '30' SECOND)
+    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
   )
   GROUP BY window_start, window_end, window_time, car_number
 ),

@@ -11,10 +11,10 @@ def test_telemetry_lap1_normal():
     assert data["fuel_remaining_kg"] > 40
 
 
-def test_telemetry_lap22_anomaly():
-    """Lap 22 — tire_temp_fl must spike above 140."""
-    data = generate_telemetry(lap=22, tire_age=22, tire_compound="SOFT", post_pit=False)
-    assert data["tire_temp_fl_c"] >= 140, "Front-left tire temp must spike at lap 22"
+def test_telemetry_lap24_anomaly():
+    """Lap 24 — tire_temp_fl must spike above 140 before the scheduled stop."""
+    data = generate_telemetry(lap=24, tire_age=24, tire_compound="SOFT", post_pit=False)
+    assert data["tire_temp_fl_c"] >= 140, "Front-left tire temp must spike at lap 24"
     assert data["tire_temp_fr_c"] < 120, "Other tire temps must stay normal"
 
 
@@ -33,8 +33,8 @@ def test_fuel_decreases_linearly():
 
 
 def test_no_anomaly_on_other_metrics():
-    """At lap 22, only tire_temp_fl spikes. Engine, brakes, battery, pressures stay normal."""
-    data = generate_telemetry(lap=22, tire_age=22, tire_compound="SOFT", post_pit=False)
+    """At lap 24, only tire_temp_fl spikes. Engine, brakes, battery, pressures stay normal."""
+    data = generate_telemetry(lap=24, tire_age=24, tire_compound="SOFT", post_pit=False)
     assert 115 <= data["engine_temp_c"] <= 125
     assert 19 <= data["tire_pressure_fl_psi"] <= 23
     assert 30 <= data["battery_charge_pct"] <= 85

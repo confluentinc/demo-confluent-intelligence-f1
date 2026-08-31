@@ -1,7 +1,7 @@
 """F1 Race Simulator — produces car telemetry and race standings to Kafka.
 
-Simulates a 60-lap race at Silverstone in ~30 minutes of real time (two laps
-per minute at the default SECONDS_PER_LAP=30).
+Simulates a 60-lap race at Silverstone in ~20 minutes of real time (three laps
+per minute at the default SECONDS_PER_LAP=20).
 Two Kafka outputs (both Avro via Schema Registry, produced directly to
 Confluent Cloud — there is no IBM MQ hop):
   - Car telemetry (car #88 only) → topic 'car_telemetry'
@@ -14,6 +14,7 @@ subject and the value against '<topic>-value'.
 
 import json
 import logging
+import math
 import os
 import random
 import time
@@ -27,7 +28,7 @@ from confluent_kafka.serialization import MessageField, SerializationContext
 from datagen import config
 from datagen.drivers import GRID
 from datagen.race_script import RaceState
-from datagen.telemetry import generate_telemetry
+from datagen.telemetry import ANOMALY_LAP, generate_telemetry
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,6 +51,16 @@ def _seed_random():
 
 def _now_millis():
     return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+def _next_epoch_boundary(now: float, seconds_per_lap: int) -> float:
+    """Round `now` up to the next SECONDS_PER_LAP wall-clock epoch boundary."""
+    return math.ceil(now / seconds_per_lap) * seconds_per_lap
+
+
+def _lap_deadline(race_start: float, lap: int, seconds_per_lap: int) -> float:
+    """Absolute wall-clock start time for `lap` (1-indexed) = race_start + (lap-1)*spl."""
+    return race_start + (lap - 1) * seconds_per_lap
 
 
 def _build_standings_key_fn(sr_client, avro_serializer):
@@ -137,6 +148,24 @@ def _produce_standings(producer, avro_serializer, key_fn, standings):
     producer.poll(0)
 
 
+def _source_state_for_lap(car88_before, car88, lap):
+    """Return the state the source should publish for car #88 on this lap.
+
+    The race engine applies the scheduled lap-24 stop while advancing its
+    internal state. Publish the pre-stop SOFT snapshot for that one lap so the
+    anomaly is visible to Flink and triggers the pit call; the next lap exposes
+    the post-stop MEDIUM state.
+    """
+    if lap != ANOMALY_LAP:
+        return car88, car88["pit_stops"] > 0
+
+    source = car88_before.copy()
+    source["lap"] = lap
+    source["tire_age_laps"] += 1
+    source["in_pit_lane"] = False
+    return source, False
+
+
 def _run_warmup_laps(producer, avro_serializer):
     """Produce pre-race telemetry windows (lap=0) as a producer/schema smoke test.
 
@@ -187,7 +216,7 @@ def run_race():
     # Initialize race state
     race = RaceState(GRID)
 
-    # Track car 88's tire state for telemetry generation
+    # Track car 88's tire state for telemetry generation.
     car88_tire_age = 0
     car88_tire_compound = "SOFT"
     car88_post_pit = False
@@ -195,18 +224,32 @@ def run_race():
     try:
         _run_warmup_laps(producer, avro_serializer)
 
+        race_start = _next_epoch_boundary(time.time(), config.SECONDS_PER_LAP)
+        wait = race_start - time.time()
+        if wait > 0:
+            logger.info(f"Phase-locking to 20s epoch boundary; waiting {wait:.2f}s before lap 1")
+            time.sleep(wait)
+
         for lap in range(1, config.TOTAL_LAPS + 1):
-            lap_start = time.time()
+            lap_start = _lap_deadline(race_start, lap, config.SECONDS_PER_LAP)
+            behind = time.time() - lap_start
+            if behind > 0.5:
+                logger.warning(
+                    f"Lap {lap} started {behind:.2f}s behind its scheduled boundary"
+                )
+
+            # Preserve the pre-stop snapshot for the scheduled pit lap. The simulator
+            # applies the hard-coded stop while advancing its internal race state, but
+            # the source stream must first expose the anomaly that triggers the call.
+            car88_before = race.get_car(config.OUR_CAR_NUMBER).copy()
 
             # Advance race state (positions, tires, gaps)
             race.advance_lap()
             car88 = race.get_car(config.OUR_CAR_NUMBER)
 
-            # Update tire tracking for telemetry
-            car88_tire_age = car88["tire_age_laps"]
-            car88_tire_compound = car88["tire_compound"]
-            if car88["pit_stops"] > 0:
-                car88_post_pit = True
+            car88_source, car88_post_pit = _source_state_for_lap(car88_before, car88, lap)
+            car88_tire_age = car88_source["tire_age_laps"]
+            car88_tire_compound = car88_source["tire_compound"]
 
             logger.info(
                 f"Lap {lap:2d}/{config.TOTAL_LAPS} | "
@@ -216,7 +259,13 @@ def run_race():
             )
 
             # Produce race standings to Kafka (all 22 cars, keyed by car_number)
-            _produce_standings(producer, avro_serializer, standings_key_fn, race.get_standings())
+            standings = race.get_standings()
+            if lap == ANOMALY_LAP:
+                standings = [
+                    car88_source if standing["car_number"] == config.OUR_CAR_NUMBER else standing
+                    for standing in standings
+                ]
+            _produce_standings(producer, avro_serializer, standings_key_fn, standings)
 
             # Produce car telemetry to Kafka (multiple readings per lap)
             readings_per_lap = config.SECONDS_PER_LAP // config.TELEMETRY_INTERVAL_SEC
@@ -243,9 +292,8 @@ def run_race():
             # Ensure all messages are delivered
             producer.flush(timeout=5)
 
-            # Pace lap timing
-            elapsed = time.time() - lap_start
-            remaining = config.SECONDS_PER_LAP - elapsed
+            # Pace to the next lap's absolute epoch deadline (no cumulative drift)
+            remaining = _lap_deadline(race_start, lap + 1, config.SECONDS_PER_LAP) - time.time()
             if remaining > 0:
                 time.sleep(remaining)
 

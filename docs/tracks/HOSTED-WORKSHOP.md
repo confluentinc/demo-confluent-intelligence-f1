@@ -1,12 +1,13 @@
 # Hosted workshop walkthrough
 
+![F1 Pit Wall Confluent Intelligence architecture](../assets/architecture.png)
+
 > [!NOTE]
 >
 > **Did your instructor give you a workshop login?** You're in the right place. If you're using your own Confluent Cloud account and provisioning your own environment, start with the [self-service workshop walkthrough](./SELF-SERVICE.md) instead. If that guide sent you back here for the shared labs, continue at the lab it named.
 
 Follow the labs in order. Every attendee command and SQL statement is included here.
 
-![F1 Pit Wall Confluent Intelligence architecture](../assets/architecture.png)
 
 ## Start here
 
@@ -206,7 +207,7 @@ windowed AS (
     MAX(tire_compound) AS tire_compound,
     MAX(tire_age_laps) AS tire_age_laps
   FROM TABLE(
-    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '30' SECOND)
+    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
   )
   GROUP BY window_start, window_end, window_time, car_number
 ),
@@ -250,15 +251,17 @@ SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
 FROM `car_state`;
 ```
 
-You should see one row per 30-second lap. Around lap 22, `anomaly_tire_temp_fl` becomes `true` and the temperature reaches about 145°C.
+You should see one row per 20-second lap. At lap 24, `anomaly_tire_temp_fl` becomes `true` and the temperature reaches about 145°C.
 
 > [!TIP]
 >
-> **Do not wait for the anomaly.** It appears later in the race (around lap 22, roughly 11 minutes in). Keep going — build the LAB 4 agent, set up LAB 5, and do the RTCE exercise while the race runs. Only the LAB 6 anomaly inspection (`pit_decisions WHERE anomaly_tire_temp_fl = true`) needs the anomaly to have fired; everything else proceeds immediately.
+> **Do not wait for the anomaly.** It appears later in the race (at lap 24, roughly 8 minutes in). Keep going — build the LAB 4 agent, set up LAB 5, and do the RTCE exercise while the race runs. Only the LAB 6 anomaly inspection (`pit_decisions WHERE anomaly_tire_temp_fl = true`) needs the anomaly to have fired; everything else proceeds immediately.
+>
+> The race also may take up to ~20 seconds to emit its first lap (it aligns to a 20-second wall-clock boundary before starting), so the first `car_state` window can appear one interval later than expected.
 
 ### Optional: Forecast tire temperature with new IBM Granite Time Series Models
 
-Open a new SQL cell and run the query below. It uses the same 30-second, one-per-lap tire temperature windows, but asks the built-in `AI_FORECAST` function for the next 20 values. The `model` option selects IBM Granite TinyTimeMixer directly; there is no connection or model to register.
+Open a new SQL cell and run the query below. It uses the same 20-second, one-per-lap tire temperature windows, but asks the built-in `AI_FORECAST` function for the next 20 values. The `model` option selects IBM Granite TinyTimeMixer directly; there is no connection or model to register.
 
 ```sql
 WITH windowed AS (
@@ -270,7 +273,7 @@ WITH windowed AS (
     MAX(lap) AS lap,
     AVG(tire_temp_fl_c) AS tire_temp_fl_c
   FROM TABLE(
-    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '30' SECOND)
+    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
   )
   GROUP BY window_start, window_end, window_time, car_number
 ),
@@ -325,7 +328,7 @@ Enablement takes a few seconds; the description is what an AI agent reads to pic
 **3. Connect your MCP client.** Copy the **MCP Setup Command** from your **credential claim email** (or credential card) and run it in a terminal:
 
 ```bash
-claude mcp add --transport http rtce <YOUR_MCP_ENDPOINT> \
+claude mcp add --transport http real-time-context-engine <YOUR_MCP_ENDPOINT> \
   --header "Authorization: Basic <YOUR_TOKEN>"
 ```
 
@@ -397,22 +400,24 @@ Driver: John Doe, Car #88.
 DECISION ALGORITHM — apply these rules in order. Do not deviate.
 
 Step 1: If anomaly_tire_temp_fl = true → Suggestion: PIT NOW. Stop.
-Step 2: Else if tire_compound = SOFT AND tire_age_laps >= 20 → Suggestion: PIT SOON. Stop.
-Step 3: Else → Suggestion: STAY OUT. Stop.
+Step 2: Else if pit_stops > 0 → Suggestion: STAY OUT. Stop.
+Step 3: Else if tire_compound = SOFT AND tire_age_laps >= 21 → Suggestion: PIT SOON. Stop.
+Step 4: Else → Suggestion: STAY OUT. Stop.
 
 These rules are absolute. The race context, gap, competitor pit timing, and tire
 temperatures are inputs FOR YOUR REASONING TEXT ONLY — they MUST NOT change the
 Suggestion field. Reason about strategy in the Reasoning field, but the Suggestion
-itself is fully determined by Steps 1–3 above.
+itself is fully determined by Steps 1–4 above.
 
 FORBIDDEN PATTERNS — these are bugs, not options:
 - Outputting PIT NOW when anomaly_tire_temp_fl = false. No exceptions.
-- Outputting PIT SOON when tire_age_laps < 20.
+- Outputting PIT SOON when tire_age_laps < 21.
+- Outputting PIT SOON after pit_stops > 0.
 - Outputting anything other than STAY OUT when tire_age_laps < 20 AND anomaly_tire_temp_fl = false.
 - Justifying PIT NOW with phrases like "approaching cliff", "blowout risk", "tires near limit",
   "performance falling off" — these are PIT SOON or STAY OUT signals, never PIT NOW.
 
-SELF-CHECK before responding: re-read Steps 1–3 with the actual input values.
+SELF-CHECK before responding: re-read Steps 1–4 with the actual input values.
 The input includes REQUIRED SUGGESTION, computed by Flink SQL from those rules.
 Copy that exact value into Suggestion. If your prose conflicts with it, fix the
 prose before outputting.
@@ -427,10 +432,10 @@ TIRE STRATEGY at Silverstone (60-lap race):
 - SOFT: High-grip compound. Optimal window is laps 1-19. Still competitive laps 20-22 with some pace loss and position drops — but no failure risk unless the anomaly sensor fires. Performance cliff begins around lap 18-20.
 - MEDIUM: Balanced compound, best for a 30-40 lap second stint after a SOFT first stint. Enables clean 1-stop strategy.
 - HARD: Very durable but slow. Only consider if 40+ laps remain at the second stop.
-- John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. Winning execution: run SOFT until the anomaly signal fires or tire_age_laps >= 20, then switch to MEDIUM and overtake on fresher rubber.
+- John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. The pit wall warns at laps 21-23, calls PIT NOW only when the lap-24 anomaly fires, then lets the fresh MEDIUM stint run.
 
 REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
--- USING TOOLS `race_standings_tool`  -- uncomment when RTCE is active
+-- USING TOOLS `car_telemetry_tool`  -- uncomment when RTCE is active
 WITH ('max_iterations' = '10');
 ```
 
@@ -455,7 +460,8 @@ SELECT
   cs.anomaly_tire_temp_fl,
   CASE
     WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
-    WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 20 THEN 'PIT SOON'
+    WHEN cs.pit_stops > 0 THEN 'STAY OUT'
+    WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 21 THEN 'PIT SOON'
     ELSE 'STAY OUT'
   END AS suggestion,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Condition Summary:\*{0,2}\s*([^\n]+)', 1)) AS condition_summary,
@@ -474,7 +480,8 @@ LATERAL TABLE(AI_RUN_AGENT(
     'REQUIRED SUGGESTION — copy exactly: ',
     CASE
       WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
-      WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 20 THEN 'PIT SOON'
+      WHEN cs.pit_stops > 0 THEN 'STAY OUT'
+      WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 21 THEN 'PIT SOON'
       ELSE 'STAY OUT'
     END, '\n',
     '\nTIRE DATA:\n',
@@ -513,14 +520,13 @@ SELECT * FROM `pit_decisions`;
 
 | Lap | Position | Suggestion | What's happening |
 |-----|----------|-----------|------------------|
-| 1–15 | P3 | STAY OUT | Competitive, stable |
-| 16–19 | P3 → P1 | STAY OUT | Leaders pit — John briefly leads |
-| 20–21 | P1 → P8 | PIT SOON | Tire cliff bites |
-| **22** | **P8** | **PIT NOW** | **Front-left anomaly at 145°C — the key moment** |
-| 24 | P12 | STAY OUT | Fresh MEDIUMs |
-| 25–60 | P12 → P2 | STAY OUT | Fastest car on track, climbs back |
+| 1–20 | P3 → P1 | STAY OUT | Competitive, stable |
+| 21–23 | P1 → P8 | PIT SOON | Aging SOFTs need a stop soon |
+| **24** | **P8** | **PIT NOW** | **Front-left anomaly at 145°C triggers the scheduled stop** |
+| 25 | P14 | STAY OUT | Fresh MEDIUMs after the stop |
+| 26–60 | P14 → P1–P2 | STAY OUT | Fastest car on track, climbs back |
 
-**Net result: P8 at the agent's call → P2 at finish = +6 positions.**
+**Net result: P8 at the agent's call → P1–P2 at finish.**
 
 Check the Pit Wall. The **AI PIT STRATEGIST** panel should unlock and show the decisions.
 
@@ -641,8 +647,8 @@ Ask your instructor to reset the race before repeating Labs 3 and 4.
 - **Can't sign in:** Use the workshop username ending in `+f1wp###@confluent.io`, not your own email. Ask the instructor for a fresh password if needed.
 - **No tables, models, or agents:** Check the catalog and database selectors above the SQL editor.
 - **Source tables are idle:** Wait a few seconds and run the query again. Tell the instructor if no rows arrive after several minutes.
-- **`car_state` is empty:** Wait for the first 30-second window to close. If it is still empty after 60 seconds, tell the instructor; Lab 3 may have started after the standings version it needs.
-- **No lap-22 anomaly:** Ask the instructor to confirm the race was reset and started at the Lab 3 gate. Remember the anomaly appears around lap 22 (~11 min in) — don't wait for it before moving on.
+- **`car_state` is empty:** Wait for the first 20-second window to close. The race can also take up to ~20 seconds to emit lap 1 (epoch alignment), so allow after ~40-60 seconds before treating it as stuck. If it is still empty then, tell the instructor; Lab 3 may have started after the standings version it needs.
+- **No lap-24 anomaly:** Ask the instructor to confirm the race was reset and started at the Lab 3 gate. Remember the anomaly appears around lap 24 (~8 min in) — don't wait for it before moving on.
 - **Agent fields are empty:** Inspect `raw_response`. If all responses fail, tell the instructor; the shared Bedrock quota may be throttled.
 - **Lab 5 tool fails:** Confirm the instructor's public race-feed service is still running and that the prefix exactly matches your credential card.
 - **Lab 5 shows a 404 / wrong environment:** Fully log out of watsonx Orchestrate and log back in with the workshop credentials, then reopen Agent Builder.
@@ -658,3 +664,7 @@ If the pre-provisioned environment fails, your instructor may switch you to the 
 > [!IMPORTANT]
 >
 > **Are you the speaker running this workshop?** Setup for provisioning every attendee's environment lives in the **[organizer guide](../organizer/README.md)**.
+
+---
+
+**← Back to Overview**: [Main README](../../README.md)

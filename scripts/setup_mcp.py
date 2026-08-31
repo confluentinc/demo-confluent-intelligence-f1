@@ -2,9 +2,9 @@
 Register the Confluent MCP server with a local coding agent, using this
 deployment's credential card.
 
-    uv run setup-mcp                        # resolved card, Claude Code
+    uv run setup-mcp                        # resolved card, prompts for client(s)
     uv run setup-mcp --creds <card>.env     # explicit card
-    uv run setup-mcp --client codex         # Codex CLI instead
+    uv run setup-mcp --client codex         # Codex CLI instead, no prompt
     uv run setup-mcp --client both
     uv run setup-mcp --dry-run              # print the argv, touch no agent config
 
@@ -436,6 +436,36 @@ CLIENTS = {
 }
 
 
+def _prompt_for_clients() -> list[str]:
+    """
+    Ask which coding agent(s) to register with, when ``--client`` was omitted.
+
+    Falls back to ``["claude"]`` (today's old default) on empty input or on a
+    non-interactive stdin (EOF/Ctrl-C), so a script piping into this command
+    doesn't hang waiting on a prompt it can never answer.
+    """
+    print("Which coding agent(s) should the Confluent MCP server be registered with?")
+    for i, (_name, (label, _scope, _argv, _hint)) in enumerate(CLIENTS.items(), start=1):
+        print(f"  {i}) {label}")
+    print(f"  {len(CLIENTS) + 1}) Both")
+
+    try:
+        choice = input("Choice [1]: ").strip()
+    except (EOFError, KeyboardInterrupt, OSError):
+        print("\nNo input available — defaulting to Claude Code.")
+        return ["claude"]
+
+    names = list(CLIENTS.keys())
+    if choice in ("", "1", "claude"):
+        return ["claude"]
+    if choice in ("2", "codex"):
+        return ["codex"]
+    if choice in (str(len(CLIENTS) + 1), "both"):
+        return names
+    print(f"Unrecognized choice '{choice}' — defaulting to Claude Code.")
+    return ["claude"]
+
+
 def register(client: str, node_bin: str, dist_js: Path, env_path: Path, dry_run: bool = False) -> bool:
     """
     Point one coding agent at the MCP server. Returns True on success.
@@ -496,8 +526,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--client",
         choices=("claude", "codex", "both"),
-        default="claude",
-        help="which coding agent to register with (default: claude)",
+        default=None,
+        help="which coding agent to register with (default: prompt interactively)",
     )
     parser.add_argument(
         "--dry-run",
@@ -509,7 +539,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
-    clients = ["claude", "codex"] if args.client == "both" else [args.client]
+    if args.client is None:
+        clients = _prompt_for_clients()
+    else:
+        clients = ["claude", "codex"] if args.client == "both" else [args.client]
 
     node_bin = _find_preferred_node()
     _check_node(node_bin)

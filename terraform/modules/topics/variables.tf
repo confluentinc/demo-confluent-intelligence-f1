@@ -66,13 +66,15 @@ variable "region" {
 
 variable "enable_rtce" {
   description = <<-EOT
-    Enable the Real-Time Context Engine on car_telemetry + race_standings, so an
-    attendee's MCP client can query them (see modules/topics/main.tf).
+    Enable the Real-Time Context Engine on car_telemetry, so an attendee's MCP
+    client can query it (see modules/topics/main.tf). race_standings is
+    deliberately excluded — it's a compacted, upsert-keyed topic and RTCE
+    queries against it fail with MT_UPSERT_NOT_SUPPORTED.
 
     The escape hatch is deliberate: RTCE is per-org and region-limited, so an org
-    without it, or a build in an unsupported region, fails on these two resources
-    and nothing else. `TF_VAR_enable_rtce=false` skips them and leaves every
-    other topic behaviour untouched.
+    without it, or a build in an unsupported region, fails on this resource and
+    nothing else. `TF_VAR_enable_rtce=false` skips it and leaves every other
+    topic behaviour untouched.
   EOT
   type        = bool
   default     = true

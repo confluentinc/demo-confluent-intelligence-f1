@@ -32,6 +32,9 @@ dependencies = [
     # this cap means migrating that client (RTCE's Basic auth has to move into a
     # custom httpx client) and re-verifying against a live RTCE endpoint.
     "mcp>=1.8.0,<2.0",
+    # setup-rtce: round-trip edits to ~/.codex/config.toml without reformatting
+    # or dropping the user's existing tables/comments.
+    "tomlkit>=0.12.0",
 ]
 
 [project.scripts]
@@ -41,6 +44,7 @@ api-keys = "scripts.common.api_keys:main"
 reset = "scripts.reset:main"
 race = "scripts.race_control:main"
 setup-mcp = "scripts.setup_mcp:main"
+setup-rtce = "scripts.setup_rtce:main"
 workshop = "scripts.workshop.cli:main"
 create-workshop = "scripts.workshop.create:main"
 teardown-workshop = "scripts.workshop.teardown:main"

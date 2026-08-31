@@ -55,11 +55,18 @@ REQUIRED = {
 # recorded here so the two agree across re-runs and so `f1-race` needs no flag.
 DEFAULT_SECONDS_PER_LAP = "20"
 
+# Self-service is one person / one checkout / one deployment at a time, and the
+# prefix is only a Confluent Cloud display label + local file-naming
+# convenience (see deployment_meta.py's resolve_prefix precedence for the real
+# isolation guarantees), so there's no need to derive or prompt for one — fix
+# it and skip the question.
+DEFAULT_PREFIX = "DEMO"
+
 _PREFIX_SOURCES = {
     "state": "already deployed — cannot be changed without tearing down first",
     "saved": f"reused from runs/{RUN_NAME}/deployment.env",
     "explicit": "from the exported TF_VAR_prefix",
-    "derived": "derived from your identity, stable across re-runs",
+    "derived": f"the default self-service prefix ({DEFAULT_PREFIX!r})",
 }
 
 
@@ -126,6 +133,11 @@ def _resolve_prefix(root, owner_email: str, explicit: str | None) -> tuple[str, 
     if error:
         print(f"\nError: {error}")
         sys.exit(1)
+    # Nothing deployed or saved yet and no explicit override: self-service has
+    # no per-user identity requirement, so use the fixed default rather than
+    # deriving one from $USER/email and asking the operator to confirm it.
+    if source == "derived":
+        prefix = DEFAULT_PREFIX
     # Live state wins over saved metadata, but say so rather than silently
     # correcting: metadata that disagrees with state means an interrupted run or a
     # hand-edited file, and the operator should know which name is authoritative.
@@ -220,22 +232,14 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
         "aws_session_token": "",
     }
 
-    # Suggested, not imposed. The old default was credentials.env's TF_VAR_prefix
-    # falling back to the literal `solo`, so everyone who accepted it deployed
-    # under the same name — and after a `uv run deploy` it silently inherited
-    # standalone's prefix instead.
-    suggested, source = _resolve_prefix(root, cfg["owner_email"], _explicit_prefix())
-    print(f"  (prefix {suggested!r} — {_PREFIX_SOURCES[source]})")
-    while True:
-        prefix = prompt_with_default(f"Environment prefix (alphanumeric, max {meta.MAX_PREFIX_LEN})", suggested)
-        problem = meta.validate_prefix(prefix)
-        if not problem:
-            break
-        print(f"  {problem}")
-    # An answered prompt is explicit, so re-resolve: refuse a value that
-    # contradicts live state rather than orphaning the deployed resources.
-    resolved, _source = _resolve_prefix(root, cfg["owner_email"], prefix)
+    # Not prompted: self-service pins a fixed prefix (see DEFAULT_PREFIX) unless
+    # a deployment already exists, one was saved from a prior run, or the
+    # operator exported TF_VAR_prefix — `_resolve_prefix` still honors all of
+    # those ahead of the default so a rerun never silently renames a live
+    # deployment.
+    resolved, source = _resolve_prefix(root, cfg["owner_email"], _explicit_prefix())
     cfg["prefix"] = _validated_prefix_or_exit(resolved)
+    print(f"  Prefix: {cfg['prefix']}  ({_PREFIX_SOURCES[source]})")
     cfg["seconds_per_lap"] = _seconds_per_lap(root, creds)
 
     if cfg["aws_bedrock_key"].startswith("ASIA"):
@@ -319,7 +323,9 @@ def up(args: argparse.Namespace) -> None:
     # Credential card (reuse the workshop generator so the card format matches).
     creds_dir = root / "runs" / RUN_NAME / "credentials"
     creds_dir.mkdir(parents=True, exist_ok=True)
-    fields = creds_mod._card_fields(cfg["prefix"], cfg["owner_email"], out, social_feed_url="", region=REGION)
+    fields = creds_mod._card_fields(
+        cfg["prefix"], cfg["owner_email"], out, social_feed_url="", region=REGION, rtce_keys=True
+    )
     creds_mod._write_env(creds_dir, fields)
     creds_mod._write_md(creds_dir, fields)
     card_path = creds_dir / f"{cfg['prefix']}.env"
@@ -349,17 +355,20 @@ def up(args: argparse.Namespace) -> None:
     print("\n=== Ready ===\n")
     if args.with_labs and labs_ok:
         print("LAB 3 and LAB 4 are already running — they start filling as soon as the race does.")
-        print("  `car_state` stays empty for ~6 min while anomaly detection fills its")
-        print("  first 12 windows of context. The anomaly fires around lap 22.\n")
+        print("  `car_state` stays empty for ~4 min while anomaly detection fills its")
+        print("  first 12 windows of context. The anomaly fires around lap 24.\n")
     print("1. Start the live race feed (leave running in its own terminal):")
     print(f"     uv run f1-race          # {cfg['seconds_per_lap']}s/lap, from this deployment's config")
     print("2. Open the SQL shell for the labs:")
     print("     uv run f1-sql")
     print("3. Open the live dashboard:")
     print("     uv run f1-pitwall")
+    if fields.get("rtce_api_key"):
+        print("4. (optional) Connect an AI agent to the live feed via RTCE:")
+        print("     uv run setup-rtce")
     if not (args.with_labs and labs_ok):
         print("\nContinue in docs/tracks/SELF-SERVICE.md at section 5.")
-    print("Optional LAB 5 (watsonx Orchestrate) is also covered in that walkthrough.")
+    print("Optional LAB 5 (watsonx Orchestrate) and LAB 6 (RTCE) are also covered in that walkthrough.")
     print("\nTear down when finished:  uv run selfservice down")
 
     if not (seeded and labs_ok):

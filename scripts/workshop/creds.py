@@ -342,7 +342,7 @@ def _rtce_command(f: dict[str, str]) -> str:
         return ""
     token = base64.b64encode(f"{f['rtce_api_key']}:{f['rtce_api_secret']}".encode()).decode()
     return (
-        f"claude mcp add --transport http rtce {f['rtce_mcp_endpoint']} "
+        f"claude mcp add --transport http real-time-context-engine {f['rtce_mcp_endpoint']} "
         f'--header "Authorization: Basic {token}"'
     )
 
@@ -370,7 +370,7 @@ Register it with Claude Code (one line, run it anywhere):
 Then just ask, in plain English:
 
 - "What are car 88's front-left tire temperatures over the last few laps?"
-- "How did car 88's tire temperatures change around lap 22?"
+- "How did car 88's tire temperatures change around lap 24?"
 
 Three tools come with it: `list_topics`, `get_metadata`, and `query_data`.
 """
