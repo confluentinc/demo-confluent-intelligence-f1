@@ -115,25 +115,68 @@ resource "confluent_tag_binding" "car_telemetry_raw_data" {
   depends_on = [time_sleep.wait_for_tag_binding_removal]
 }
 
-# --- LLM connections + models (AWS Bedrock) ---
+# --- LLM connection + model (AWS Bedrock) — text generation only ---
+# terraform/modules/llm also creates an embedding connection/model
+# (`llm_embedding_model`, Titan) for terraform/aws, but no self-service lab
+# ever references it (LAB 4's pit_strategy_agent uses only `llm_textgen_model`)
+# — so self-service doesn't call that module and inlines just the half it
+# needs, rather than making the shared module conditional and risking a
+# resource-address change for terraform/aws's already-applied state.
 
-module "llm" {
-  source                 = "../modules/llm"
-  organization_id        = data.confluent_organization.main.id
-  environment_id         = module.environment.environment_id
-  compute_pool_id        = module.flink.compute_pool_id
-  service_account_id     = module.cluster.service_account_id
-  flink_rest_endpoint    = module.flink.flink_rest_endpoint
-  flink_api_key          = module.flink.flink_api_key
-  flink_api_secret       = module.flink.flink_api_secret
-  environment_name       = "${local.name_prefix}-ENV"
-  cluster_name           = "${local.name_prefix}-CLUSTER"
-  region                 = var.region
-  aws_bedrock_access_key = var.aws_bedrock_access_key
-  aws_bedrock_secret_key = var.aws_bedrock_secret_key
-  aws_session_token      = var.aws_session_token
+resource "confluent_flink_connection" "bedrock_textgen_connection" {
+  organization { id = data.confluent_organization.main.id }
+  environment { id = module.environment.environment_id }
+  compute_pool { id = module.flink.compute_pool_id }
+  principal { id = module.cluster.service_account_id }
+  rest_endpoint = module.flink.flink_rest_endpoint
+  credentials {
+    key    = module.flink.flink_api_key
+    secret = module.flink.flink_api_secret
+  }
+
+  display_name      = "llm-textgen-connection"
+  type              = "BEDROCK"
+  endpoint          = "https://bedrock-runtime.${var.region}.amazonaws.com/model/us.anthropic.claude-sonnet-4-5-20250929-v1:0/invoke"
+  aws_access_key    = var.aws_bedrock_access_key
+  aws_secret_key    = var.aws_bedrock_secret_key
+  aws_session_token = var.aws_session_token != "" ? var.aws_session_token : null
 
   depends_on = [module.cluster]
+}
+
+resource "confluent_flink_statement" "llm_textgen_model" {
+  organization { id = data.confluent_organization.main.id }
+  environment { id = module.environment.environment_id }
+  compute_pool { id = module.flink.compute_pool_id }
+  principal { id = module.cluster.service_account_id }
+  rest_endpoint = module.flink.flink_rest_endpoint
+  credentials {
+    key    = module.flink.flink_api_key
+    secret = module.flink.flink_api_secret
+  }
+
+  statement = "CREATE MODEL `${local.name_prefix}-ENV`.`${local.name_prefix}-CLUSTER`.`llm_textgen_model` INPUT (prompt STRING) OUTPUT (response STRING) WITH ('provider' = 'bedrock', 'task' = 'text_generation', 'bedrock.connection' = '${confluent_flink_connection.bedrock_textgen_connection.display_name}', 'bedrock.params.max_tokens' = '50000');"
+
+  properties = {
+    "sql.current-catalog"  = "${local.name_prefix}-ENV"
+    "sql.current-database" = "${local.name_prefix}-CLUSTER"
+  }
+
+  depends_on = [confluent_flink_connection.bedrock_textgen_connection]
+}
+
+# Keep the already-applied Bedrock connection/model in place instead of
+# destroying and recreating them under a new address. The embedding
+# connection/model this used to also create (module.llm.*_embedding_*) have
+# no replacement here and simply fall out of state as a destroy.
+moved {
+  from = module.llm.confluent_flink_connection.bedrock_textgen_connection
+  to   = confluent_flink_connection.bedrock_textgen_connection
+}
+
+moved {
+  from = module.llm.confluent_flink_statement.llm_textgen_model
+  to   = confluent_flink_statement.llm_textgen_model
 }
 
 # --- driver_race_history table ---
