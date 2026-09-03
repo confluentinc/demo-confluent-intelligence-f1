@@ -31,7 +31,7 @@ dependencies = [
     # the import outright — `uv run f1-social-feed-rtce` could not start. Lifting
     # this cap means migrating that client (RTCE's Basic auth has to move into a
     # custom httpx client) and re-verifying against a live RTCE endpoint.
-    "mcp>=1.8.0,<2.0",
+    "mcp>=1.8.0,<2.2",
     # setup-rtce: round-trip edits to ~/.codex/config.toml without reformatting
     # or dropping the user's existing tables/comments.
     "tomlkit>=0.12.0",
