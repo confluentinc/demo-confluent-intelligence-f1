@@ -193,8 +193,8 @@ SELECT COUNT(*) FROM driver_race_history;
 Confirm the Bedrock models Terraform pre-created:
 
 ```sql
-SHOW MODELS;        -- llm_textgen_model, llm_embedding_model
-SHOW CONNECTIONS;   -- the Bedrock connections behind them
+SHOW MODELS;        -- llm_textgen_model
+SHOW CONNECTIONS;   -- the Bedrock connection behind it
 ```
 
 ---
@@ -651,21 +651,6 @@ from lap 0. (There is deliberately no `uv run race --seconds-per-lap`: pacing li
 the ECS task definition, so changing it *is* a redeploy. Only the local self-service
 simulator takes it as a flag.)
 
-**Query the environment from your coding agent (MCP)**
-
-```bash
-uv run setup-mcp                      # Claude Code, this project only
-uv run setup-mcp --client codex       # Codex CLI (user-global ~/.codex/config.toml)
-uv run setup-mcp --dry-run            # write confluent-mcp.env, print the commands, change nothing
-```
-
-This registers Confluent's `@confluentinc/mcp-confluent` server using **your credential
-card**, so the agent gets the same scoped keys the labs use rather than an org-wide one.
-Restart Claude Code or Codex after setup so it loads the new server registration.
-It writes `confluent-mcp.env` (mode `0600`, gitignored) at the repo root and installs the
-MCP package locally. Needs **Node ≥ 20** — v24 LTS is the version with prebuilt native
-binaries. Re-running only replaces this script's own server entry.
-
 ---
 
 ## 8. Optional — LAB 5 with the Real-Time Context Engine
@@ -704,6 +689,22 @@ upload the JSON file. It can't consume RTCE's MCP endpoint directly — it suppo
 configuration (persona, prompts, tool wiring):
 [`docs/demo-reference/orchestrate_social_agent.md`](../demo-reference/orchestrate_social_agent.md)
 and [Lab 5 in the hosted workshop walkthrough](./HOSTED-WORKSHOP.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
+
+### Optional: Lightning Queries (low-latency REST)
+
+Terraform enables RTCE on `car_telemetry` by default. Unless you deployed with `enable_rtce=false`, no Console toggle is needed for this query. Topics you create later, such as `car_state`, need their own RTCE enablement.
+
+From the repo directory, print a ready-to-run query:
+
+```bash
+uv run setup-rtce --lightning
+```
+
+Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. The command reads your existing credential file and derives the region and cloud from its RTCE endpoint. Use `--creds path/to/file.env` if you have multiple credential files.
+
+Lightning Queries require a **Global API key**, the same key used by RTCE's MCP interface. The printed command contains its authentication token; keep it private. This command prints the request without registering an MCP client. It reads matching local Terraform outputs, or the existing credential file for hosted attendees. Both modes accept `RTCE_API_KEY` and `RTCE_API_SECRET` overrides. If no key is available, the script offers CLI creation, then hidden manual entry with a link to the creation instructions. It saves fallback keys in the existing credential file.
+
+`uv run deploy` now creates the Global key through Terraform and copies its sensitive outputs into your existing credential file. Both `uv run setup-rtce` and `uv run setup-rtce --lightning` read that pair automatically. Existing deployments without the key can use `RTCE_API_KEY` and `RTCE_API_SECRET`, or enter a pair at the hidden-input fallback prompt. The prompt links to [manual key creation instructions](https://docs.confluent.io/cloud/current/ai/real-time-context-engine/get-started.html#create-an-api-key). Kafka and Flink keys cannot substitute for a Global key.
 
 ---
 

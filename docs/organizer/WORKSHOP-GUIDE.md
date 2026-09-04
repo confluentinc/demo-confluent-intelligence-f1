@@ -57,14 +57,16 @@ organizer stops the fleet or tears down the workshop.
 
 ### Real-Time Context Engine keys
 
-The build enables RTCE for the source topic when `TF_VAR_enable_rtce=true` and
-mints a Global API key for each attendee service account. The Confluent CLI must
-be logged in as `OrganizationAdmin`. If key creation fails, the build still writes
-the rest of each card and prints a warning.
+Terraform enables RTCE on `car_telemetry` and creates a Global API key for each
+attendee service account when `TF_VAR_enable_rtce=true`. WSA exports the sensitive
+`rtce_api_key` and `rtce_api_secret` outputs into the existing credential-generation
+flow. Regenerating cards reuses the Terraform key; it does not rotate it.
 
-Regenerating cards with `workshop creds --rtce-keys` replaces the existing RTCE
-key because Global keys are capped per principal and their secrets cannot be read
-again. Previously distributed RTCE commands then stop working.
+Existing deployments keep working with their saved keys. If you add the new
+Terraform resource to an existing deployment, check its service account's key quota
+first; do not delete keys still in use. Use a targeted Terraform plan/apply for
+`confluent_api_key.rtce`. `setup-rtce` offers CLI creation or manual entry when no
+Terraform or saved key is available.
 
 ## 2. Verify the build
 

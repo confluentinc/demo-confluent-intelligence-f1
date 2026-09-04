@@ -420,6 +420,22 @@ Once Real-Time Context Engine is enabled on `car_telemetry`, and you've run `uv 
 - *At what lap in the race does the engine temperature peak?*
 - *What is the front right tire temperature at lap 30?*
 
+### Optional: Lightning Queries (low-latency REST)
+
+Terraform enables RTCE on `car_telemetry` by default. Unless you deployed with `enable_rtce=false`, no Console toggle is needed for this query. Topics you create later, such as `car_state`, need their own RTCE enablement.
+
+From the repo directory, print a ready-to-run query:
+
+```bash
+uv run setup-rtce --lightning
+```
+
+Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. The command reads your existing credential file and derives the region and cloud from its RTCE endpoint. Use `--creds path/to/file.env` if you have multiple credential files.
+
+Lightning Queries require a **Global API key**, the same key used by RTCE's MCP interface. The printed command contains its authentication token; keep it private. This command prints the request without registering an MCP client. It reads matching local Terraform outputs, or the existing credential file for hosted attendees. Both modes accept `RTCE_API_KEY` and `RTCE_API_SECRET` overrides. If no key is available, the script offers CLI creation, then hidden manual entry with a link to the creation instructions. It saves fallback keys in the existing credential file.
+
+`uv run selfservice up` creates the Global key and stores it in your existing credential file. If provisioning reported a key-creation failure, resolve that before running this command.
+
 ## Run the workshop again or tear it down
 
 Stop `f1-race` with Ctrl-C when you finish. Use reset only when you intend to erase the race history and repeat the workshop from a clean slate:

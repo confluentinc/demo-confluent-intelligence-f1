@@ -74,6 +74,8 @@ COLUMNS = {
     "flink_api_secret": f"{GROUP} / Flink API Secret",
     "organization_id": f"{GROUP} / Organization ID",
     "service_account_id": f"{GROUP} / Service Account ID",
+    "rtce_api_key": f"{GROUP} / RTCE API Key",
+    "rtce_api_secret": f"{GROUP} / RTCE API Secret",
 }
 
 # CSV columns for our own organizer master sheet (unrelated to wsa's CSV shape).
@@ -104,24 +106,8 @@ CSV_HEADERS = [
 
 # --- Real-Time Context Engine keys -------------------------------------------
 #
-# RTCE's MCP endpoint authenticates with HTTP Basic over a **Global** Confluent
-# Cloud API key. Two facts force the design here:
-#
-#  1. The Terraform provider can't create Global keys (only resource-scoped and
-#     Cloud keys), so `confluent api-key create --resource global` is the only
-#     route and this has to happen outside the apply.
-#  2. Global keys are capped at 2 per principal. We mint against each attendee's
-#     own service account — recreated with a fresh random_id every build and
-#     destroyed at teardown — so the cap resets per workshop and the key dies
-#     with the SA. Minting against the attendee's *user* account instead would
-#     accumulate keys forever, since those pool accounts are permanent.
-#
-# Authorization is unchanged by the key's scope: it's whatever the owning
-# principal already has. The SA carries EnvironmentAdmin + CloudClusterAdmin
-# (modules/cluster), which covers both querying and enabling topics.
-#
-# Requires the `confluent` CLI logged in as OrganizationAdmin — only OrgAdmin or
-# ResourceOwner-on-that-SA may create a Global key for a service account.
+# Global keys now come from Terraform outputs. The legacy CLI helpers below
+# remain for compatibility; credential generation must never rotate those keys.
 
 
 def _existing_global_keys(sa_id: str) -> list[str]:
@@ -224,8 +210,7 @@ def _card_fields(
     """
     ac = out.get("attendee_credentials", {})
     cluster_id = ac.get("cluster_id", "") or out.get("cluster_id", "")
-    sa_id = out.get("service_account_id", "") or ac.get("service_account_id", "")
-    rtce_key, rtce_secret = _mint_rtce_key(sa_id, prefix) if (rtce_keys and sa_id) else ("", "")
+    rtce_key, rtce_secret = out.get("rtce_api_key", ""), out.get("rtce_api_secret", "")
     return {
         "prefix": prefix,
         "email": email,
@@ -311,6 +296,8 @@ def _row_to_outputs(row: dict[str, str]) -> dict:
         "compute_pool_id": get("compute_pool_id"),
         "flink_rest_endpoint": get("flink_rest_endpoint"),
         "service_account_id": get("service_account_id"),
+        "rtce_api_key": get("rtce_api_key"),
+        "rtce_api_secret": get("rtce_api_secret"),
         "attendee_credentials": {
             "environment_url": get("environment_url"),
             "cluster_id": get("cluster_id"),
@@ -582,9 +569,9 @@ def creds(args: argparse.Namespace) -> None:
         print(
             f"\nWARNING: no RTCE key on {len(no_rtce)} card(s): {', '.join(no_rtce)}\n"
             "  Those cards drop the Real-Time Context Engine section; every other lab\n"
-            "  still works. Global API keys need the `confluent` CLI logged in as\n"
-            "  OrganizationAdmin (`confluent login`), and the terraform run must expose\n"
-            "  the service_account_id output that wsa-spec-aws.yaml points at."
+            "  still works. Check enable_rtce and the rtce_api_key/rtce_api_secret\n"
+            "  Terraform outputs and rebuild the WSA export. setup-rtce can offer\n"
+            "  CLI creation or manual entry for older deployments."
         )
 
 
@@ -602,10 +589,8 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--rtce-keys",
         action="store_true",
-        help="Mint each attendee a Global API key for the Real-Time Context Engine and print a "
-        "ready-to-paste `claude mcp add` line on their card. Requires the `confluent` CLI logged "
-        "in as OrganizationAdmin. Replaces any Global key the attendee's service account already "
-        "owns (the cap is 2 per principal), so re-running invalidates previously handed-out cards.",
+        help="Warn if Terraform RTCE key outputs are missing. Kept for existing workshop commands; "
+        "credential generation reads keys from outputs and never rotates them.",
     )
     p.add_argument(
         "--no-dispenser-column",

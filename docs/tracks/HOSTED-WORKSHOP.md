@@ -155,7 +155,7 @@ Check the pre-deployed models:
 SHOW MODELS;
 ```
 
-You should see `llm_textgen_model` and `llm_embedding_model`. Then check the connections:
+You should see `llm_textgen_model`. Then check the connections:
 
 ```sql
 SHOW CONNECTIONS;
@@ -325,12 +325,13 @@ Now that `car_state` exists, wire an AI agent straight to the live streams throu
 
 Enablement takes a few seconds; the description is what an AI agent reads to pick the topic, so make it meaningful.
 
-**3. Connect your MCP client.** Copy the **MCP Setup Command** from your **credential claim email** (or credential card) and run it in a terminal:
+**3. Connect your MCP client.** From the repo directory, run:
 
 ```bash
-claude mcp add --transport http real-time-context-engine <YOUR_MCP_ENDPOINT> \
-  --header "Authorization: Basic <YOUR_TOKEN>"
+uv run setup-rtce
 ```
+
+Choose Claude Code, Codex, or both. The script reads your credential file and configures the RTCE connection. Restart your coding agent afterward.
 
 **4. Ask about the live race.** Run `claude`, then try:
 
@@ -342,20 +343,19 @@ Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and on
 
 ### Optional: Lightning Queries (low-latency REST)
 
-*Optional — does not block core lab completion.* Lightning Queries let you hit the same live topic over a low-latency REST endpoint — the analytics counterpart to RTCE's MCP interface. Because RTCE already backs `car_telemetry`, it's Lightning-queryable now. Fill in the region, org, environment, and cluster IDs from your credential card:
+Terraform enables RTCE on `car_telemetry` by default. Unless you deployed with `enable_rtce=false`, no Console toggle is needed for this query. Topics you create later, such as `car_state`, need their own RTCE enablement.
+
+From the repo directory, print a ready-to-run query:
 
 ```bash
-curl -s -X POST \
-  "https://sql.<REGION>.confluent.cloud/query/v1alpha/organizations/<ORG_ID>/environments/<ENV_ID>" \
-  -H "Authorization: Basic $(printf '%s' '<API_KEY>:<API_SECRET>' | base64)" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "database_name": "<lkc-CLUSTER_ID>",
-    "sql_query": "SELECT car_number, lap, tire_temp_fl_c FROM car_telemetry ORDER BY lap DESC LIMIT 10"
-  }'
+uv run setup-rtce --lightning
 ```
 
-Swap the `sql_query` to pull the latest front-left tire temperature for car 88, or the last 10 telemetry rows. The endpoint returns JSON rows you can pipe into any tool.
+Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. The command reads your existing credential file and derives the region and cloud from its RTCE endpoint. Use `--creds path/to/file.env` if you have multiple credential files.
+
+Lightning Queries require a **Global API key**, the same key used by RTCE's MCP interface. The printed command contains its authentication token; keep it private. This command prints the request without registering an MCP client. It reads matching local Terraform outputs, or the existing credential file for hosted attendees. Both modes accept `RTCE_API_KEY` and `RTCE_API_SECRET` overrides. If no key is available, the script offers CLI creation, then hidden manual entry with a link to the creation instructions. It saves fallback keys in the existing credential file.
+
+The workshop provisioning flow supplies the Global key. For self-serve claims, `uv run f1-onboard --paste` imports it from the existing **MCP Setup Command** in your claim email. If you onboarded with an older version, rerun onboarding with that email or use the instructor-provided `.env` file.
 
 ## Lab 4 — Streaming Agent: Pit Decisions
 

@@ -103,7 +103,10 @@ class CardFieldTests(unittest.TestCase):
 
     def test_keys_land_on_the_card(self):
         with patch.object(creds_mod, "_mint_rtce_key", return_value=("K1", "S1")):
-            fields = creds_mod._card_fields("f1wp001", "a@b.c", CARD_OUT, region="us-east-1", rtce_keys=True)
+            fields = creds_mod._card_fields(
+                "f1wp001", "a@b.c", dict(CARD_OUT, rtce_api_key="K1", rtce_api_secret="S1"),
+                region="us-east-1", rtce_keys=True,
+            )
         self.assertEqual(fields["rtce_api_key"], "K1")
         self.assertEqual(fields["rtce_api_secret"], "S1")
 
