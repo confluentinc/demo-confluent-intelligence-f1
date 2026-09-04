@@ -565,10 +565,7 @@ def _write_cards(root: Path, run: Run, args: argparse.Namespace) -> None:
             resolve_op=True,
             social_feed_url=args.social_feed_url,
             region=args.region,
-            # Same reasoning as resolve_op: the key is useless to hand out later
-            # (the secret can't be re-read), so mint it while we're writing the
-            # card. Degrades to a card without the RTCE section if the CLI isn't
-            # logged in as OrganizationAdmin — creds.py warns and carries on.
+            # Warn if the Terraform-managed Global key is missing from the export.
             rtce_keys=getattr(args, "rtce_keys", True),
             # Appends the RTCE setup command to this run's build-output.csv, so a
             # later `wsa dispenser-upload` carries it into the claim email. Safe
@@ -1053,8 +1050,7 @@ def add_build_arguments(p: argparse.ArgumentParser) -> None:
         dest="rtce_keys",
         action="store_false",
         default=True,
-        help="Skip minting each attendee's Real-Time Context Engine Global API key "
-        "(needs the `confluent` CLI logged in as OrganizationAdmin)",
+        help="Skip warnings about missing RTCE key outputs (disable creation with TF_VAR_enable_rtce=false)",
     )
 
 

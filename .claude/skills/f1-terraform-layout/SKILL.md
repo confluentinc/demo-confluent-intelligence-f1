@@ -1,6 +1,6 @@
 ---
 name: f1-terraform-layout
-description: The three Terraform tiers in this repo and how they relate — aws-shared (applied once) vs aws (per attendee) vs self-service (Confluent-only), the shared llm module, per-attendee resource naming and CDC slot isolation, the max_replication_slots=105 sizing decision, and what flink_max_cfu / seconds_per_lap / race_loop actually do. Load before editing anything under terraform/, adding a variable to the aws tier, or reasoning about per-attendee isolation and Flink CFU cost.
+description: The three Terraform tiers in this repo and how they relate — aws-shared (applied once) vs aws (per attendee) vs self-service (Confluent-only), the inlined Bedrock textgen connection/model each tier carries, per-attendee resource naming and CDC slot isolation, the max_replication_slots=105 sizing decision, and what flink_max_cfu / seconds_per_lap / race_loop actually do. Load before editing anything under terraform/, adding a variable to the aws tier, or reasoning about per-attendee isolation and Flink CFU cost.
 ---
 
 # Terraform layout (F1 Pit Wall workshop)
@@ -14,9 +14,13 @@ shared state). `self-service` stands alone.
 and its `driver_race_history` table starts empty: `uv run selfservice up` seeds it
 with a bounded Flink INSERT and the local `f1-race` simulator feeds the topics.
 
-The Bedrock connections + `CREATE MODEL` statements live in the shared
-`terraform/modules/llm/` module, consumed by both `terraform/aws` and
-`terraform/self-service` (keep them in sync via the module, not by copy).
+Each tier inlines its own Bedrock textgen connection + `CREATE MODEL
+llm_textgen_model` statement (`terraform/aws/main.tf`,
+`terraform/self-service/main.tf`) — keep the two copies in sync by hand. There
+used to be a shared `terraform/modules/llm/` module that also created a Titan
+embedding connection/model, but no lab ever referenced `llm_embedding_model`
+and it failed to provision (CreateModel error on the embedding connection);
+both tiers dropped it and inlined just the working textgen half.
 
 **Naming:** per-attendee CC resources use `RIVER-RACING-${prefix}` (e.g.
 `RIVER-RACING-f1wp001-ENV`); ECS resources use the lowercased

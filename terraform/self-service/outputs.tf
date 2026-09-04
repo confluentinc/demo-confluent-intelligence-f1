@@ -20,8 +20,7 @@ output "cluster_name" {
   value = module.cluster.cluster_name
 }
 
-# Needed to mint a Global API key for RTCE against this deployment's own service
-# account — see terraform/aws/outputs.tf for why it's flat.
+# Service account identity for deployment tooling and CLI fallback.
 output "service_account_id" {
   value = module.cluster.service_account_id
 }

@@ -216,9 +216,14 @@ credentials:
       - label: Organization ID
         source: terraform
         output: organization_id
-      # Not handed to the attendee — `workshop creds --rtce-keys` needs it to mint
-      # each attendee a Global API key owned by their own service account, which
-      # is what authenticates their MCP client to the Real-Time Context Engine.
+      # Deployment service account identity.
       - label: Service Account ID
         source: terraform
         output: service_account_id
+
+      - label: RTCE API Key
+        source: terraform
+        output: rtce_api_key
+      - label: RTCE API Secret
+        source: terraform
+        output: rtce_api_secret

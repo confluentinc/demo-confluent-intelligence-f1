@@ -21,6 +21,8 @@ written file matches an instructor-issued card exactly.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import re
 import sys
 from pathlib import Path
@@ -60,11 +62,31 @@ FIELDS = [
 ]
 
 
+def _parse_rtce_command(text: str) -> dict[str, str]:
+    """Read credentials from the existing claim-email command without executing it."""
+    endpoint = re.search(
+        r"https://mcp\.[a-z0-9-]+\.[a-z0-9-]+\.confluent\.cloud/mcp/v1/context-engine/"
+        r"organizations/[a-zA-Z0-9-]+/environments/[a-zA-Z0-9-]+/kafka-clusters/[a-zA-Z0-9-]+",
+        text,
+    )
+    token = re.search(r"Authorization:\s*Basic\s+([A-Za-z0-9+/=]+)", text)
+    if not endpoint or not token:
+        return {}
+    try:
+        decoded = base64.b64decode(token.group(1), validate=True).decode()
+        key, separator, secret = decoded.partition(":")
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        return {}
+    if not separator or not key or not secret or any(c in decoded for c in "\r\n"):
+        return {}
+    return {"rtce_mcp_endpoint": endpoint.group(0), "rtce_api_key": key, "rtce_api_secret": secret}
+
+
 def _parse_pasted_email(text: str) -> dict[str, str]:
     """Best-effort extraction of "<label>: <value>" pairs from a pasted claim
     email. Matches on label text regardless of a "Confluent Cloud / " group
     prefix, surrounding markup, or case."""
-    found: dict[str, str] = {}
+    found: dict[str, str] = _parse_rtce_command(text)
     for key, label in FIELDS:
         # Accepts "Label: value", "Confluent Cloud / Label: value", "Label - value", etc.
         pattern = re.compile(rf"{re.escape(label)}\s*[:\-]\s*(\S+)", re.IGNORECASE)
@@ -109,6 +131,9 @@ def _prompt_fields(prefill: dict[str, str]) -> dict[str, str]:
         optional = " (optional)" if (key, label) in CONSOLE_FIELDS else ""
         answer = input(f"{label}{optional}{suffix}: ").strip()
         values[key] = answer or current
+    if not values.get("rtce_api_key"):
+        command = input("MCP Setup Command from your claim email (optional; needed for RTCE/Lightning): ").strip()
+        values.update(_parse_rtce_command(command))
     return values
 
 
@@ -170,6 +195,10 @@ def main() -> None:
 
     out = _to_terraform_shaped_outputs(values)
     fields = creds_mod._card_fields(values["prefix"], values["email"], out, args.social_feed_url, args.region)
+
+    for key in ("rtce_mcp_endpoint", "rtce_api_key", "rtce_api_secret"):
+        if values.get(key):
+            fields[key] = values[key]
 
     out_path = Path(args.out)
     lines = [f"F1_{k.upper()}={v}" for k, v in fields.items()]

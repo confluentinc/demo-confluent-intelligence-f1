@@ -36,10 +36,7 @@ output "cluster_name" {
   value = module.cluster.cluster_name
 }
 
-# Flat, not just nested in attendee_credentials, because wsa only forwards flat
-# root outputs into build-output.csv — and `workshop creds --rtce-keys` needs this
-# to mint each attendee a Global API key owned by their own service account (the
-# Terraform provider can't create Global keys; see scripts/workshop/creds.py).
+# Service account identity used by deployment tooling and CLI fallback.
 output "service_account_id" {
   value = module.cluster.service_account_id
 }

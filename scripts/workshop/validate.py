@@ -76,13 +76,13 @@ def validate_connection(creds: dict[str, str]) -> list[tuple[str, bool, str]]:
 
     def models():
         rows = {r[0] for r in _query(session, "SHOW MODELS;", timeout=60)}
-        need = {"llm_textgen_model", "llm_embedding_model"}
+        need = {"llm_textgen_model"}
         missing = need - rows
-        return (not missing), ("both present" if not missing else f"missing {missing}")
+        return (not missing), ("present" if not missing else f"missing {missing}")
 
     def connections():
         rows = {r[0] for r in _query(session, "SHOW CONNECTIONS;", timeout=60)}
-        return (len(rows) >= 2), f"{len(rows)} connection(s)"
+        return (len(rows) >= 1), f"{len(rows)} connection(s)"
 
     def history_rows():
         # COUNT(*) is a retract/changelog stream that climbs 1 -> 198 (each

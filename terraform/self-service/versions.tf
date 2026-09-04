@@ -4,7 +4,7 @@ terraform {
   required_providers {
     confluent = {
       source  = "confluentinc/confluent"
-      version = "~> 2.11"
+      version = ">= 2.73, < 3.0"
     }
     random = {
       source  = "hashicorp/random"
