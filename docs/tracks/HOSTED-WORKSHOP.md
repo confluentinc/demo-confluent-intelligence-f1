@@ -346,16 +346,17 @@ Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and on
 
 ```bash
 curl -s -X POST \
-  "https://sql.<REGION>.confluent.cloud/query/v1alpha/organizations/<ORG_ID>/environments/<ENV_ID>" \
+  "https://sql.<REGION>.<PROVIDER>.confluent.cloud/query/v1alpha1" \
   -H "Authorization: Basic $(printf '%s' '<API_KEY>:<API_SECRET>' | base64)" \
   -H "Content-Type: application/json" \
   -d '{
+    "catalog_name" : "<ENV_ID>",
     "database_name": "<lkc-CLUSTER_ID>",
-    "sql_query": "SELECT car_number, lap, tire_temp_fl_c FROM car_telemetry ORDER BY lap DESC LIMIT 10"
+    "query": "SELECT car_number, lap, tire_temp_fl_c FROM car_telemetry ORDER BY lap DESC LIMIT 10"
   }'
 ```
 
-Swap the `sql_query` to pull the latest front-left tire temperature for car 88, or the last 10 telemetry rows. The endpoint returns JSON rows you can pipe into any tool.
+Swap the `query` to pull the latest front-left tire temperature for car 88, or the last 10 telemetry rows. The endpoint returns JSON rows you can pipe into any tool.
 
 ## Lab 4 — Streaming Agent: Pit Decisions
 
