@@ -64,8 +64,6 @@ module "topics" {
   flink_api_key       = module.flink.flink_api_key
   flink_api_secret    = module.flink.flink_api_secret
   owner_email         = var.owner_email
-  region              = var.region
-  enable_rtce         = var.enable_rtce
 
   # The value edges above reach only confluent_service_account.app, NOT the role
   # bindings that give it authority. On destroy those edges reverse, so without

@@ -57,8 +57,11 @@ organizer stops the fleet or tears down the workshop.
 
 ### Real-Time Context Engine keys
 
-Terraform enables RTCE on `car_telemetry` and creates a Global API key for each
-attendee service account when `TF_VAR_enable_rtce=true`. WSA exports the sensitive
+Terraform creates a Global API key for each attendee service account when
+`TF_VAR_enable_rtce=true` — the key that RTCE's MCP interface and Lightning Queries
+authenticate with. It does **not** enable RTCE on any topic: attendees turn that on
+themselves in the Console (on `car_telemetry` and `car_state`) during the RTCE lab, so
+there is nothing topic-side for you to provision or verify. WSA exports the sensitive
 `rtce_api_key` and `rtce_api_secret` outputs into the existing credential-generation
 flow. Regenerating cards reuses the Terraform key; it does not rotate it.
 

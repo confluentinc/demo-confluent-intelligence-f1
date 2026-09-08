@@ -37,9 +37,11 @@ variable "region" {
 
 variable "enable_rtce" {
   description = <<-EOT
-    Enable the Real-Time Context Engine on car_telemetry + race_standings so
-    attendees can query them from an MCP client. Set TF_VAR_enable_rtce=false for
-    an org or region where RTCE isn't available — see modules/topics/variables.tf.
+    Provision the Global API key that RTCE querying (MCP + Lightning Queries)
+    needs — see terraform/aws/rtce.tf. Enabling RTCE on a topic is NOT done here:
+    attendees toggle it in the Confluent Cloud Console themselves (both
+    car_telemetry and car_state). Set TF_VAR_enable_rtce=false for an org or
+    region where RTCE isn't available, to skip the key.
   EOT
   type        = bool
   default     = true

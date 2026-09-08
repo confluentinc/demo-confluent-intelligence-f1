@@ -281,7 +281,6 @@ TIRE STRATEGY at Silverstone (60-lap race):
 - John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. The pit wall warns at laps 21-23, calls PIT NOW only when the lap-24 anomaly fires, then lets the fresh MEDIUM stint run.
 
 REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
--- USING TOOLS `car_telemetry_tool`  -- uncomment when RTCE is active
 WITH ('max_iterations' = '10');
 ```
 
@@ -397,23 +396,23 @@ Expose port 8080 through an approved HTTPS tunnel, set `servers[0].url` in `docs
 
 ## 6. (optional) Expose `car_telemetry` to AI agents with Real-Time Context Engine
 
-Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP-compatible AI agent can query the topic. `uv run selfservice up` already enabled it on `car_telemetry` for you (Terraform's `enable_rtce`, default `true`) and minted an RTCE API key onto your credential card — there's nothing to toggle.
+Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP-compatible AI agent can query the topic. `uv run selfservice up` minted an RTCE API key onto your credential card, but RTCE is enabled **per topic in the Console** — nothing is pre-enabled, so turn it on for `car_telemetry` yourself.
 
-Point your coding agent at it in one command:
-
-```bash
-uv run setup-rtce
-```
-
-This registers RTCE as an MCP server with Claude Code (or prints a config snippet for Codex CLI), using the `F1_RTCE_MCP_ENDPOINT`/`F1_RTCE_API_KEY`/`F1_RTCE_API_SECRET` fields already on your card. Then just ask, in plain English: *"What are car 88's front-left tire temperatures over the last few laps?"*
-
-If you'd rather confirm the toggle yourself, it's under your environment's cluster, **Topics** — `car_telemetry` shows Real-Time Context Engine already **On**:
+Under your environment's cluster, open **Topics → `car_telemetry`**, open the **Real-Time Context Engine** panel, click **Enable**, and add a short description — the agent reads it to pick the topic — such as `Live sensor telemetry for car 88 — tire temps and pressures, speed, DRS. Many rows per lap.` Once enabled, the **Topics** list shows Real-Time Context Engine **On**:
 
 ![Topics list with the Real-Time Context Engine column](../assets/self-service/rtce-topics-list.png)
 
 The panel shows the enablement details — environment, cluster, cloud, and region — that an MCP client needs to reach it:
 
 ![Real-Time Context Engine enabled for car_telemetry](../assets/self-service/rtce-enabled.png)
+
+Then point your coding agent at it in one command:
+
+```bash
+uv run setup-rtce
+```
+
+This registers RTCE as an MCP server with Claude Code (or prints a config snippet for Codex CLI), using the `F1_RTCE_MCP_ENDPOINT`/`F1_RTCE_API_KEY`/`F1_RTCE_API_SECRET` fields already on your card. Then just ask, in plain English: *"What are car 88's front-left tire temperatures over the last few laps?"*
 
 Once Real-Time Context Engine is enabled on `car_telemetry`, and you've run `uv run setup-rtce` to connect Claude or Codex, you can ask your LLM questions like:
 
@@ -422,7 +421,7 @@ Once Real-Time Context Engine is enabled on `car_telemetry`, and you've run `uv 
 
 ### Optional: Lightning Queries (low-latency REST)
 
-Terraform enables RTCE on `car_telemetry` by default. Unless you deployed with `enable_rtce=false`, no Console toggle is needed for this query. Topics you create later, such as `car_state`, need their own RTCE enablement.
+Lightning Queries read an RTCE-enabled topic over low-latency REST, so enable RTCE on `car_telemetry` in the Console first (see above) if you haven't already.
 
 From the repo directory, print a ready-to-run query:
 

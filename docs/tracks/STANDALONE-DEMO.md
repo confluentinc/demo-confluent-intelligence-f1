@@ -421,7 +421,6 @@ TIRE STRATEGY at Silverstone (60-lap race):
 - John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. The pit wall warns at laps 21-23, calls PIT NOW only when the lap-24 anomaly fires, then lets the fresh MEDIUM stint run.
 
 REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
--- USING TOOLS `car_telemetry_tool`  -- uncomment when RTCE is active
 WITH ('max_iterations' = '10');
 ```
 
@@ -673,6 +672,11 @@ RTCE_API_KEY=... RTCE_API_SECRET=... uv run f1-social-feed-rtce \
   --creds runs/standalone/credentials/<prefix>.env      # then serve it
 ```
 
+Backend B needs `car_telemetry` RTCE-enabled, and Terraform no longer does this for
+you — enable it yourself in the Console: **Topics → `car_telemetry` → Real-Time Context
+Engine → Enable**, with a short description (the agent reads it to pick the topic). The
+`--probe` below fails against a topic that isn't enabled.
+
 `uv run deploy` already stamps `F1_RTCE_MCP_ENDPOINT` onto your card, so the RTCE
 variant needs no URL from you. The API key/secret are **not** read from the card on
 purpose: RTCE authenticates with a *global* Confluent Cloud key, so it's passed to the
@@ -692,7 +696,7 @@ and [Lab 5 in the hosted workshop walkthrough](./HOSTED-WORKSHOP.md#lab-5-social
 
 ### Optional: Lightning Queries (low-latency REST)
 
-Terraform enables RTCE on `car_telemetry` by default. Unless you deployed with `enable_rtce=false`, no Console toggle is needed for this query. Topics you create later, such as `car_state`, need their own RTCE enablement.
+Lightning Queries read an RTCE-enabled topic over low-latency REST, so enable RTCE on `car_telemetry` in the Console first (see above) if you haven't already.
 
 From the repo directory, print a ready-to-run query:
 

@@ -84,7 +84,7 @@ attendee tier of its shared inputs, and it also governs `wsa-spec-aws.yaml` and
 
 | Topic | Notes |
 |-------|-------|
-| `car_telemetry` | AVRO, no PRIMARY KEY, string message key. **RTCE-enabled** |
+| `car_telemetry` | AVRO, no PRIMARY KEY, string message key. RTCE: attendee Console toggle (not Terraform) |
 | `race_standings` | AVRO, PRIMARY KEY(car_number), upsert — produced directly by the simulator. Not RTCE-enabled: this org/region rejects compacted-topic queries with `MT_UPSERT_NOT_SUPPORTED`. |
 | `driver_race_history` | 198 historical rows, from the per-attendee CDC connector |
 | `car_state` | LAB 3 output, one record per 30s lap window. RTCE is the attendee's optional Console toggle (LAB 3 Step 4) |
@@ -95,31 +95,38 @@ The first three are created by Terraform (Flink CREATE TABLE, except
 `pit_decisions` do not exist until the attendee writes LAB 3 / LAB 4. Topic
 schemas (CREATE TABLE SQL): `terraform/modules/topics/main.tf`.
 
-**Real-Time Context Engine (attendee-facing).** `confluent_rtce_topic` in
-`modules/topics` enables RTCE on `car_telemetry` at build time, so an attendee's
-MCP client can query the sensor stream with no Kafka client and no consumer group.
-`race_standings` is intentionally excluded: although enablement reaches `online`,
-every query against the compacted topic fails with `MT_UPSERT_NOT_SUPPORTED`, even
-with raw VARCHAR and BYTES keys. Four things that are easy to get wrong:
+**Real-Time Context Engine (attendee-facing).** RTCE serves a Kafka topic to an
+attendee's MCP client with no Kafka client and no consumer group. **Enabling RTCE on
+a topic is a Console action the attendee performs** — Terraform does not enable any
+topic. Attendees toggle it on both `car_telemetry` and `car_state` themselves in the
+RTCE lab. `race_standings` is intentionally never enabled: although enablement reaches
+`online`, every query against the compacted topic fails with `MT_UPSERT_NOT_SUPPORTED`,
+even with raw VARCHAR and BYTES keys. Things that are easy to get wrong:
 
-- **Enablement is per topic and needs a registered schema** — hence the
-  `depends_on` the CREATE TABLE statements. `car_state` can't be in Terraform at
-  all: it doesn't exist until LAB 3, so it's an attendee Console toggle.
+- **Enablement is per topic, in the Console, and needs a registered schema.**
+  `car_state` doesn't exist until the attendee builds it in LAB 3, so it can never be
+  a Terraform resource anyway; `car_telemetry` *could* be pre-enabled, but is
+  deliberately left to the attendee too, so the walkthrough teaches one Console
+  gesture for both. There is no `confluent_rtce_topic` resource in `modules/topics`.
 - **`description` is required and is model-readable.** The agent reads it to pick a
-  topic. Treat it as prompt text.
+  topic. Treat it as prompt text (the API caps it at 256 characters). Each track's
+  walkthrough gives attendees a paste-ready description.
 - **Querying needs a *Global* API key** (HTTP Basic) — a Cloud or Kafka key is
-  refused. The Terraform provider can't create Global keys, so
-  `workshop creds --rtce-keys` mints one per attendee via the CLI, which requires
-  the `confluent` CLI logged in as **OrganizationAdmin**.
+  refused. `terraform/aws/rtce.tf` provisions one per attendee against the service
+  account (gated by `var.enable_rtce`); WSA copies its `rtce_api_key`/`rtce_api_secret`
+  outputs onto the card. `workshop creds --rtce-keys` / `_mint_rtce_key` is a retained
+  legacy CLI fallback, and `setup-rtce` offers CLI/manual entry when no key is found.
 - **Mint against the attendee's service account, never their user account.** Global
   keys cap at 2 per principal. The SA is recreated per build and destroyed at
   teardown so the cap resets for free; the `bheintz+f1wpN` pool users are permanent,
-  so user-owned keys would accumulate until a build fails. `_mint_rtce_key` deletes
-  the SA's existing Global keys before creating, because a secret can't be re-read —
-  so regenerating cards invalidates RTCE on any already handed out.
+  so user-owned keys would accumulate until a build fails. The Terraform key is stable
+  across card regeneration; the legacy `_mint_rtce_key` instead deletes the SA's
+  existing Global keys before creating (a secret can't be re-read), so regenerating
+  cards via that path invalidates RTCE on any already handed out.
 
-`TF_VAR_enable_rtce=false` skips the resource for an org or region without RTCE
-(`confluent rtce region list` — 11 AWS regions as of 2026-08).
+`TF_VAR_enable_rtce=false` skips the Global-key resource for an org or region without
+RTCE (`confluent rtce region list` — 11 AWS regions as of 2026-08); attendees there
+simply don't do the RTCE lab.
 
 ---
 
@@ -305,7 +312,7 @@ attendee walkthrough.
 | `scripts/pitwall/` | `f1-pitwall` live web dashboard — Kafka consumer → FastAPI/websocket → animated browser view; progressive reveal of LAB 3/4 panels; `--mock` offline feed |
 | `scripts/social_feed/` | `f1-social-feed` shared HTTP service for LAB 5 — tails each attendee's Kafka topics, serves `GET /race-feed/{prefix}` + auto OpenAPI spec for the watsonx Orchestrate tool; reuses pitwall consumer; `--mock` offline feed |
 | `scripts/social_feed_rtce/` | `f1-social-feed-rtce` — same OpenAPI tool, but an MCP client to the Real-Time Context Engine (RTCE) instead of Kafka. Reuses `social_feed`'s `FeedState`+`create_app`; new bits are the RTCE MCP client + poller. Global API key via `RTCE_API_KEY/SECRET`; per-attendee endpoint from card `F1_RTCE_MCP_ENDPOINT`; `--probe` validates the live contract |
-| `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md`; `--resolve-op` pulls Console passwords from 1Password; `--rtce-keys` mints each attendee's RTCE Global API key (`_mint_rtce_key`, replace-not-accumulate) and prints the `claude mcp add` line. Also appends `Real-Time Context Engine / MCP Setup Command` back into build-output.csv so the dispenser carries it (`_add_dispenser_column`, `--no-dispenser-column`) — the `" / "` in that header is the `Provider / Field` slash convention the dispenser's Apps Script groups on: it drives the on-screen web-app credential grouping (`buildCredentialGroups_` in `WebApp.gs`) and the email backup |
+| `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md`; `--resolve-op` pulls Console passwords from 1Password; copies the Terraform `rtce_api_key`/`rtce_api_secret` outputs onto each card, and `--rtce-keys` warns when those outputs are missing (the legacy `_mint_rtce_key` CLI path is retained for older workshop commands). Also appends `Real-Time Context Engine / MCP Setup Command` back into build-output.csv so the dispenser carries it (`_add_dispenser_column`, `--no-dispenser-column`) — the `" / "` in that header is the `Provider / Field` slash convention the dispenser's Apps Script groups on: it drives the on-screen web-app credential grouping (`buildCredentialGroups_` in `WebApp.gs`) and the email backup |
 | `terraform/modules/environment/main.tf` | The environment, plus the `grant_console_access`-gated `confluent_user` lookup + EnvironmentAdmin binding that makes an attendee login useful |
 | `scripts/workshop/onboard.py` | `f1-onboard` — self-serve: wsa claim-email values → local `credentials.env` |
 | `scripts/workshop/validate.py` | `workshop validate` — API-key health checks against one or many cards |

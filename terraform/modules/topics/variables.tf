@@ -50,32 +50,6 @@ variable "owner_email" {
 }
 
 variable "cluster_id" {
-  description = "Kafka cluster ID (lkc-*) — the RTCE topics attach to this cluster"
+  description = "Kafka cluster ID (lkc-*) — the topics are created on this cluster"
   type        = string
-}
-
-variable "region" {
-  description = <<-EOT
-    Cloud region of the Kafka cluster. Only used for the RTCE topics, which are
-    regional: it must be a region in `confluent rtce region list` (11 AWS
-    regions as of 2026-08) or the create fails.
-  EOT
-  type        = string
-  default     = "us-east-1"
-}
-
-variable "enable_rtce" {
-  description = <<-EOT
-    Enable the Real-Time Context Engine on car_telemetry, so an attendee's MCP
-    client can query it (see modules/topics/main.tf). race_standings is
-    deliberately excluded — it's a compacted, upsert-keyed topic and RTCE
-    queries against it fail with MT_UPSERT_NOT_SUPPORTED.
-
-    The escape hatch is deliberate: RTCE is per-org and region-limited, so an org
-    without it, or a build in an unsupported region, fails on this resource and
-    nothing else. `TF_VAR_enable_rtce=false` skips it and leaves every other
-    topic behaviour untouched.
-  EOT
-  type        = bool
-  default     = true
 }

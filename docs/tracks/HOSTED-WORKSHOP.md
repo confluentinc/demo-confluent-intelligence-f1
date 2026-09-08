@@ -315,17 +315,16 @@ Confluent Flink arrays are one-based, so `[1]` is the first predicted point. Ins
 
 Now that `car_state` exists, wire an AI agent straight to the live streams through Confluent's **Real-Time Context Engine (RTCE)** — no Kafka client, no consumer group. Do this now, while the race runs; it does not depend on the anomaly.
 
-**1. What's already enabled.** Your instructor enabled RTCE on `car_telemetry` at build time, so it is queryable immediately. (`race_standings` is a compacted upsert topic and cannot be RTCE-enabled — query `car_telemetry` or `car_state` instead.)
+**1. Enable RTCE in the Console.** RTCE is turned on per topic in the Confluent Cloud Console — nothing is pre-enabled for you. Enable it on the two topics you'll query, `car_telemetry` (the raw sensor stream) and `car_state` (the enriched output you just built):
 
-**2. Enable `car_state` yourself in the Console.** `car_state` didn't exist until you built it a moment ago, so enable it now:
-
-1. Console → your cluster → **Topics → `car_state`**.
+1. Console → your cluster → **Topics → `car_telemetry`**.
 2. Open the **Real-Time Context Engine** panel (or tab) for the topic.
-3. Click **Enable**, add a short description like `Per-lap enriched car state with tire-anomaly flag`, and save.
+3. Click **Enable**, add a short description like `Live sensor telemetry for car 88 — tire temps and pressures, speed, DRS. Many rows per lap.`, and save.
+4. Repeat for **`car_state`**, with a description like `Per-lap enriched car state with tire-anomaly flag`.
 
-Enablement takes a few seconds; the description is what an AI agent reads to pick the topic, so make it meaningful.
+Enablement takes a few seconds each; the description is what an AI agent reads to pick the topic, so make it meaningful. (`race_standings` is a compacted upsert topic and cannot be RTCE-enabled — query `car_telemetry` or `car_state` instead.)
 
-**3. Connect your MCP client.** From the repo directory, run:
+**2. Connect your MCP client.** From the repo directory, run:
 
 ```bash
 uv run setup-rtce
@@ -333,17 +332,17 @@ uv run setup-rtce
 
 Choose Claude Code, Codex, or both. The script reads your credential file and configures the RTCE connection. Restart your coding agent afterward.
 
-**4. Ask about the live race.** Run `claude`, then try:
+**3. Ask about the live race.** Run `claude`, then try:
 
 - "What's the front-left tire temperature on car 88 right now?"
 - "Show me the last 10 telemetry readings for car 88."
-- "Is car 88's front-left tire flagged as anomalous?" *(after step 2 — queries `car_state`)*
+- "Is car 88's front-left tire flagged as anomalous?" *(queries `car_state`)*
 
-Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and only RTCE-enabled topics are exposed. Enable more from the **Topics** page the same way you enabled `car_state`.
+Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and only RTCE-enabled topics are exposed. Enable more from the **Topics** page the same way you enabled these two.
 
 ### Optional: Lightning Queries (low-latency REST)
 
-Terraform enables RTCE on `car_telemetry` by default. Unless you deployed with `enable_rtce=false`, no Console toggle is needed for this query. Topics you create later, such as `car_state`, need their own RTCE enablement.
+Lightning Queries read an RTCE-enabled topic over low-latency REST, so enable RTCE on `car_telemetry` in the Console first (step 1 above) if you haven't already.
 
 From the repo directory, print a ready-to-run query:
 
@@ -435,7 +434,6 @@ TIRE STRATEGY at Silverstone (60-lap race):
 - John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. The pit wall warns at laps 21-23, calls PIT NOW only when the lap-24 anomaly fires, then lets the fresh MEDIUM stint run.
 
 REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
--- USING TOOLS `car_telemetry_tool`  -- uncomment when RTCE is active
 WITH ('max_iterations' = '10');
 ```
 

@@ -6,38 +6,13 @@
 -- CREATE MODEL needed. Run this statement first, then run
 -- streaming_agent_pit_decisions.sql.
 
--- 1. RTCE Connection — for later when RTCE is fully enabled.
---    Competitor context is currently provided via a direct JOIN with race_standings
---    (see CREATE TABLE pit_decisions below). Uncomment once your RTCE endpoint is active.
---    RTCE is only enabled on car_telemetry, not the compacted race_standings topic
---    (MT_UPSERT_NOT_SUPPORTED) — see docs/maintainers/TECHNICAL-NOTES.md.
---
--- CREATE CONNECTION `rtce-connection`
--- WITH (
---   'type' = 'MCP_SERVER',
---   'endpoint' = '<YOUR_RTCE_ENDPOINT>',
---   'transport-type' = 'STREAMABLE_HTTP',
---   'username' = '<YOUR_RTCE_API_KEY>',
---   'password' = '<YOUR_RTCE_API_SECRET>'
--- );
-
--- 2. RTCE Tool — for later when RTCE is fully enabled.
---    Uncomment once rtce-connection is active, then add USING TOOLS `car_telemetry_tool`
---    to the CREATE AGENT below and replace the competitor standings JOIN with tool calls.
---
--- CREATE TOOL `car_telemetry_tool`
--- USING CONNECTION `rtce-connection`
--- WITH (
---   'type' = 'mcp',
---   'description' = 'Query live sensor telemetry for car #88: tire temps and pressures,
---                    engine and brake temps, battery, fuel, DRS, speed, throttle, brake.
---                    Many rows per lap. Use for car condition and tire wear context.'
--- );
-
--- 3. Pit Strategy Agent
---    Competitor standings are provided as structured text in each input message
---    (from the JOIN with race_standings in the CREATE TABLE below).
---    When RTCE is enabled: uncomment USING TOOLS and update the prompt accordingly.
+-- RTCE in this demo is used only by the external investigation leg (Google
+-- Antigravity querying car_telemetry / pit_decisions directly over MCP — see
+-- docs/demo-reference/antigravity_investigation_agent.md and the Console
+-- Topics → Real-Time Context Engine toggle). The agent below does NOT call
+-- RTCE itself — no CREATE CONNECTION/CREATE TOOL/USING TOOLS here — so this
+-- file stays a plain, single CREATE AGENT statement that `--with-labs` and
+-- `uv run f1-sql --file` can rebuild on their own, no prerequisite steps.
 CREATE AGENT `pit_strategy_agent`
 USING MODEL `llm_textgen_model`
 USING PROMPT 'OUTPUT FORMAT — respond with exactly these 7 labeled lines in this order. No markdown, no asterisks, no bold, plain text only.
@@ -111,5 +86,4 @@ TIRE STRATEGY at Silverstone (60-lap race):
 - John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. The pit wall warns at laps 21-23, calls PIT NOW only when the lap-24 anomaly fires, then lets the fresh MEDIUM stint run.
 
 REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
--- USING TOOLS `car_telemetry_tool`  -- uncomment when RTCE is active
 WITH ('max_iterations' = '10');

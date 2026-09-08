@@ -3,11 +3,17 @@
 # person, with NO AWS infrastructure.
 #
 # Provisions exactly what the labs need on Confluent: environment, cluster,
-# Flink pool, the two live topics (car_telemetry + race_standings), the Bedrock
-# LLM connections + models, and a `driver_race_history` table. Unlike
-# terraform/aws there is no Postgres/CDC (the CLI seeds driver_race_history with
-# a bounded Flink INSERT) and no ECS simulator (the user runs `uv run f1-race`
-# locally). The labs (LAB 1-4, 6) run against this environment unchanged.
+# Flink pool (all AWS), the two live topics (car_telemetry + race_standings),
+# a Vertex AI (GCP) LLM connection + model for this one-off recording, and a
+# `driver_race_history` table. Unlike terraform/aws there is no Postgres/CDC
+# (the CLI seeds driver_race_history with a bounded Flink INSERT) and no ECS
+# simulator (the user runs `uv run f1-race` locally). The labs (LAB 1-4, 6)
+# run against this environment unchanged.
+#
+# NOTE: a BigQuery sink was tried for this recording and dropped — Confluent
+# Cloud's managed BigQueryStorageSink connector is unavailable on AWS-hosted
+# clusters ("connector plugin BigQueryStorageSink unavailable on requested
+# cloud provider aws"), a hard platform constraint, not a config issue.
 # =============================================================================
 
 data "confluent_organization" "main" {}
@@ -63,8 +69,6 @@ module "topics" {
   flink_api_key       = module.flink.flink_api_key
   flink_api_secret    = module.flink.flink_api_secret
   owner_email         = var.owner_email
-  region              = var.region
-  enable_rtce         = var.enable_rtce
 
   # The value edges above reach only confluent_service_account.app, NOT the role
   # bindings that give it authority. On destroy those edges reverse, so without
