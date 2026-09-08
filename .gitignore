@@ -119,6 +119,9 @@ API-KEYS-AWS.md
 .workshop-keys-state-aws.json
 API-KEYS-AZURE.md
 .workshop-keys-state-azure.json
+# Attendee login CSV (email + plaintext Console password), produced locally for
+# instructor card distribution — never commit.
+attendee-logins*.csv
 
 # Data generation connections
 **/data-gen/connections/
