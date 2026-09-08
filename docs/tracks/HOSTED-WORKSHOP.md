@@ -11,8 +11,6 @@ Follow the labs in order. Every attendee command and SQL statement is included h
 
 ## Start here
 
-Your very first steps — do these before anything else:
-
 1. **Log in to Confluent Cloud.** Open the sign-in link from your instructor and log in at [confluent.cloud](https://confluent.cloud/) with the **console username** and **console password** on your credential card. (It's a workshop account like `...+f1wp###@confluent.io` — *not* your own work email.)
 2. **Open a SQL workspace.** You'll land in your environment, **`RIVER-RACING-f1wp###-ENV`**. Open the **Flink** tab → **[Open SQL workspace](https://confluent.cloud/workspaces/)**, and set the **catalog** to your environment and **database** to your cluster. Both start with `RIVER-RACING`.
 3. **Run your first query:**
@@ -29,46 +27,47 @@ Your very first steps — do these before anything else:
 
    22 cars means you're live. Stop the query and continue to **LAB 1** below.
 
-The rest of this guide walks the labs in order. The terminal setup below (`git clone`, `uv`) is only needed for the optional Pit Wall dashboard and the RTCE exercise — you can start the labs in the browser right away.
+The rest of this guide walks the labs in order. The terminal setup below (`git clone`, `uv`) is only needed for the optional Pit Wall dashboard and the RTCE exercise. You can start the labs in the browser right away.
 
 ## Prerequisites
 
-You need a browser, a terminal, this repository, and `uv` for the Pit Wall dashboard. On macOS:
+1. You need a browser, a terminal, this repository, and `uv` for the Pit Wall dashboard. Run the following setup commands based on your operating system. 
 
-```bash
-brew install git uv
-brew install --cask claude-code   # optional — only for the Bonus section
-```
+    <details>
+    <summary>for Mac</summary>
 
-Clone the repository and install the dependencies:
+    ```bash
+    brew install git uv
+    brew install --cask claude-code   # optional — only for the Bonus section
+    ```
 
-```bash
-git clone https://github.com/confluentinc/demo-confluent-intelligence-f1.git
-cd demo-confluent-intelligence-f1
-uv venv
-uv sync
-```
+    </details>
 
-> [!NOTE]
->
-> Your instructor provides the Confluent Cloud account, environment prefix, race-feed URL, and watsonx Orchestrate access. You don't need your own cloud account.
+    <details>
+    <summary>for Windows</summary>
 
-## Workshop timing
+    ```powershell
+    winget install --id Git.Git -e
+    winget install --id astral-sh.uv -e
+    winget install --id Anthropic.ClaudeCode -e   # optional — only for the Bonus section
+    ```
 
-> [!NOTE]
->
-> Race timing is managed by the instructor. Follow the lab sequence and begin each step when prompted; there are no race-control commands for attendees to run.
+    Close and reopen the terminal afterward so the new tools are on your `PATH`.
 
-## Workshop map
+    </details>
 
-| Lab | Work |
-|---|---|
-| 1 | Claim your account, open the SQL workspace, and start the Pit Wall |
-| 2 | Inspect the source streams, history table, connections, and models |
-| 3 | Build `car_state` and detect the tire anomaly |
-| 4 | Build the streaming pit-strategy agent |
-| 5 | Build the watsonx Orchestrate social-media agent |
-| 6 | Inspect the decisions and review the pipeline |
+2. Clone the repository and install the dependencies:
+
+    ```bash
+    git clone https://github.com/confluentinc/demo-confluent-intelligence-f1.git
+    cd demo-confluent-intelligence-f1
+    uv venv
+    uv sync
+    ```
+
+    > [!NOTE]
+    >
+    > Your instructor provides the Confluent Cloud account, environment prefix, race-feed URL, and watsonx Orchestrate access. You don't need your own cloud account.
 
 ## Lab 1 — Open Your Environment
 
@@ -89,7 +88,7 @@ uv run f1-onboard --paste     # paste your claim email, then a blank line
 
 Your username is a **workshop account we created for you** — something like `...+f1wp###@confluent.io`. It is *not* your own work email, and signing in with your own address won't find your environment.
 
-1. Open the sign-in link from your emailand log in to [confluent.cloud](https://confluent.cloud/) with the **console username** and **console password** you were given.
+1. Open the sign-in link from your email and log in to [confluent.cloud](https://confluent.cloud/) with the **console username** and **console password** you were given.
 2. You'll land in your environment, **`RIVER-RACING-f1wp###-ENV`**. It's the only one you can see.
 3. Open the **Flink** tab and click **Open SQL workspace**.
 4. Set the workspace's **catalog** to your environment and **database** to your cluster (`RIVER-RACING-f1wp###-CLUSTER`), using the dropdowns above the editor.
@@ -112,14 +111,7 @@ You should see 22 cars. Stop the streaming query, then start the Pit Wall in a t
 uv run f1-pitwall
 ```
 
-A browser opens at **http://localhost:8000**.
-
-You'll notice two panels are **locked**:
-
-- 🔒 **ANOMALY DETECTION** — activates when you build `car_state` in **LAB 3**
-- 🔒 **AI PIT STRATEGIST** — activates when you build `pit_decisions` in **LAB 4**
-
-Keep the dashboard open while you work.
+A browser opens at **http://localhost:8000**. Keep the dashboard open while you work.
 
 ## Lab 2 — Explore the Environment
 
@@ -166,7 +158,7 @@ SHOW CONNECTIONS;
 Stop every streaming `SELECT` from Lab 2. Then paste this entire statement into one SQL cell and run it:
 
 ```sql
-CREATE TABLE `car_state`
+CREATE MATERIALIZED TABLE `car_state`
 WITH ('changelog.mode' = 'append')
 AS
 WITH enriched AS (
@@ -396,30 +388,66 @@ Reasoning: The FL anomaly flag indicates the SOFT has gone past its operating li
 You are the AI pit wall strategist for River Racing at the 2026 British Grand Prix (Silverstone, 60 laps).
 Driver: John Doe, Car #88.
 
-DECISION ALGORITHM — apply these rules in order. Do not deviate.
+DECISION FRAMEWORK — use this priority order to reason about the Suggestion.
+This is guidance for judgment, not a rule to execute mechanically.
 
-Step 1: If anomaly_tire_temp_fl = true → Suggestion: PIT NOW. Stop.
-Step 2: Else if pit_stops > 0 → Suggestion: STAY OUT. Stop.
-Step 3: Else if tire_compound = SOFT AND tire_age_laps >= 21 → Suggestion: PIT SOON. Stop.
-Step 4: Else → Suggestion: STAY OUT. Stop.
+PIT NOW vs PIT SOON — these mean different things and are not interchangeable
+labels for "pit now would be reasonable." PIT NOW means urgent: a validated
+problem exists and the car should come in immediately for safety. PIT SOON
+means strategic: the tires are aging into their normal pit window and a stop
+is coming, even if stopping on this exact lap would itself be the sound
+strategic choice. A strategy-driven stop stays PIT SOON for its entire
+window; it does not become PIT NOW just because the ideal moment has arrived.
 
-These rules are absolute. The race context, gap, competitor pit timing, and tire
-temperatures are inputs FOR YOUR REASONING TEXT ONLY — they MUST NOT change the
-Suggestion field. Reason about strategy in the Reasoning field, but the Suggestion
-itself is fully determined by Steps 1–4 above.
+1. Anomaly signal: anomaly_tire_temp_fl comes from a trained statistical anomaly
+   detector (ML_DETECT_ANOMALIES) that has already evaluated tire_temp_fl_c
+   against expected bounds for this car at this point in the race. PIT NOW is
+   reserved for this signal being true — treat it as strong, validated evidence
+   of a real tire problem serious enough to justify an urgent stop. When it is
+   false, there is no statistical evidence of a problem: a raw temperature
+   reading that merely looks high to you has already been checked and found
+   within the expected range for this stage of the stint, so weigh that check
+   heavily before treating anything as urgent on the strength of a number alone.
+   Nothing else in this input — not tire age, not race context, not competitor
+   behavior — should produce PIT NOW; those inform PIT SOON or STAY OUT instead.
+2. Pit history: a car that has already pitted this race is usually better off
+   staying out and running its current tires to the end, absent a new problem.
+3. Tire age and compound: a SOFT tire that has run past roughly 20 laps starts
+   trending into a strategic pit window. This is PIT SOON, not PIT NOW, for as
+   long as that window lasts — even on the lap where pitting would be ideal —
+   since pace typically falls off after that point but there is no validated
+   safety issue driving urgency.
+4. Otherwise: STAY OUT is the reasonable default when nothing above points to a
+   reason to change strategy.
 
-FORBIDDEN PATTERNS — these are bugs, not options:
-- Outputting PIT NOW when anomaly_tire_temp_fl = false. No exceptions.
-- Outputting PIT SOON when tire_age_laps < 21.
-- Outputting PIT SOON after pit_stops > 0.
-- Outputting anything other than STAY OUT when tire_age_laps < 20 AND anomaly_tire_temp_fl = false.
-- Justifying PIT NOW with phrases like "approaching cliff", "blowout risk", "tires near limit",
-  "performance falling off" — these are PIT SOON or STAY OUT signals, never PIT NOW.
+Weigh these in order of severity, and keep the PIT NOW/PIT SOON distinction
+above intact regardless of how you weigh them — you are reasoning about a race
+strategy call, not executing a lookup table, but the two labels still mean
+different things. Use the TIRE DATA, RACE CONTEXT, and COMPETITOR CONTEXT
+below to inform your Reasoning field regardless of which Suggestion you land on.
 
-SELF-CHECK before responding: re-read Steps 1–4 with the actual input values.
-The input includes REQUIRED SUGGESTION, computed by Flink SQL from those rules.
-Copy that exact value into Suggestion. If your prose conflicts with it, fix the
-prose before outputting.
+Correct STAY OUT despite a high-looking temperature example:
+Suggestion: STAY OUT
+Condition Summary: Front-left tire temperature reads 118C, which may look elevated, but the anomaly detector has not flagged it as unusual for this stage of the tire life.
+Race Context: Currently P5. Field is spread out, no pit activity nearby.
+Recommended Compound: N/A
+Recommended Stint Laps: N/A
+Recommended Reason: N/A
+Reasoning: No anomaly has been detected, so there is no validated evidence of a tire problem despite the reading looking high in isolation. Pit stops are at zero and tire age is still well under the strategic pit window, so there is no other reason to come in. Staying out preserves track position.
+
+STRICT OUTPUT VALUES — the Suggestion field must be exactly one of these three
+literal strings, with no other characters, punctuation, or words on that line:
+PIT NOW
+PIT SOON
+STAY OUT
+No variants, synonyms, qualifiers, or explanatory text are permitted on the
+Suggestion line (e.g. never "PIT NOW - tire failure risk" or "Stay out for now").
+Downstream systems match this field with exact string equality.
+
+SELF-CHECK before responding: re-read your Suggestion against the TIRE DATA and
+RACE CONTEXT above and confirm your Reasoning genuinely explains it. If the
+Reasoning and the Suggestion disagree with each other, fix whichever one is
+actually wrong.
 
 COMPETITOR CONTEXT:
 Current top-10 standings are provided at the end of each input. Use them to identify:
@@ -446,7 +474,7 @@ SHOW AGENTS;
 Create `pit_decisions`, which invokes `AI_RUN_AGENT` and puts our agent to work:
 
 ```sql
-CREATE TABLE `pit_decisions`
+CREATE MATERIALIZED TABLE `pit_decisions`
 WITH ('changelog.mode' = 'append')
 AS
 SELECT
@@ -456,12 +484,7 @@ SELECT
   cs.tire_compound AS tire_compound_current,
   cs.tire_age_laps,
   cs.anomaly_tire_temp_fl,
-  CASE
-    WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
-    WHEN cs.pit_stops > 0 THEN 'STAY OUT'
-    WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 21 THEN 'PIT SOON'
-    ELSE 'STAY OUT'
-  END AS suggestion,
+  TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Suggestion:\*{0,2}\s*([^\n]+)', 1)) AS suggestion,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Condition Summary:\*{0,2}\s*([^\n]+)', 1)) AS condition_summary,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Race Context:\*{0,2}\s*([^\n]+)', 1)) AS race_context,
   NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Compound:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS recommended_tire_compound,
@@ -475,13 +498,6 @@ LATERAL TABLE(AI_RUN_AGENT(
   CONCAT(
     'CAR STATE — Lap ', CAST(cs.lap AS STRING), ' of 60 | Silverstone British Grand Prix\n',
     'Driver: John Doe (#', CAST(cs.car_number AS STRING), ') | Current Position: P', CAST(cs.`position` AS STRING), '\n',
-    'REQUIRED SUGGESTION — copy exactly: ',
-    CASE
-      WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
-      WHEN cs.pit_stops > 0 THEN 'STAY OUT'
-      WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 21 THEN 'PIT SOON'
-      ELSE 'STAY OUT'
-    END, '\n',
     '\nTIRE DATA:\n',
     '  Compound: ', cs.tire_compound, ' | Age: ', CAST(cs.tire_age_laps AS STRING), ' laps\n',
     '  FL Temp: ', CAST(ROUND(cs.tire_temp_fl_c, 1) AS STRING), 'C',
