@@ -809,6 +809,12 @@ def spec_validate(args: argparse.Namespace) -> None:
         override=getattr(args, "email_pattern", ""),
         interactive=getattr(args, "email_pattern_interactive", sys.stdin.isatty()),
     )
+    # `wsa validate` only sees the raw process environment — unlike `build`/`clean`,
+    # this command never used to call ensure_secrets(), so it reported the 5
+    # TF_VAR_* secrets as missing even when they were sitting in credentials.env,
+    # since nothing had exported them into os.environ yet. Collecting them here
+    # makes this preflight check reflect the same environment a real build uses.
+    ensure_secrets(root, interactive=sys.stdin.isatty())
     # wsa validate now requires WSA_EMAIL_PATTERN (env or wsa.env); export the
     # resolved value so validate sees it. No derived spec — the pattern is not a
     # spec field in wsa >= 0.3.0.

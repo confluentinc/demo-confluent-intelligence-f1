@@ -22,6 +22,8 @@ docker info >/dev/null
 uv --version
 ```
 
+Run `workshop build`/`workshop clean` from the same shell where `aws sts get-caller-identity` above succeeds. AWS credentials (an SSO session, `AWS_PROFILE`, or exported keys) live in that shell's environment, not in this repo or in `credentials.env` — a different shell (a fresh terminal tab, a subprocess launched by some other tool) with no AWS session will fail Terraform's `aws-shared` phase with `No valid credential sources found` even though the shared infra already deployed successfully once elsewhere.
+
 ## 2. Workshop Setup Accelerator
 
 Clone `confluentinc/workshop-setup-accelerator` next to this repo and build its
@@ -124,6 +126,15 @@ op read 'op://Workshop Setup Accelerator Users/Account 005/confluent-cloud/passw
 The first count must equal the attendee count. Match the organizer's full alias;
 a broad `f1wp` search can count another organizer's users.
 
+If `wsa build` reports "No Confluent Cloud password in 1Password" for an account
+whose invitation you're sure was accepted, the item may exist but be missing the
+`confluent-cloud` section `wsa` actually reads from (`op read
+'op://<vault>/Account NNN/confluent-cloud/password'` — distinct from the item's
+built-in login password). Compare against a working account's item structure
+rather than assuming the invitation never completed; see "1Password item
+structure for `confluent-cloud/password`" in
+[TECHNICAL-NOTES.md](../maintainers/TECHNICAL-NOTES.md).
+
 ## 6. Optional account dispenser
 
 **Skip this if you're handing out credential cards directly** — the workshop works
@@ -173,3 +184,15 @@ reserved for testing; substitute your own two non-production account numbers and
 an unused prefix. Follow
 [WORKSHOP-GUIDE.md](WORKSHOP-GUIDE.md) for validation, race control, reset, and
 teardown.
+
+**For a real workshop build (~8+ accounts), add `--concurrency 2` to `workshop build`.**
+`wsa build`'s default of 10 parallel Terraform runs is fine for the two-account
+smoke test above, but at full account count it drives enough simultaneous
+Confluent Cloud API traffic to trigger `429 Too Many Requests` and to widen the
+normal propagation delay between a service account's role binding and the Flink
+SQL control plane recognizing it — which surfaces as `Compute pool or principal
+not found` on the `confluent_flink_statement` resources, sometimes repeating
+across every retry. See "`wsa build` concurrency and Confluent Cloud rate
+limits" in [TECHNICAL-NOTES.md](../maintainers/TECHNICAL-NOTES.md) for the
+failure signature and how to resume a partially-failed build instead of
+rebuilding from scratch.
