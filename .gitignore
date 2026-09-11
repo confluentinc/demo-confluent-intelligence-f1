@@ -58,6 +58,10 @@ Thumbs.db
 CLAUDE.md
 claude-*
 
+# Codex CLI local workspace — .codex/config.toml can hold live MCP credentials
+# (e.g. the RTCE Basic-auth header). Never commit.
+.codex/
+
 # Development tools
 tools/
 handoffs/

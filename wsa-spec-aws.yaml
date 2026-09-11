@@ -26,7 +26,7 @@
 # (from WSA_EMAIL_PATTERN, below) must already be an accepted Confluent Cloud
 # user with a password in 1Password before `wsa build` runs, or terraform/aws's
 # confluent_user lookup fails at plan time. One-time per account number; see
-# docs/organizer/WORKSHOP-GUIDE.md.
+# docs/organizer/README.md.
 # =============================================================================
 
 # Minimum wsa release this spec needs. wsa refuses to build/validate a spec

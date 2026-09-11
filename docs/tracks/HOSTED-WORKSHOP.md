@@ -8,27 +8,6 @@
 
 Follow the labs in order. Every attendee command and SQL statement is included here.
 
-
-## Start here
-
-1. **Log in to Confluent Cloud.** Open the sign-in link from your instructor and log in at [confluent.cloud](https://confluent.cloud/) with the **console username** and **console password** on your credential card. (It's a workshop account like `...+f1wp###@confluent.io` — *not* your own work email.)
-2. **Open a SQL workspace.** You'll land in your environment, **`RIVER-RACING-f1wp###-ENV`**. Open the **Flink** tab → **[Open SQL workspace](https://confluent.cloud/workspaces/)**, and set the **catalog** to your environment and **database** to your cluster. Both start with `RIVER-RACING`.
-3. **Run your first query:**
-
-   ```sql
-   SHOW TABLES;
-   ```
-
-   You should see `car_telemetry`, `race_standings`, and `driver_race_history`. Then watch the live feed:
-
-   ```sql
-   SELECT * FROM race_standings;
-   ```
-
-   22 cars means you're live. Stop the query and continue to **LAB 1** below.
-
-The rest of this guide walks the labs in order. The terminal setup below (`git clone`, `uv`) is only needed for the optional Pit Wall dashboard and the RTCE exercise. You can start the labs in the browser right away.
-
 ## Prerequisites
 
 1. You need a browser, a terminal, this repository, and `uv` for the Pit Wall dashboard. Run the following setup commands based on your operating system. 
@@ -67,7 +46,7 @@ The rest of this guide walks the labs in order. The terminal setup below (`git c
 
     > [!NOTE]
     >
-    > Your instructor provides the Confluent Cloud account, environment prefix, race-feed URL, and watsonx Orchestrate access. You don't need your own cloud account.
+    > Your instructor provides the Confluent Cloud account and environment prefix. You don't need your own cloud account.
 
 ## Lab 1 — Open Your Environment
 
@@ -75,14 +54,23 @@ The rest of this guide walks the labs in order. The terminal setup below (`git c
 
 There are two ways to get it, depending on how this session is run:
 
-1. **Instructor-distributed:** Save the `f1wp###.md` credential card and companion `f1wp###.env` file your instructor sends you. Keep both private.
+<details>
+<summary><strong>Instructor-distributed file</strong></summary>
 
-2. **Self-serve claim:** Use the username and password in your claim email, then create `credentials.env` with either command:
+Save the `f1wp###.md` credential card and companion `f1wp###.env` file your instructor sends you. Keep both private.
+
+</details>
+
+<details>
+<summary><strong>Self-serve claim</strong></summary>
+
+Use the username and password in your claim email, then create `credentials.env` with the following command:
 
 ```bash
-uv run f1-onboard            # prompts field-by-field
-uv run f1-onboard --paste     # paste your claim email, then a blank line
+uv run f1-onboard
 ```
+
+</details>
 
 ### 2. Open a SQL workspace
 
@@ -235,7 +223,7 @@ FROM anomaly
 WHERE lap > 0;
 ```
 
-Leave the job running. Verify its output in a new cell:
+Verify the output in a new cell:
 
 ```sql
 SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
@@ -344,9 +332,7 @@ uv run setup-rtce --lightning
 
 Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. The command reads your existing credential file and derives the region and cloud from its RTCE endpoint. Use `--creds path/to/file.env` if you have multiple credential files.
 
-Lightning Queries require a **Global API key**, the same key used by RTCE's MCP interface. The printed command contains its authentication token; keep it private. This command prints the request without registering an MCP client. It reads matching local Terraform outputs, or the existing credential file for hosted attendees. Both modes accept `RTCE_API_KEY` and `RTCE_API_SECRET` overrides. If no key is available, the script offers CLI creation, then hidden manual entry with a link to the creation instructions. It saves fallback keys in the existing credential file.
-
-The workshop provisioning flow supplies the Global key. For self-serve claims, `uv run f1-onboard --paste` imports it from the existing **MCP Setup Command** in your claim email. If you onboarded with an older version, rerun onboarding with that email or use the instructor-provided `.env` file.
+Lightning Queries require a **Global API key**, the same key used by RTCE's MCP interface. The printed command contains its authentication token; keep it private. This command prints the request without registering an MCP client. It reads matching local Terraform outputs, or the existing credential file for hosted attendees.
 
 ## Lab 4 — Streaming Agent: Pit Decisions
 
@@ -522,7 +508,7 @@ LATERAL TABLE(AI_RUN_AGENT(
     '  Laps Remaining: ', CAST(60 - cs.lap AS STRING)
   ),
   MAP['debug', 'true']
-));
+))
 ```
 
 Then run:
@@ -544,63 +530,57 @@ SELECT * FROM `pit_decisions`;
 
 Check the Pit Wall. The **AI PIT STRATEGIST** panel should unlock and show the decisions.
 
-## Lab 5 — Social Media Agent (IBM watsonx Orchestrate)
+## Lab 5 — Social Media Agent (Claude + Real-Time Context Engine)
 
-Use the watsonx Orchestrate access supplied by your instructor and the [`f1-race-feed-openapi.json`](../assets/orchestrate/f1-race-feed-openapi.json) file in this repository.
+Draft social posts about the live race using the same Claude Code session you connected to Real-Time Context Engine (RTCE) back in Lab 3 — no separate no-code platform, no OpenAPI import. If you skipped that section, go back and run `uv run setup-rtce` now before continuing.
 
-> [!NOTE]
->
-> **404 or wrong environment?** If watsonx Orchestrate shows a 404, or you land in the wrong instance/environment, fully **log out** of Orchestrate and **log back in** with the workshop credentials, then reopen **Agent Builder**. This clears a stale session more often than not.
+### 1. Enable RTCE on the pit-decisions table
 
-### 1. Add the race-feed tool
+Lab 3 enabled RTCE on `car_telemetry` and `car_state`. The social agent also needs the latest strategy call, so enable it on `pit_decisions` too, the same way:
 
-1. In the watsonx Orchestrate console, open **Agent Builder** (left nav).
-2. Select **Tools → Add tool → Import → OpenAPI**.
-3. Upload [`f1-race-feed-openapi.json`](../assets/orchestrate/f1-race-feed-openapi.json).
-4. Choose the **`get_race_feed`** operation and finish the import.
+1. Console → your cluster → **Topics → `pit_decisions`**.
+2. Open the **Real-Time Context Engine** panel (or tab) for the topic.
+3. Click **Enable**, add a description like `Pit strategy calls (PIT NOW / PIT SOON / STAY OUT) with reasoning`, and save.
 
-**Success looks like:** the tool list now shows a `get_race_feed` tool. If nothing appears, re-upload the spec — a partial import shows no operations.
+### 2. Give Claude the persona
 
-### 2. Create the agent
-
-1. From Agent Builder, **Create agent** and name it `River Racing Social`.
-2. Under **Tools**, attach the `get_race_feed` tool you just imported.
-3. Paste these instructions into the agent's instructions field:
+Run `claude` in the repo directory (or reuse your open session from Lab 3), then paste this in:
 
 ```
 You are the social-media manager for the River Racing Formula 1 team. Our driver
 is John Doe (car #88) racing the British Grand Prix at Silverstone (60 laps).
 
-Your job: when asked, draft short, high-energy social posts about what is
-happening in OUR race, grounded in live data.
+Your job: when I ask, draft short, high-energy social posts about what is
+happening in OUR race, grounded in live data from the car_state and
+pit_decisions topics.
 
 DATA
-- Always call the get_race_feed tool with prefix "f1wp001" to get the current
-  race situation before writing. Never invent positions, gaps, lap numbers, or
-  events — use only what the tool returns.
-- The headline_events list is your best source of post hooks (overtakes, the
-  tire anomaly, the pit call). Lead with the most recent meaningful event.
-- If latest_pit_decision is PIT NOW or PIT SOON, that is newsworthy — say so.
-- If the tool returns live = false or empty events, say the race feed is quiet
-  rather than making something up.
+- Before writing, query car_state for the most recent lap and pit_decisions for
+  the most recent strategy call. Never invent positions, gaps, lap numbers, tire
+  conditions, or strategy calls — use only what the tools return.
+- car_state's anomaly_tire_temp_fl flag and pit_decisions' suggestion field are
+  your best sources of post hooks. Lead with the most recent meaningful event.
+- If pit_decisions' suggestion is PIT NOW or PIT SOON, that is newsworthy — say so.
+- If the topics return no rows yet, say the race feed is quiet rather than
+  making something up.
 
 VOICE
 - Confident, upbeat, fan-facing. Short sentences. 1–3 emoji max.
 - Always third person about the team ("We", "John", "the #88").
-- Under 280 characters unless the user asks for a longer recap.
+- Under 280 characters unless I ask for a longer recap.
 - End with 2–3 hashtags from: #RiverRacing #JohnDoe #F1 #BritishGP #Silverstone
 - Never disparage other teams or drivers.
 
 OUTPUT
 - Draft the post text only. Do not claim to have published it — these are drafts
-  for a human to review and post.
+  for me to review and post myself.
 ```
 
-Replace `f1wp001` with the prefix on your credential card.
+Unlike a shared race-feed tool, RTCE only ever exposes *your own* environment — there's no prefix to substitute here.
 
 ### 3. Draft a post
 
-In the **preview chat** on the right, try:
+In the same session, try:
 
 ```
 Draft a hype post about where we are in the race right now.
@@ -612,7 +592,7 @@ Then try:
 - "The pit wall just made a call. Draft a post about our strategy."
 - "Write a 3-tweet recap thread of John's race so far."
 
-**Success looks like:** the agent calls `get_race_feed` (you'll see the tool invocation in the preview) and returns a drafted post citing real lap number, position, and events from your live feed — not invented numbers. If it says the feed is quiet, the race may not be running yet or the prefix is wrong.
+**Success looks like:** Claude calls `queryData` against `car_state` and `pit_decisions` (you'll see the tool calls in the transcript) and returns a drafted post citing the real lap number, position, and strategy call from your live feed — not invented numbers. If it says the feed is quiet, the race may not be running yet, or RTCE isn't enabled on one of the two topics.
 
 ## Lab 6 — Wrap-Up
 
@@ -652,33 +632,5 @@ DROP AGENT IF EXISTS `pit_strategy_agent`;
 ```
 
 Ask your instructor to reset the race before repeating Labs 3 and 4.
-
-## Troubleshooting
-
-<details>
-<summary>Click to expand</summary>
-
-- **Can't sign in:** Use the workshop username ending in `+f1wp###@confluent.io`, not your own email. Ask the instructor for a fresh password if needed.
-- **No tables, models, or agents:** Check the catalog and database selectors above the SQL editor.
-- **Source tables are idle:** Wait a few seconds and run the query again. Tell the instructor if no rows arrive after several minutes.
-- **`car_state` is empty:** Wait for the first 20-second window to close. The race can also take up to ~20 seconds to emit lap 1 (epoch alignment), so allow after ~40-60 seconds before treating it as stuck. If it is still empty then, tell the instructor; Lab 3 may have started after the standings version it needs.
-- **No lap-24 anomaly:** Ask the instructor to confirm the race was reset and started at the Lab 3 gate. Remember the anomaly appears around lap 24 (~8 min in) — don't wait for it before moving on.
-- **Agent fields are empty:** Inspect `raw_response`. If all responses fail, tell the instructor; the shared Bedrock quota may be throttled.
-- **Lab 5 tool fails:** Confirm the instructor's public race-feed service is still running and that the prefix exactly matches your credential card.
-- **Lab 5 shows a 404 / wrong environment:** Fully log out of watsonx Orchestrate and log back in with the workshop credentials, then reopen Agent Builder.
-
-</details>
-
-## Something not working?
-
-If the pre-provisioned environment fails, your instructor may switch you to the [self-service workshop walkthrough](./SELF-SERVICE.md).
-
----
-
-> [!IMPORTANT]
->
-> **Are you the speaker running this workshop?** Setup for provisioning every attendee's environment lives in the **[organizer guide](../organizer/README.md)**.
-
----
 
 **← Back to Overview**: [Main README](../../README.md)

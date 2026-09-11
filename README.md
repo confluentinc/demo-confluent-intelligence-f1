@@ -29,8 +29,6 @@ Still unsure? Check the credential instructions from your instructor. Your own C
 
 The simulator writes `car_telemetry` and `race_standings`. Historical race data lands in `driver_race_history`. During the labs, you'll build `car_state`, detect a front-left tire anomaly, create a streaming pit-strategy agent, and write its recommendations to `pit_decisions`.
 
-Read the [F1 Pit Wall AI use case](docs/reference/USE-CASE.md) for the scenario, source data, and intended pit-wall outcome.
-
 ## Repository map
 
 ```text
@@ -41,9 +39,7 @@ demo-confluent-intelligence-f1/
 │   ├── tracks/SELF-SERVICE.md       # Self-service workshop
 │   ├── tracks/HOSTED-WORKSHOP.md    # Hosted workshop attendee labs
 │   ├── organizer/                   # Hosted workshop setup and run of show
-│   ├── reference/                   # Scenario and background material
-│   ├── maintainers/                 # Constraints and technical notes
-│   └── backup/                      # Compatibility links for old URLs
+│   └── maintainers/                 # Constraints
 ├── scripts/                         # Workshop and self-service commands
 └── terraform/                       # Shared and per-attendee infrastructure
 ```

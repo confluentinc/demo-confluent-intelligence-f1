@@ -25,8 +25,8 @@ race control, reset, standalone deploy, self-service, pitwall, social feed,
 setup-mcp, tests and lint — is in the **`f1-workshop-commands`** skill
 (`.claude/skills/f1-workshop-commands/SKILL.md`). Load it before running or
 explaining any of them. The checked-in references are `docs/tracks/HOSTED-WORKSHOP.md` (the hosted attendee
-walkthrough), `docs/organizer/RUN-OF-SHOW.md` (presenter cues),
-`docs/organizer/WORKSHOP-GUIDE.md` (organizer lifecycle), and the
+walkthrough), `docs/organizer/README.md` (the single organizer guide — setup,
+run of show, and teardown), and the
 `[project.scripts]` table in `pyproject.toml` (every entry point).
 
 ---
@@ -150,11 +150,10 @@ directly — but on the build measured 2026-07-31 it **runs without error and ne
 flags anything**: `is_anomaly`, `upper_bound`, and `lower_bound` all stay NULL, so the
 `CASE` can never be true and `car_state` carries `anomaly_tire_temp_fl = false` for the
 whole race. It forecasts fine (`actual_value`/`forecast_value`/`rmse` populate). Do not
-make it the default again without repeating the validation described in
-`docs/maintainers/TECHNICAL-NOTES.md`. Both emit the identical `car_state` schema, so
+make it the default again without repeating that validation. Both emit the identical `car_state` schema, so
 LAB 4/5, the pit wall, and the social feed cannot tell them apart. **Their config keys
 differ:** `minTrainingSize`/`maxTrainingSize` vs `minContextSize`/`maxContextSize`, and
-`enableStl` exists only on `ML_`; see `docs/maintainers/TECHNICAL-NOTES.md`.
+`enableStl` exists only on `ML_`.
 
 `llm_textgen_model` / `llm_embedding_model` are pre-deployed per environment by
 `terraform/aws`.
@@ -235,8 +234,6 @@ beforehand are never seen, those laps have no version for the temporal join, and
 `car_state` silently loses its first laps. Reading only the `docs/demo-reference/*.sql` files
 will mislead you here; check the CREATE TABLE options too.
 
-Current implementation notes: `docs/maintainers/TECHNICAL-NOTES.md`.
-
 ---
 
 ## Secrets & Credentials
@@ -275,14 +272,14 @@ checkout → `0.3.0`) before the migrated spec will load. Binary discovery, the
 where a missing Google OAuth client leaves attendee passwords live are all in the
 **`wsa-provisioning`** skill
 (`.claude/skills/wsa-provisioning/SKILL.md`). The checked-in references are
-`docs/organizer/WORKSHOP-GUIDE.md`, `wsa-spec-aws.yaml` itself, and
+`docs/organizer/README.md`, `wsa-spec-aws.yaml` itself, and
 `scripts/workshop/wsa.py`.
 
 ---
 
 ## File Sync Rule
 
-`docs/demo-reference/*.sql` is the executable Flink SQL source of truth. Its `CREATE TABLE car_state`, `CREATE AGENT pit_strategy_agent`, `CREATE TABLE pit_decisions`, and optional `AI_FORECAST` statements must match the copy/paste SQL in all three attendee walkthroughs: `docs/tracks/HOSTED-WORKSHOP.md`, `docs/tracks/SELF-SERVICE.md`, and `docs/tracks/STANDALONE-DEMO.md`. When changing a statement, update the source file and every walkthrough copy in the same change, then compare the fenced SQL with the source before merging. `docs/demo-reference/orchestrate_social_agent.md` remains the source of truth for the non-SQL Lab 5 configuration. The organizer run-of-show links to the walkthrough and must not duplicate attendee SQL.
+`docs/demo-reference/*.sql` is the executable Flink SQL source of truth. Its `CREATE TABLE car_state`, `CREATE AGENT pit_strategy_agent`, `CREATE TABLE pit_decisions`, and optional `AI_FORECAST` statements must match the copy/paste SQL in all three attendee walkthroughs: `docs/tracks/HOSTED-WORKSHOP.md`, `docs/tracks/SELF-SERVICE.md`, and `docs/tracks/STANDALONE-DEMO.md`. When changing a statement, update the source file and every walkthrough copy in the same change, then compare the fenced SQL with the source before merging. `docs/demo-reference/orchestrate_social_agent.md` remains the source of truth for the non-SQL Lab 5 configuration. The organizer guide links to the walkthrough and must not duplicate attendee SQL.
 
 The old split lab files remain in git history and aren't part of the sync set.
 Do not restore `labs/instructor-led/` or copy SQL into organizer docs. The default
@@ -316,7 +313,7 @@ attendee walkthrough.
 | `terraform/modules/environment/main.tf` | The environment, plus the `grant_console_access`-gated `confluent_user` lookup + EnvironmentAdmin binding that makes an attendee login useful |
 | `scripts/workshop/onboard.py` | `f1-onboard` — self-serve: wsa claim-email values → local `credentials.env` |
 | `scripts/workshop/validate.py` | `workshop validate` — API-key health checks against one or many cards |
-| `docs/demo-reference/enrichment_anomaly_ai.sql` | LAB 3's Granite/`AI_DETECT_ANOMALIES` variant — `F1_ANOMALY_FN=ai`. EAP-gated, and currently never flags an anomaly; see `docs/maintainers/TECHNICAL-NOTES.md`. |
+| `docs/demo-reference/enrichment_anomaly_ai.sql` | LAB 3's Granite/`AI_DETECT_ANOMALIES` variant — `F1_ANOMALY_FN=ai`. EAP-gated, and currently never flags an anomaly. |
 | `docs/demo-reference/orchestrate_social_agent.md` | Canonical LAB 5 Orchestrate agent config (persona, tool, prompts) |
 
 ---
