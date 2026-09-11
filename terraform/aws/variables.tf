@@ -24,7 +24,7 @@ variable "owner_email" {
 }
 
 variable "grant_console_access" {
-  description = "Give the attendee EnvironmentAdmin on their own environment so they can log in to the Confluent Cloud Console and use the Flink SQL workspace. Requires owner_email to already exist as an accepted CC user — see docs/organizer/WORKSHOP-GUIDE.md's one-time org prep."
+  description = "Give the attendee EnvironmentAdmin on their own environment so they can log in to the Confluent Cloud Console and use the Flink SQL workspace. Requires owner_email to already exist as an accepted CC user — see docs/organizer/README.md's one-time org prep (section 1.4)."
   type        = bool
   default     = false
 }
@@ -37,9 +37,11 @@ variable "region" {
 
 variable "enable_rtce" {
   description = <<-EOT
-    Enable the Real-Time Context Engine on car_telemetry + race_standings so
-    attendees can query them from an MCP client. Set TF_VAR_enable_rtce=false for
-    an org or region where RTCE isn't available — see modules/topics/variables.tf.
+    Provision the Global API key that RTCE querying (MCP + Lightning Queries)
+    needs — see terraform/aws/rtce.tf. Enabling RTCE on a topic is NOT done here:
+    attendees toggle it in the Confluent Cloud Console themselves (both
+    car_telemetry and car_state). Set TF_VAR_enable_rtce=false for an org or
+    region where RTCE isn't available, to skip the key.
   EOT
   type        = bool
   default     = true

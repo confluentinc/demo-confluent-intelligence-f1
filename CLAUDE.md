@@ -25,8 +25,8 @@ race control, reset, standalone deploy, self-service, pitwall, social feed,
 setup-mcp, tests and lint — is in the **`f1-workshop-commands`** skill
 (`.claude/skills/f1-workshop-commands/SKILL.md`). Load it before running or
 explaining any of them. The checked-in references are `docs/tracks/HOSTED-WORKSHOP.md` (the hosted attendee
-walkthrough), `docs/organizer/RUN-OF-SHOW.md` (presenter cues),
-`docs/organizer/WORKSHOP-GUIDE.md` (organizer lifecycle), and the
+walkthrough), `docs/organizer/README.md` (the single organizer guide — setup,
+run of show, and teardown), and the
 `[project.scripts]` table in `pyproject.toml` (every entry point).
 
 ---
@@ -84,7 +84,7 @@ attendee tier of its shared inputs, and it also governs `wsa-spec-aws.yaml` and
 
 | Topic | Notes |
 |-------|-------|
-| `car_telemetry` | AVRO, no PRIMARY KEY, string message key. **RTCE-enabled** |
+| `car_telemetry` | AVRO, no PRIMARY KEY, string message key. RTCE: attendee Console toggle (not Terraform) |
 | `race_standings` | AVRO, PRIMARY KEY(car_number), upsert — produced directly by the simulator. Not RTCE-enabled: this org/region rejects compacted-topic queries with `MT_UPSERT_NOT_SUPPORTED`. |
 | `driver_race_history` | 198 historical rows, from the per-attendee CDC connector |
 | `car_state` | LAB 3 output, one record per 30s lap window. RTCE is the attendee's optional Console toggle (LAB 3 Step 4) |
@@ -95,31 +95,38 @@ The first three are created by Terraform (Flink CREATE TABLE, except
 `pit_decisions` do not exist until the attendee writes LAB 3 / LAB 4. Topic
 schemas (CREATE TABLE SQL): `terraform/modules/topics/main.tf`.
 
-**Real-Time Context Engine (attendee-facing).** `confluent_rtce_topic` in
-`modules/topics` enables RTCE on `car_telemetry` at build time, so an attendee's
-MCP client can query the sensor stream with no Kafka client and no consumer group.
-`race_standings` is intentionally excluded: although enablement reaches `online`,
-every query against the compacted topic fails with `MT_UPSERT_NOT_SUPPORTED`, even
-with raw VARCHAR and BYTES keys. Four things that are easy to get wrong:
+**Real-Time Context Engine (attendee-facing).** RTCE serves a Kafka topic to an
+attendee's MCP client with no Kafka client and no consumer group. **Enabling RTCE on
+a topic is a Console action the attendee performs** — Terraform does not enable any
+topic. Attendees toggle it on both `car_telemetry` and `car_state` themselves in the
+RTCE lab. `race_standings` is intentionally never enabled: although enablement reaches
+`online`, every query against the compacted topic fails with `MT_UPSERT_NOT_SUPPORTED`,
+even with raw VARCHAR and BYTES keys. Things that are easy to get wrong:
 
-- **Enablement is per topic and needs a registered schema** — hence the
-  `depends_on` the CREATE TABLE statements. `car_state` can't be in Terraform at
-  all: it doesn't exist until LAB 3, so it's an attendee Console toggle.
+- **Enablement is per topic, in the Console, and needs a registered schema.**
+  `car_state` doesn't exist until the attendee builds it in LAB 3, so it can never be
+  a Terraform resource anyway; `car_telemetry` *could* be pre-enabled, but is
+  deliberately left to the attendee too, so the walkthrough teaches one Console
+  gesture for both. There is no `confluent_rtce_topic` resource in `modules/topics`.
 - **`description` is required and is model-readable.** The agent reads it to pick a
-  topic. Treat it as prompt text.
+  topic. Treat it as prompt text (the API caps it at 256 characters). Each track's
+  walkthrough gives attendees a paste-ready description.
 - **Querying needs a *Global* API key** (HTTP Basic) — a Cloud or Kafka key is
-  refused. The Terraform provider can't create Global keys, so
-  `workshop creds --rtce-keys` mints one per attendee via the CLI, which requires
-  the `confluent` CLI logged in as **OrganizationAdmin**.
+  refused. `terraform/aws/rtce.tf` provisions one per attendee against the service
+  account (gated by `var.enable_rtce`); WSA copies its `rtce_api_key`/`rtce_api_secret`
+  outputs onto the card. `workshop creds --rtce-keys` / `_mint_rtce_key` is a retained
+  legacy CLI fallback, and `setup-rtce` offers CLI/manual entry when no key is found.
 - **Mint against the attendee's service account, never their user account.** Global
   keys cap at 2 per principal. The SA is recreated per build and destroyed at
   teardown so the cap resets for free; the `bheintz+f1wpN` pool users are permanent,
-  so user-owned keys would accumulate until a build fails. `_mint_rtce_key` deletes
-  the SA's existing Global keys before creating, because a secret can't be re-read —
-  so regenerating cards invalidates RTCE on any already handed out.
+  so user-owned keys would accumulate until a build fails. The Terraform key is stable
+  across card regeneration; the legacy `_mint_rtce_key` instead deletes the SA's
+  existing Global keys before creating (a secret can't be re-read), so regenerating
+  cards via that path invalidates RTCE on any already handed out.
 
-`TF_VAR_enable_rtce=false` skips the resource for an org or region without RTCE
-(`confluent rtce region list` — 11 AWS regions as of 2026-08).
+`TF_VAR_enable_rtce=false` skips the Global-key resource for an org or region without
+RTCE (`confluent rtce region list` — 11 AWS regions as of 2026-08); attendees there
+simply don't do the RTCE lab.
 
 ---
 
@@ -143,11 +150,10 @@ directly — but on the build measured 2026-07-31 it **runs without error and ne
 flags anything**: `is_anomaly`, `upper_bound`, and `lower_bound` all stay NULL, so the
 `CASE` can never be true and `car_state` carries `anomaly_tire_temp_fl = false` for the
 whole race. It forecasts fine (`actual_value`/`forecast_value`/`rmse` populate). Do not
-make it the default again without repeating the validation described in
-`docs/maintainers/TECHNICAL-NOTES.md`. Both emit the identical `car_state` schema, so
+make it the default again without repeating that validation. Both emit the identical `car_state` schema, so
 LAB 4/5, the pit wall, and the social feed cannot tell them apart. **Their config keys
 differ:** `minTrainingSize`/`maxTrainingSize` vs `minContextSize`/`maxContextSize`, and
-`enableStl` exists only on `ML_`; see `docs/maintainers/TECHNICAL-NOTES.md`.
+`enableStl` exists only on `ML_`.
 
 `llm_textgen_model` / `llm_embedding_model` are pre-deployed per environment by
 `terraform/aws`.
@@ -228,8 +234,6 @@ beforehand are never seen, those laps have no version for the temporal join, and
 `car_state` silently loses its first laps. Reading only the `docs/demo-reference/*.sql` files
 will mislead you here; check the CREATE TABLE options too.
 
-Current implementation notes: `docs/maintainers/TECHNICAL-NOTES.md`.
-
 ---
 
 ## Secrets & Credentials
@@ -268,14 +272,14 @@ checkout → `0.3.0`) before the migrated spec will load. Binary discovery, the
 where a missing Google OAuth client leaves attendee passwords live are all in the
 **`wsa-provisioning`** skill
 (`.claude/skills/wsa-provisioning/SKILL.md`). The checked-in references are
-`docs/organizer/WORKSHOP-GUIDE.md`, `wsa-spec-aws.yaml` itself, and
+`docs/organizer/README.md`, `wsa-spec-aws.yaml` itself, and
 `scripts/workshop/wsa.py`.
 
 ---
 
 ## File Sync Rule
 
-`docs/demo-reference/*.sql` is the executable Flink SQL source of truth. Its `CREATE TABLE car_state`, `CREATE AGENT pit_strategy_agent`, `CREATE TABLE pit_decisions`, and optional `AI_FORECAST` statements must match the copy/paste SQL in all three attendee walkthroughs: `docs/tracks/HOSTED-WORKSHOP.md`, `docs/tracks/SELF-SERVICE.md`, and `docs/tracks/STANDALONE-DEMO.md`. When changing a statement, update the source file and every walkthrough copy in the same change, then compare the fenced SQL with the source before merging. `docs/demo-reference/orchestrate_social_agent.md` remains the source of truth for the non-SQL Lab 5 configuration. The organizer run-of-show links to the walkthrough and must not duplicate attendee SQL.
+`docs/demo-reference/*.sql` is the executable Flink SQL source of truth. Its `CREATE TABLE car_state`, `CREATE AGENT pit_strategy_agent`, `CREATE TABLE pit_decisions`, and optional `AI_FORECAST` statements must match the copy/paste SQL in all three attendee walkthroughs: `docs/tracks/HOSTED-WORKSHOP.md`, `docs/tracks/SELF-SERVICE.md`, and `docs/tracks/STANDALONE-DEMO.md`. When changing a statement, update the source file and every walkthrough copy in the same change, then compare the fenced SQL with the source before merging. `docs/demo-reference/orchestrate_social_agent.md` remains the source of truth for the non-SQL Lab 5 configuration. The organizer guide links to the walkthrough and must not duplicate attendee SQL.
 
 The old split lab files remain in git history and aren't part of the sync set.
 Do not restore `labs/instructor-led/` or copy SQL into organizer docs. The default
@@ -305,11 +309,11 @@ attendee walkthrough.
 | `scripts/pitwall/` | `f1-pitwall` live web dashboard — Kafka consumer → FastAPI/websocket → animated browser view; progressive reveal of LAB 3/4 panels; `--mock` offline feed |
 | `scripts/social_feed/` | `f1-social-feed` shared HTTP service for LAB 5 — tails each attendee's Kafka topics, serves `GET /race-feed/{prefix}` + auto OpenAPI spec for the watsonx Orchestrate tool; reuses pitwall consumer; `--mock` offline feed |
 | `scripts/social_feed_rtce/` | `f1-social-feed-rtce` — same OpenAPI tool, but an MCP client to the Real-Time Context Engine (RTCE) instead of Kafka. Reuses `social_feed`'s `FeedState`+`create_app`; new bits are the RTCE MCP client + poller. Global API key via `RTCE_API_KEY/SECRET`; per-attendee endpoint from card `F1_RTCE_MCP_ENDPOINT`; `--probe` validates the live contract |
-| `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md`; `--resolve-op` pulls Console passwords from 1Password; `--rtce-keys` mints each attendee's RTCE Global API key (`_mint_rtce_key`, replace-not-accumulate) and prints the `claude mcp add` line. Also appends `Real-Time Context Engine / MCP Setup Command` back into build-output.csv so the dispenser carries it (`_add_dispenser_column`, `--no-dispenser-column`) — the `" / "` in that header is the `Provider / Field` slash convention the dispenser's Apps Script groups on: it drives the on-screen web-app credential grouping (`buildCredentialGroups_` in `WebApp.gs`) and the email backup |
+| `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md`; `--resolve-op` pulls Console passwords from 1Password; copies the Terraform `rtce_api_key`/`rtce_api_secret` outputs onto each card, and `--rtce-keys` warns when those outputs are missing (the legacy `_mint_rtce_key` CLI path is retained for older workshop commands). Also appends `Real-Time Context Engine / MCP Setup Command` back into build-output.csv so the dispenser carries it (`_add_dispenser_column`, `--no-dispenser-column`) — the `" / "` in that header is the `Provider / Field` slash convention the dispenser's Apps Script groups on: it drives the on-screen web-app credential grouping (`buildCredentialGroups_` in `WebApp.gs`) and the email backup |
 | `terraform/modules/environment/main.tf` | The environment, plus the `grant_console_access`-gated `confluent_user` lookup + EnvironmentAdmin binding that makes an attendee login useful |
 | `scripts/workshop/onboard.py` | `f1-onboard` — self-serve: wsa claim-email values → local `credentials.env` |
 | `scripts/workshop/validate.py` | `workshop validate` — API-key health checks against one or many cards |
-| `docs/demo-reference/enrichment_anomaly_ai.sql` | LAB 3's Granite/`AI_DETECT_ANOMALIES` variant — `F1_ANOMALY_FN=ai`. EAP-gated, and currently never flags an anomaly; see `docs/maintainers/TECHNICAL-NOTES.md`. |
+| `docs/demo-reference/enrichment_anomaly_ai.sql` | LAB 3's Granite/`AI_DETECT_ANOMALIES` variant — `F1_ANOMALY_FN=ai`. EAP-gated, and currently never flags an anomaly. |
 | `docs/demo-reference/orchestrate_social_agent.md` | Canonical LAB 5 Orchestrate agent config (persona, tool, prompts) |
 
 ---

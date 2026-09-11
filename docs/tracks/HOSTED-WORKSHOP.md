@@ -8,67 +8,45 @@
 
 Follow the labs in order. Every attendee command and SQL statement is included here.
 
-
-## Start here
-
-Your very first steps — do these before anything else:
-
-1. **Log in to Confluent Cloud.** Open the sign-in link from your instructor and log in at [confluent.cloud](https://confluent.cloud/) with the **console username** and **console password** on your credential card. (It's a workshop account like `...+f1wp###@confluent.io` — *not* your own work email.)
-2. **Open a SQL workspace.** You'll land in your environment, **`RIVER-RACING-f1wp###-ENV`**. Open the **Flink** tab → **[Open SQL workspace](https://confluent.cloud/workspaces/)**, and set the **catalog** to your environment and **database** to your cluster. Both start with `RIVER-RACING`.
-3. **Run your first query:**
-
-   ```sql
-   SHOW TABLES;
-   ```
-
-   You should see `car_telemetry`, `race_standings`, and `driver_race_history`. Then watch the live feed:
-
-   ```sql
-   SELECT * FROM race_standings;
-   ```
-
-   22 cars means you're live. Stop the query and continue to **LAB 1** below.
-
-The rest of this guide walks the labs in order. The terminal setup below (`git clone`, `uv`) is only needed for the optional Pit Wall dashboard and the RTCE exercise — you can start the labs in the browser right away.
-
 ## Prerequisites
 
-You need a browser, a terminal, this repository, and `uv` for the Pit Wall dashboard. On macOS:
+1. You need a browser, a terminal, this repository, and `uv` for the Pit Wall dashboard. Run the following setup commands based on your operating system. 
 
-```bash
-brew install git uv
-brew install --cask claude-code   # optional — only for the Bonus section
-```
+    <details>
+    <summary>for Mac</summary>
 
-Clone the repository and install the dependencies:
+    ```bash
+    brew install git uv
+    brew install --cask claude-code   # optional — only for the Bonus section
+    ```
 
-```bash
-git clone https://github.com/confluentinc/demo-confluent-intelligence-f1.git
-cd demo-confluent-intelligence-f1
-uv venv
-uv sync
-```
+    </details>
 
-> [!NOTE]
->
-> Your instructor provides the Confluent Cloud account, environment prefix, race-feed URL, and watsonx Orchestrate access. You don't need your own cloud account.
+    <details>
+    <summary>for Windows</summary>
 
-## Workshop timing
+    ```powershell
+    winget install --id Git.Git -e
+    winget install --id astral-sh.uv -e
+    winget install --id Anthropic.ClaudeCode -e   # optional — only for the Bonus section
+    ```
 
-> [!NOTE]
->
-> Race timing is managed by the instructor. Follow the lab sequence and begin each step when prompted; there are no race-control commands for attendees to run.
+    Close and reopen the terminal afterward so the new tools are on your `PATH`.
 
-## Workshop map
+    </details>
 
-| Lab | Work |
-|---|---|
-| 1 | Claim your account, open the SQL workspace, and start the Pit Wall |
-| 2 | Inspect the source streams, history table, connections, and models |
-| 3 | Build `car_state` and detect the tire anomaly |
-| 4 | Build the streaming pit-strategy agent |
-| 5 | Build the watsonx Orchestrate social-media agent |
-| 6 | Inspect the decisions and review the pipeline |
+2. Clone the repository and install the dependencies:
+
+    ```bash
+    git clone https://github.com/confluentinc/demo-confluent-intelligence-f1.git
+    cd demo-confluent-intelligence-f1
+    uv venv
+    uv sync
+    ```
+
+    > [!NOTE]
+    >
+    > Your instructor provides the Confluent Cloud account and environment prefix. You don't need your own cloud account.
 
 ## Lab 1 — Open Your Environment
 
@@ -76,20 +54,29 @@ uv sync
 
 There are two ways to get it, depending on how this session is run:
 
-1. **Instructor-distributed:** Save the `f1wp###.md` credential card and companion `f1wp###.env` file your instructor sends you. Keep both private.
+<details>
+<summary><strong>Instructor-distributed file</strong></summary>
 
-2. **Self-serve claim:** Use the username and password in your claim email, then create `credentials.env` with either command:
+Save the `f1wp###.md` credential card and companion `f1wp###.env` file your instructor sends you. Keep both private.
+
+</details>
+
+<details>
+<summary><strong>Self-serve claim</strong></summary>
+
+Use the username and password in your claim email, then create `credentials.env` with the following command:
 
 ```bash
-uv run f1-onboard            # prompts field-by-field
-uv run f1-onboard --paste     # paste your claim email, then a blank line
+uv run f1-onboard
 ```
+
+</details>
 
 ### 2. Open a SQL workspace
 
 Your username is a **workshop account we created for you** — something like `...+f1wp###@confluent.io`. It is *not* your own work email, and signing in with your own address won't find your environment.
 
-1. Open the sign-in link from your emailand log in to [confluent.cloud](https://confluent.cloud/) with the **console username** and **console password** you were given.
+1. Open the sign-in link from your email and log in to [confluent.cloud](https://confluent.cloud/) with the **console username** and **console password** you were given.
 2. You'll land in your environment, **`RIVER-RACING-f1wp###-ENV`**. It's the only one you can see.
 3. Open the **Flink** tab and click **Open SQL workspace**.
 4. Set the workspace's **catalog** to your environment and **database** to your cluster (`RIVER-RACING-f1wp###-CLUSTER`), using the dropdowns above the editor.
@@ -112,14 +99,7 @@ You should see 22 cars. Stop the streaming query, then start the Pit Wall in a t
 uv run f1-pitwall
 ```
 
-A browser opens at **http://localhost:8000**.
-
-You'll notice two panels are **locked**:
-
-- 🔒 **ANOMALY DETECTION** — activates when you build `car_state` in **LAB 3**
-- 🔒 **AI PIT STRATEGIST** — activates when you build `pit_decisions` in **LAB 4**
-
-Keep the dashboard open while you work.
+A browser opens at **http://localhost:8000**. Keep the dashboard open while you work.
 
 ## Lab 2 — Explore the Environment
 
@@ -166,7 +146,7 @@ SHOW CONNECTIONS;
 Stop every streaming `SELECT` from Lab 2. Then paste this entire statement into one SQL cell and run it:
 
 ```sql
-CREATE TABLE `car_state`
+CREATE MATERIALIZED TABLE `car_state`
 WITH ('changelog.mode' = 'append')
 AS
 WITH enriched AS (
@@ -243,7 +223,7 @@ FROM anomaly
 WHERE lap > 0;
 ```
 
-Leave the job running. Verify its output in a new cell:
+Verify the output in a new cell:
 
 ```sql
 SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
@@ -315,17 +295,16 @@ Confluent Flink arrays are one-based, so `[1]` is the first predicted point. Ins
 
 Now that `car_state` exists, wire an AI agent straight to the live streams through Confluent's **Real-Time Context Engine (RTCE)** — no Kafka client, no consumer group. Do this now, while the race runs; it does not depend on the anomaly.
 
-**1. What's already enabled.** Your instructor enabled RTCE on `car_telemetry` at build time, so it is queryable immediately. (`race_standings` is a compacted upsert topic and cannot be RTCE-enabled — query `car_telemetry` or `car_state` instead.)
+**1. Enable RTCE in the Console.** RTCE is turned on per topic in the Confluent Cloud Console — nothing is pre-enabled for you. Enable it on the two topics you'll query, `car_telemetry` (the raw sensor stream) and `car_state` (the enriched output you just built):
 
-**2. Enable `car_state` yourself in the Console.** `car_state` didn't exist until you built it a moment ago, so enable it now:
-
-1. Console → your cluster → **Topics → `car_state`**.
+1. Console → your cluster → **Topics → `car_telemetry`**.
 2. Open the **Real-Time Context Engine** panel (or tab) for the topic.
-3. Click **Enable**, add a short description like `Per-lap enriched car state with tire-anomaly flag`, and save.
+3. Click **Enable**, add a short description like `Live sensor telemetry for car 88 — tire temps and pressures, speed, DRS. Many rows per lap.`, and save.
+4. Repeat for **`car_state`**, with a description like `Per-lap enriched car state with tire-anomaly flag`.
 
-Enablement takes a few seconds; the description is what an AI agent reads to pick the topic, so make it meaningful.
+Enablement takes a few seconds each; the description is what an AI agent reads to pick the topic, so make it meaningful. (`race_standings` is a compacted upsert topic and cannot be RTCE-enabled — query `car_telemetry` or `car_state` instead.)
 
-**3. Connect your MCP client.** From the repo directory, run:
+**2. Connect your MCP client.** From the repo directory, run:
 
 ```bash
 uv run setup-rtce
@@ -333,17 +312,17 @@ uv run setup-rtce
 
 Choose Claude Code, Codex, or both. The script reads your credential file and configures the RTCE connection. Restart your coding agent afterward.
 
-**4. Ask about the live race.** Run `claude`, then try:
+**3. Ask about the live race.** Run `claude`, then try:
 
 - "What's the front-left tire temperature on car 88 right now?"
 - "Show me the last 10 telemetry readings for car 88."
-- "Is car 88's front-left tire flagged as anomalous?" *(after step 2 — queries `car_state`)*
+- "Is car 88's front-left tire flagged as anomalous?" *(queries `car_state`)*
 
-Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and only RTCE-enabled topics are exposed. Enable more from the **Topics** page the same way you enabled `car_state`.
+Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and only RTCE-enabled topics are exposed. Enable more from the **Topics** page the same way you enabled these two.
 
 ### Optional: Lightning Queries (low-latency REST)
 
-Terraform enables RTCE on `car_telemetry` by default. Unless you deployed with `enable_rtce=false`, no Console toggle is needed for this query. Topics you create later, such as `car_state`, need their own RTCE enablement.
+Lightning Queries read an RTCE-enabled topic over low-latency REST, so enable RTCE on `car_telemetry` in the Console first (step 1 above) if you haven't already.
 
 From the repo directory, print a ready-to-run query:
 
@@ -353,9 +332,7 @@ uv run setup-rtce --lightning
 
 Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. The command reads your existing credential file and derives the region and cloud from its RTCE endpoint. Use `--creds path/to/file.env` if you have multiple credential files.
 
-Lightning Queries require a **Global API key**, the same key used by RTCE's MCP interface. The printed command contains its authentication token; keep it private. This command prints the request without registering an MCP client. It reads matching local Terraform outputs, or the existing credential file for hosted attendees. Both modes accept `RTCE_API_KEY` and `RTCE_API_SECRET` overrides. If no key is available, the script offers CLI creation, then hidden manual entry with a link to the creation instructions. It saves fallback keys in the existing credential file.
-
-The workshop provisioning flow supplies the Global key. For self-serve claims, `uv run f1-onboard --paste` imports it from the existing **MCP Setup Command** in your claim email. If you onboarded with an older version, rerun onboarding with that email or use the instructor-provided `.env` file.
+Lightning Queries require a **Global API key**, the same key used by RTCE's MCP interface. The printed command contains its authentication token; keep it private. This command prints the request without registering an MCP client. It reads matching local Terraform outputs, or the existing credential file for hosted attendees.
 
 ## Lab 4 — Streaming Agent: Pit Decisions
 
@@ -397,30 +374,66 @@ Reasoning: The FL anomaly flag indicates the SOFT has gone past its operating li
 You are the AI pit wall strategist for River Racing at the 2026 British Grand Prix (Silverstone, 60 laps).
 Driver: John Doe, Car #88.
 
-DECISION ALGORITHM — apply these rules in order. Do not deviate.
+DECISION FRAMEWORK — use this priority order to reason about the Suggestion.
+This is guidance for judgment, not a rule to execute mechanically.
 
-Step 1: If anomaly_tire_temp_fl = true → Suggestion: PIT NOW. Stop.
-Step 2: Else if pit_stops > 0 → Suggestion: STAY OUT. Stop.
-Step 3: Else if tire_compound = SOFT AND tire_age_laps >= 21 → Suggestion: PIT SOON. Stop.
-Step 4: Else → Suggestion: STAY OUT. Stop.
+PIT NOW vs PIT SOON — these mean different things and are not interchangeable
+labels for "pit now would be reasonable." PIT NOW means urgent: a validated
+problem exists and the car should come in immediately for safety. PIT SOON
+means strategic: the tires are aging into their normal pit window and a stop
+is coming, even if stopping on this exact lap would itself be the sound
+strategic choice. A strategy-driven stop stays PIT SOON for its entire
+window; it does not become PIT NOW just because the ideal moment has arrived.
 
-These rules are absolute. The race context, gap, competitor pit timing, and tire
-temperatures are inputs FOR YOUR REASONING TEXT ONLY — they MUST NOT change the
-Suggestion field. Reason about strategy in the Reasoning field, but the Suggestion
-itself is fully determined by Steps 1–4 above.
+1. Anomaly signal: anomaly_tire_temp_fl comes from a trained statistical anomaly
+   detector (ML_DETECT_ANOMALIES) that has already evaluated tire_temp_fl_c
+   against expected bounds for this car at this point in the race. PIT NOW is
+   reserved for this signal being true — treat it as strong, validated evidence
+   of a real tire problem serious enough to justify an urgent stop. When it is
+   false, there is no statistical evidence of a problem: a raw temperature
+   reading that merely looks high to you has already been checked and found
+   within the expected range for this stage of the stint, so weigh that check
+   heavily before treating anything as urgent on the strength of a number alone.
+   Nothing else in this input — not tire age, not race context, not competitor
+   behavior — should produce PIT NOW; those inform PIT SOON or STAY OUT instead.
+2. Pit history: a car that has already pitted this race is usually better off
+   staying out and running its current tires to the end, absent a new problem.
+3. Tire age and compound: a SOFT tire that has run past roughly 20 laps starts
+   trending into a strategic pit window. This is PIT SOON, not PIT NOW, for as
+   long as that window lasts — even on the lap where pitting would be ideal —
+   since pace typically falls off after that point but there is no validated
+   safety issue driving urgency.
+4. Otherwise: STAY OUT is the reasonable default when nothing above points to a
+   reason to change strategy.
 
-FORBIDDEN PATTERNS — these are bugs, not options:
-- Outputting PIT NOW when anomaly_tire_temp_fl = false. No exceptions.
-- Outputting PIT SOON when tire_age_laps < 21.
-- Outputting PIT SOON after pit_stops > 0.
-- Outputting anything other than STAY OUT when tire_age_laps < 20 AND anomaly_tire_temp_fl = false.
-- Justifying PIT NOW with phrases like "approaching cliff", "blowout risk", "tires near limit",
-  "performance falling off" — these are PIT SOON or STAY OUT signals, never PIT NOW.
+Weigh these in order of severity, and keep the PIT NOW/PIT SOON distinction
+above intact regardless of how you weigh them — you are reasoning about a race
+strategy call, not executing a lookup table, but the two labels still mean
+different things. Use the TIRE DATA, RACE CONTEXT, and COMPETITOR CONTEXT
+below to inform your Reasoning field regardless of which Suggestion you land on.
 
-SELF-CHECK before responding: re-read Steps 1–4 with the actual input values.
-The input includes REQUIRED SUGGESTION, computed by Flink SQL from those rules.
-Copy that exact value into Suggestion. If your prose conflicts with it, fix the
-prose before outputting.
+Correct STAY OUT despite a high-looking temperature example:
+Suggestion: STAY OUT
+Condition Summary: Front-left tire temperature reads 118C, which may look elevated, but the anomaly detector has not flagged it as unusual for this stage of the tire life.
+Race Context: Currently P5. Field is spread out, no pit activity nearby.
+Recommended Compound: N/A
+Recommended Stint Laps: N/A
+Recommended Reason: N/A
+Reasoning: No anomaly has been detected, so there is no validated evidence of a tire problem despite the reading looking high in isolation. Pit stops are at zero and tire age is still well under the strategic pit window, so there is no other reason to come in. Staying out preserves track position.
+
+STRICT OUTPUT VALUES — the Suggestion field must be exactly one of these three
+literal strings, with no other characters, punctuation, or words on that line:
+PIT NOW
+PIT SOON
+STAY OUT
+No variants, synonyms, qualifiers, or explanatory text are permitted on the
+Suggestion line (e.g. never "PIT NOW - tire failure risk" or "Stay out for now").
+Downstream systems match this field with exact string equality.
+
+SELF-CHECK before responding: re-read your Suggestion against the TIRE DATA and
+RACE CONTEXT above and confirm your Reasoning genuinely explains it. If the
+Reasoning and the Suggestion disagree with each other, fix whichever one is
+actually wrong.
 
 COMPETITOR CONTEXT:
 Current top-10 standings are provided at the end of each input. Use them to identify:
@@ -435,7 +448,6 @@ TIRE STRATEGY at Silverstone (60-lap race):
 - John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. The pit wall warns at laps 21-23, calls PIT NOW only when the lap-24 anomaly fires, then lets the fresh MEDIUM stint run.
 
 REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
--- USING TOOLS `car_telemetry_tool`  -- uncomment when RTCE is active
 WITH ('max_iterations' = '10');
 ```
 
@@ -448,7 +460,7 @@ SHOW AGENTS;
 Create `pit_decisions`, which invokes `AI_RUN_AGENT` and puts our agent to work:
 
 ```sql
-CREATE TABLE `pit_decisions`
+CREATE MATERIALIZED TABLE `pit_decisions`
 WITH ('changelog.mode' = 'append')
 AS
 SELECT
@@ -458,12 +470,7 @@ SELECT
   cs.tire_compound AS tire_compound_current,
   cs.tire_age_laps,
   cs.anomaly_tire_temp_fl,
-  CASE
-    WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
-    WHEN cs.pit_stops > 0 THEN 'STAY OUT'
-    WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 21 THEN 'PIT SOON'
-    ELSE 'STAY OUT'
-  END AS suggestion,
+  TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Suggestion:\*{0,2}\s*([^\n]+)', 1)) AS suggestion,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Condition Summary:\*{0,2}\s*([^\n]+)', 1)) AS condition_summary,
   TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Race Context:\*{0,2}\s*([^\n]+)', 1)) AS race_context,
   NULLIF(TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Recommended Compound:\*{0,2}\s*([^\n]+)', 1)), 'N/A') AS recommended_tire_compound,
@@ -477,13 +484,6 @@ LATERAL TABLE(AI_RUN_AGENT(
   CONCAT(
     'CAR STATE — Lap ', CAST(cs.lap AS STRING), ' of 60 | Silverstone British Grand Prix\n',
     'Driver: John Doe (#', CAST(cs.car_number AS STRING), ') | Current Position: P', CAST(cs.`position` AS STRING), '\n',
-    'REQUIRED SUGGESTION — copy exactly: ',
-    CASE
-      WHEN cs.anomaly_tire_temp_fl THEN 'PIT NOW'
-      WHEN cs.pit_stops > 0 THEN 'STAY OUT'
-      WHEN cs.tire_compound = 'SOFT' AND cs.tire_age_laps >= 21 THEN 'PIT SOON'
-      ELSE 'STAY OUT'
-    END, '\n',
     '\nTIRE DATA:\n',
     '  Compound: ', cs.tire_compound, ' | Age: ', CAST(cs.tire_age_laps AS STRING), ' laps\n',
     '  FL Temp: ', CAST(ROUND(cs.tire_temp_fl_c, 1) AS STRING), 'C',
@@ -508,7 +508,7 @@ LATERAL TABLE(AI_RUN_AGENT(
     '  Laps Remaining: ', CAST(60 - cs.lap AS STRING)
   ),
   MAP['debug', 'true']
-));
+))
 ```
 
 Then run:
@@ -530,63 +530,57 @@ SELECT * FROM `pit_decisions`;
 
 Check the Pit Wall. The **AI PIT STRATEGIST** panel should unlock and show the decisions.
 
-## Lab 5 — Social Media Agent (IBM watsonx Orchestrate)
+## Lab 5 — Social Media Agent (Claude + Real-Time Context Engine)
 
-Use the watsonx Orchestrate access supplied by your instructor and the [`f1-race-feed-openapi.json`](../assets/orchestrate/f1-race-feed-openapi.json) file in this repository.
+Draft social posts about the live race using the same Claude Code session you connected to Real-Time Context Engine (RTCE) back in Lab 3 — no separate no-code platform, no OpenAPI import. If you skipped that section, go back and run `uv run setup-rtce` now before continuing.
 
-> [!NOTE]
->
-> **404 or wrong environment?** If watsonx Orchestrate shows a 404, or you land in the wrong instance/environment, fully **log out** of Orchestrate and **log back in** with the workshop credentials, then reopen **Agent Builder**. This clears a stale session more often than not.
+### 1. Enable RTCE on the pit-decisions table
 
-### 1. Add the race-feed tool
+Lab 3 enabled RTCE on `car_telemetry` and `car_state`. The social agent also needs the latest strategy call, so enable it on `pit_decisions` too, the same way:
 
-1. In the watsonx Orchestrate console, open **Agent Builder** (left nav).
-2. Select **Tools → Add tool → Import → OpenAPI**.
-3. Upload [`f1-race-feed-openapi.json`](../assets/orchestrate/f1-race-feed-openapi.json).
-4. Choose the **`get_race_feed`** operation and finish the import.
+1. Console → your cluster → **Topics → `pit_decisions`**.
+2. Open the **Real-Time Context Engine** panel (or tab) for the topic.
+3. Click **Enable**, add a description like `Pit strategy calls (PIT NOW / PIT SOON / STAY OUT) with reasoning`, and save.
 
-**Success looks like:** the tool list now shows a `get_race_feed` tool. If nothing appears, re-upload the spec — a partial import shows no operations.
+### 2. Give Claude the persona
 
-### 2. Create the agent
-
-1. From Agent Builder, **Create agent** and name it `River Racing Social`.
-2. Under **Tools**, attach the `get_race_feed` tool you just imported.
-3. Paste these instructions into the agent's instructions field:
+Run `claude` in the repo directory (or reuse your open session from Lab 3), then paste this in:
 
 ```
 You are the social-media manager for the River Racing Formula 1 team. Our driver
 is John Doe (car #88) racing the British Grand Prix at Silverstone (60 laps).
 
-Your job: when asked, draft short, high-energy social posts about what is
-happening in OUR race, grounded in live data.
+Your job: when I ask, draft short, high-energy social posts about what is
+happening in OUR race, grounded in live data from the car_state and
+pit_decisions topics.
 
 DATA
-- Always call the get_race_feed tool with prefix "f1wp001" to get the current
-  race situation before writing. Never invent positions, gaps, lap numbers, or
-  events — use only what the tool returns.
-- The headline_events list is your best source of post hooks (overtakes, the
-  tire anomaly, the pit call). Lead with the most recent meaningful event.
-- If latest_pit_decision is PIT NOW or PIT SOON, that is newsworthy — say so.
-- If the tool returns live = false or empty events, say the race feed is quiet
-  rather than making something up.
+- Before writing, query car_state for the most recent lap and pit_decisions for
+  the most recent strategy call. Never invent positions, gaps, lap numbers, tire
+  conditions, or strategy calls — use only what the tools return.
+- car_state's anomaly_tire_temp_fl flag and pit_decisions' suggestion field are
+  your best sources of post hooks. Lead with the most recent meaningful event.
+- If pit_decisions' suggestion is PIT NOW or PIT SOON, that is newsworthy — say so.
+- If the topics return no rows yet, say the race feed is quiet rather than
+  making something up.
 
 VOICE
 - Confident, upbeat, fan-facing. Short sentences. 1–3 emoji max.
 - Always third person about the team ("We", "John", "the #88").
-- Under 280 characters unless the user asks for a longer recap.
+- Under 280 characters unless I ask for a longer recap.
 - End with 2–3 hashtags from: #RiverRacing #JohnDoe #F1 #BritishGP #Silverstone
 - Never disparage other teams or drivers.
 
 OUTPUT
 - Draft the post text only. Do not claim to have published it — these are drafts
-  for a human to review and post.
+  for me to review and post myself.
 ```
 
-Replace `f1wp001` with the prefix on your credential card.
+Unlike a shared race-feed tool, RTCE only ever exposes *your own* environment — there's no prefix to substitute here.
 
 ### 3. Draft a post
 
-In the **preview chat** on the right, try:
+In the same session, try:
 
 ```
 Draft a hype post about where we are in the race right now.
@@ -598,7 +592,7 @@ Then try:
 - "The pit wall just made a call. Draft a post about our strategy."
 - "Write a 3-tweet recap thread of John's race so far."
 
-**Success looks like:** the agent calls `get_race_feed` (you'll see the tool invocation in the preview) and returns a drafted post citing real lap number, position, and events from your live feed — not invented numbers. If it says the feed is quiet, the race may not be running yet or the prefix is wrong.
+**Success looks like:** Claude calls `queryData` against `car_state` and `pit_decisions` (you'll see the tool calls in the transcript) and returns a drafted post citing the real lap number, position, and strategy call from your live feed — not invented numbers. If it says the feed is quiet, the race may not be running yet, or RTCE isn't enabled on one of the two topics.
 
 ## Lab 6 — Wrap-Up
 
@@ -638,33 +632,5 @@ DROP AGENT IF EXISTS `pit_strategy_agent`;
 ```
 
 Ask your instructor to reset the race before repeating Labs 3 and 4.
-
-## Troubleshooting
-
-<details>
-<summary>Click to expand</summary>
-
-- **Can't sign in:** Use the workshop username ending in `+f1wp###@confluent.io`, not your own email. Ask the instructor for a fresh password if needed.
-- **No tables, models, or agents:** Check the catalog and database selectors above the SQL editor.
-- **Source tables are idle:** Wait a few seconds and run the query again. Tell the instructor if no rows arrive after several minutes.
-- **`car_state` is empty:** Wait for the first 20-second window to close. The race can also take up to ~20 seconds to emit lap 1 (epoch alignment), so allow after ~40-60 seconds before treating it as stuck. If it is still empty then, tell the instructor; Lab 3 may have started after the standings version it needs.
-- **No lap-24 anomaly:** Ask the instructor to confirm the race was reset and started at the Lab 3 gate. Remember the anomaly appears around lap 24 (~8 min in) — don't wait for it before moving on.
-- **Agent fields are empty:** Inspect `raw_response`. If all responses fail, tell the instructor; the shared Bedrock quota may be throttled.
-- **Lab 5 tool fails:** Confirm the instructor's public race-feed service is still running and that the prefix exactly matches your credential card.
-- **Lab 5 shows a 404 / wrong environment:** Fully log out of watsonx Orchestrate and log back in with the workshop credentials, then reopen Agent Builder.
-
-</details>
-
-## Something not working?
-
-If the pre-provisioned environment fails, your instructor may switch you to the [self-service workshop walkthrough](./SELF-SERVICE.md).
-
----
-
-> [!IMPORTANT]
->
-> **Are you the speaker running this workshop?** Setup for provisioning every attendee's environment lives in the **[organizer guide](../organizer/README.md)**.
-
----
 
 **← Back to Overview**: [Main README](../../README.md)

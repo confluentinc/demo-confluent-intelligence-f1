@@ -140,49 +140,15 @@ resource "confluent_flink_statement" "create_race_standings_table" {
 
 # --- Real-Time Context Engine -------------------------------------------------
 #
-# RTCE materializes a topic into a lookup-optimized table and serves it to AI
-# agents over MCP, so an attendee's coding agent can ask questions about the live
-# race without a Kafka client or a consumer group. Enablement is PER TOPIC.
+# RTCE enablement is intentionally NOT provisioned here. Attendees enable it
+# themselves in the Confluent Cloud Console — on both car_telemetry and car_state
+# — because doing the toggle by hand is the point of the exercise: it shows what
+# enablement actually does. It works the same way for a topic Terraform could
+# pre-enable (car_telemetry) and one it can't (car_state, which doesn't exist
+# until the attendee builds it in the anomaly-detection lab), so both are Console
+# steps and the walkthrough teaches one gesture, not two.
 #
-# Three constraints worth knowing before editing:
-#
-#  1. A registered schema is mandatory, which is why the resource depends on the
-#     CREATE TABLE statement above — that is what registers the Avro subject.
-#     Enabling RTCE on a topic with no schema fails.
-#  2. It's regional and per-org (see var.enable_rtce). `confluent rtce region
-#     list` is the authority on where it exists.
-#  3. `description` is REQUIRED and is *model-readable* — the agent sees it when
-#     choosing a topic. Treat it as prompt text, not a code comment.
-#  4. `description` is capped at **256 characters** by the API, which rejects a
-#     longer one with `400 Bad Request: description must be at most 256
-#     characters`. Nothing catches that at plan time — it surfaces mid-apply,
-#     after the environment, cluster, and topics already exist, and wsa burns
-#     every retry on it. Both strings below are kept under 230 so an edit has
-#     room to breathe; `tests/test_rtce_descriptions.py` fails the build long
-#     before Terraform would.
-#
-# car_state is deliberately absent: attendees create it in LAB 3, so it doesn't
-# exist at apply time. They toggle it on in the Console themselves (LAB 3), which
-# is also the cheapest way to show what enablement actually does.
-
-resource "confluent_rtce_topic" "car_telemetry" {
-  count = var.enable_rtce ? 1 : 0
-
-  # Uppercase to match every other Confluent provider resource in this repo
-  # (modules/cluster, modules/flink both pass "AWS"). Note the CLI spells the
-  # same argument lowercase — `confluent rtce rtce-topic create --cloud aws`.
-  cloud       = "AWS"
-  region      = var.region
-  topic_name  = "car_telemetry"
-  description = "Live sensor telemetry for River Racing car #88 at Silverstone: tire temps and pressures, engine and brake temps, battery, fuel, DRS, speed, throttle, brake. Many rows per lap. Use for car condition, tire wear, pit timing."
-
-  environment {
-    id = var.environment_id
-  }
-
-  kafka_cluster {
-    id = var.cluster_id
-  }
-
-  depends_on = [confluent_flink_statement.create_car_telemetry_table]
-}
+# Only the Global API key that RTCE *querying* needs is still provisioned in
+# Terraform (see terraform/aws/rtce.tf, gated by var.enable_rtce at the root).
+# race_standings is never RTCE-enabled by anyone — it's a compacted, upsert-keyed
+# topic and queries against it fail with MT_UPSERT_NOT_SUPPORTED.

@@ -429,6 +429,7 @@ account we created for you.
 
 | | |
 |--|--|
+| Prefix | `{f["prefix"]}` |
 | Environment | `{f["environment_id"]}` |
 | Compute pool | `{f["compute_pool_id"]}` |
 | Catalog / Database | `{f["catalog"]}` / `{f["database"]}` |
