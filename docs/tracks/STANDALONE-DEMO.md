@@ -204,7 +204,7 @@ SHOW CONNECTIONS;   -- the Bedrock connection behind it
 Paste this entire statement into the `f1-sql` shell. Leave it running.
 
 ```sql
-CREATE MATERIALIZED TABLE `car_state`
+CREATE TABLE `car_state`
 WITH ('changelog.mode' = 'append')
 AS
 WITH enriched AS (
@@ -467,7 +467,7 @@ SHOW AGENTS;
 ```
 
 ```sql
-CREATE MATERIALIZED TABLE `pit_decisions`
+CREATE TABLE `pit_decisions`
 WITH ('changelog.mode' = 'append')
 AS
 SELECT

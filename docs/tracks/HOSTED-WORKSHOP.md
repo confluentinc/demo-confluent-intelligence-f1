@@ -2,15 +2,11 @@
 
 ![F1 Pit Wall Confluent Intelligence architecture](../assets/architecture.png)
 
-> [!NOTE]
->
-> **Did your instructor give you a workshop login?** You're in the right place. If you're using your own Confluent Cloud account and provisioning your own environment, start with the [self-service workshop walkthrough](./SELF-SERVICE.md) instead. If that guide sent you back here for the shared labs, continue at the lab it named.
+In this workshop, you take on the role of a pit crew for the River Racing F1 team. Starting with just car telemetry data and live race standings, you'll turn that raw data into actionable insights and anomaly monitoring to help your driver make optimal pit decisions. By the end of the workshop, you'll understand how Confluent Intelligence brings together streaming agents, built-in AI functions, and Real-Time Context Engine (RTCE) to power valuable insights on real-time streaming data. 
 
-Follow the labs in order. Every attendee command and SQL statement is included here.
+## Setup
 
-## Prerequisites
-
-1. You need a browser, a terminal, this repository, and `uv` for the Pit Wall dashboard. Run the following setup commands based on your operating system. 
+1. Run the following setup commands based on your operating system. 
 
     <details>
     <summary>for Mac</summary>
@@ -28,7 +24,7 @@ Follow the labs in order. Every attendee command and SQL statement is included h
     ```powershell
     winget install --id Git.Git -e
     winget install --id astral-sh.uv -e
-    winget install --id Anthropic.ClaudeCode -e   # optional — only for the Bonus section
+    winget install --id Anthropic.ClaudeCode -e
     ```
 
     Close and reopen the terminal afterward so the new tools are on your `PATH`.
@@ -44,267 +40,241 @@ Follow the labs in order. Every attendee command and SQL statement is included h
     uv sync
     ```
 
-    > [!NOTE]
-    >
-    > Your instructor provides the Confluent Cloud account and environment prefix. You don't need your own cloud account.
-
 ## Lab 1 — Open Your Environment
 
 ### 1. Get your credentials
 
-There are two ways to get it, depending on how this session is run:
+1. Follow the link from your instructor to claim your workshop credentials. 
 
-<details>
-<summary><strong>Instructor-distributed file</strong></summary>
+2. In your terminal, in the `demo-confluent-intelligence-f1` folder, create the `credentials.env` file:
 
-Save the `f1wp###.md` credential card and companion `f1wp###.env` file your instructor sends you. Keep both private.
+    ```bash
+    nano credentials.env
+    ```
+3. Paste the **whole Env File block** into it, then save and exit — in `nano`, **Ctrl-O**, **Enter**, **Ctrl-X**.
 
-</details>
+4. Now, you can start the dashboard:
 
-<details>
-<summary><strong>Self-serve claim</strong></summary>
+    ```bash
+    uv run f1-pitwall
+    ```
 
-Use the username and password in your claim email, then create `credentials.env` with the following command:
-
-```bash
-uv run f1-onboard
-```
-
-</details>
+A browser opens at **http://localhost:8000**. **Don't stop this command, and be sure to keep the dashboard open while you work.**
 
 ### 2. Open a SQL workspace
 
-Your username is a **workshop account we created for you** — something like `...+f1wp###@confluent.io`. It is *not* your own work email, and signing in with your own address won't find your environment.
+1. **If you're logged in to a Confluent Cloud account already, log out now.** Open [confluent.cloud](https://confluent.cloud/) and log in with the **Console Username** and **Console Password** provided from the dispenser. Note, this is not your personal Confluent Cloud Account. 
 
-1. Open the sign-in link from your email and log in to [confluent.cloud](https://confluent.cloud/) with the **console username** and **console password** you were given.
-2. You'll land in your environment, **`RIVER-RACING-f1wp###-ENV`**. It's the only one you can see.
-3. Open the **Flink** tab and click **Open SQL workspace**.
+2. You'll land in your environment, **`RIVER-RACING-f1wp###-ENV`**.
+
+    ![The RIVER-RACING environment in the Confluent Cloud Console](../assets/hosted/cc-environment.png)
+
+3. Open the **Flink** tab and click **SQL workspace**.
+
+    ![The Flink page in the Confluent Cloud Console](../assets/hosted/flink-page.png)
+
+    ![Flink compute pools with the Open SQL workspace action](../assets/hosted/flink-compute-pools.png)
+
 4. Set the workspace's **catalog** to your environment and **database** to your cluster (`RIVER-RACING-f1wp###-CLUSTER`), using the dropdowns above the editor.
 
-Run this in the SQL workspace:
-
-```sql
-SHOW TABLES;
-```
-
-You should see `car_telemetry`, `race_standings`, and `driver_race_history`. Check the live feed:
-
-```sql
-SELECT * FROM race_standings;
-```
-
-You should see 22 cars. Stop the streaming query, then start the Pit Wall in a terminal:
-
-```bash
-uv run f1-pitwall
-```
-
-A browser opens at **http://localhost:8000**. Keep the dashboard open while you work.
+    ![Selecting the catalog and database in the Flink SQL workspace](../assets/hosted/database-selection.png)
 
 ## Lab 2 — Explore the Environment
 
-Inspect the source tables before building the pipeline.
+Let's get familiar with the topics and data available in the environment. 
 
-```sql
-SHOW TABLES;
-```
+1. First, inspect the source tables:
 
-| Table | Source | Format |
-|-------|--------|--------|
-| `car_telemetry` | Race simulator — car #88 sensors, ~5 readings/lap | Avro |
-| `race_standings` | Race simulator — all 22 cars, keyed by `car_number` (upsert) | Avro |
-| `driver_race_history` | CDC from the shared Postgres (198 historical rows) | JSON |
+    ```sql
+    SHOW TABLES;
+    ```
 
-Check the telemetry stream:
+    | Table | Source | Format |
+    |-------|--------|--------|
+    | `car_telemetry` | Race simulator — car #88 sensors, ~5 readings/lap | Avro |
+    | `race_standings` | Race simulator — all 22 cars, keyed by `car_number` (upsert) | Avro |
+    | `driver_race_history` | CDC from the shared Postgres (198 historical rows) | JSON |
 
-```sql
-SELECT car_number, lap, tire_temp_fl_c, tire_pressure_fl_psi, engine_temp_c
-FROM car_telemetry;
-```
+2. Check the telemetry stream:
 
-Stop that query after you see rows. Check the standings:
+    ```sql
+    SELECT car_number, lap, tire_temp_fl_c, tire_pressure_fl_psi, engine_temp_c
+    FROM car_telemetry;
+    ```
 
-```sql
-SELECT car_number, `position`, gap_to_leader_sec, tire_compound, tire_age_laps
-FROM race_standings;
-```
+    Stop that query after you see rows. 
 
-Check the pre-deployed models:
+3. Check the race standings:
 
-```sql
-SHOW MODELS;
-```
-
-You should see `llm_textgen_model`. Then check the connections:
-
-```sql
-SHOW CONNECTIONS;
-```
+    ```sql
+    SELECT car_number, `position`, gap_to_leader_sec, tire_compound, tire_age_laps
+    FROM race_standings;
+    ```
 
 ## Lab 3 — Stream Processing: Enrichment + Anomaly Detection
 
-Stop every streaming `SELECT` from Lab 2. Then paste this entire statement into one SQL cell and run it:
+1. Stop every streaming `SELECT` from Lab 2. Then paste this entire statement into one SQL cell and run it:
 
-```sql
-CREATE MATERIALIZED TABLE `car_state`
-WITH ('changelog.mode' = 'append')
-AS
-WITH enriched AS (
-  SELECT
-    t.car_number, t.event_time, t.lap,
-    t.tire_temp_fl_c, t.tire_temp_fr_c, t.tire_temp_rl_c, t.tire_temp_rr_c,
-    t.tire_pressure_fl_psi, t.tire_pressure_fr_psi,
-    t.tire_pressure_rl_psi, t.tire_pressure_rr_psi,
-    t.engine_temp_c, t.brake_temp_fl_c, t.brake_temp_fr_c,
-    t.battery_charge_pct, t.fuel_remaining_kg,
-    r.`position`, r.gap_to_ahead_sec, r.gap_to_leader_sec,
-    r.pit_stops, r.tire_compound, r.tire_age_laps
-  FROM `car_telemetry` t
-  JOIN `race_standings` FOR SYSTEM_TIME AS OF t.event_time AS r
-    ON t.car_number = r.car_number
-),
-windowed AS (
-  SELECT
-    window_start, window_end, window_time, car_number,
-    MAX(lap) AS lap,
-    AVG(tire_temp_fl_c) AS tire_temp_fl_c,
-    AVG(tire_temp_fr_c) AS tire_temp_fr_c,
-    AVG(tire_temp_rl_c) AS tire_temp_rl_c,
-    AVG(tire_temp_rr_c) AS tire_temp_rr_c,
-    AVG(tire_pressure_fl_psi) AS tire_pressure_fl_psi,
-    AVG(tire_pressure_fr_psi) AS tire_pressure_fr_psi,
-    AVG(tire_pressure_rl_psi) AS tire_pressure_rl_psi,
-    AVG(tire_pressure_rr_psi) AS tire_pressure_rr_psi,
-    AVG(engine_temp_c) AS engine_temp_c,
-    AVG(brake_temp_fl_c) AS brake_temp_fl_c,
-    AVG(brake_temp_fr_c) AS brake_temp_fr_c,
-    AVG(battery_charge_pct) AS battery_charge_pct,
-    AVG(fuel_remaining_kg) AS fuel_remaining_kg,
-    MAX(`position`) AS `position`,
-    MAX(gap_to_ahead_sec) AS gap_to_ahead_sec,
-    MAX(gap_to_leader_sec) AS gap_to_leader_sec,
-    MAX(pit_stops) AS pit_stops,
-    MAX(tire_compound) AS tire_compound,
-    MAX(tire_age_laps) AS tire_age_laps
-  FROM TABLE(
-    TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
-  )
-  GROUP BY window_start, window_end, window_time, car_number
-),
-anomaly AS (
-  SELECT
-    *,
-    ML_DETECT_ANOMALIES(tire_temp_fl_c, window_time,
-      JSON_OBJECT('minTrainingSize' VALUE 12,
-                  'maxTrainingSize' VALUE 50,
-                  'confidencePercentage' VALUE 99.99,
-                  'enableStl' VALUE FALSE))
-      OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
-      AS anomaly_tire_temp_fl_result
-  FROM windowed
-)
-SELECT
-  car_number, lap,
-  tire_temp_fl_c, tire_temp_fr_c, tire_temp_rl_c, tire_temp_rr_c,
-  tire_pressure_fl_psi, tire_pressure_fr_psi,
-  tire_pressure_rl_psi, tire_pressure_rr_psi,
-  engine_temp_c, brake_temp_fl_c, brake_temp_fr_c,
-  battery_charge_pct, fuel_remaining_kg,
-  CASE
-    WHEN anomaly_tire_temp_fl_result.is_anomaly
-         AND anomaly_tire_temp_fl_result.actual_value
-             > anomaly_tire_temp_fl_result.upper_bound
-    THEN true
-    ELSE false
-  END AS anomaly_tire_temp_fl,
-  `position`, gap_to_ahead_sec, gap_to_leader_sec,
-  pit_stops, tire_compound, tire_age_laps
-FROM anomaly
-WHERE lap > 0;
-```
+    ```sql
+    CREATE TABLE `car_state`
+    WITH ('changelog.mode' = 'append')
+    AS
+    WITH enriched AS (
+      SELECT
+        t.car_number, t.event_time, t.lap,
+        t.tire_temp_fl_c, t.tire_temp_fr_c, t.tire_temp_rl_c, t.tire_temp_rr_c,
+        t.tire_pressure_fl_psi, t.tire_pressure_fr_psi,
+        t.tire_pressure_rl_psi, t.tire_pressure_rr_psi,
+        t.engine_temp_c, t.brake_temp_fl_c, t.brake_temp_fr_c,
+        t.battery_charge_pct, t.fuel_remaining_kg,
+        r.`position`, r.gap_to_ahead_sec, r.gap_to_leader_sec,
+        r.pit_stops, r.tire_compound, r.tire_age_laps
+      FROM `car_telemetry` t
+      JOIN `race_standings` FOR SYSTEM_TIME AS OF t.event_time AS r
+        ON t.car_number = r.car_number
+    ),
+    windowed AS (
+      SELECT
+        window_start, window_end, window_time, car_number,
+        MAX(lap) AS lap,
+        AVG(tire_temp_fl_c) AS tire_temp_fl_c,
+        AVG(tire_temp_fr_c) AS tire_temp_fr_c,
+        AVG(tire_temp_rl_c) AS tire_temp_rl_c,
+        AVG(tire_temp_rr_c) AS tire_temp_rr_c,
+        AVG(tire_pressure_fl_psi) AS tire_pressure_fl_psi,
+        AVG(tire_pressure_fr_psi) AS tire_pressure_fr_psi,
+        AVG(tire_pressure_rl_psi) AS tire_pressure_rl_psi,
+        AVG(tire_pressure_rr_psi) AS tire_pressure_rr_psi,
+        AVG(engine_temp_c) AS engine_temp_c,
+        AVG(brake_temp_fl_c) AS brake_temp_fl_c,
+        AVG(brake_temp_fr_c) AS brake_temp_fr_c,
+        AVG(battery_charge_pct) AS battery_charge_pct,
+        AVG(fuel_remaining_kg) AS fuel_remaining_kg,
+        MAX(`position`) AS `position`,
+        MAX(gap_to_ahead_sec) AS gap_to_ahead_sec,
+        MAX(gap_to_leader_sec) AS gap_to_leader_sec,
+        MAX(pit_stops) AS pit_stops,
+        MAX(tire_compound) AS tire_compound,
+        MAX(tire_age_laps) AS tire_age_laps
+      FROM TABLE(
+        TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
+      )
+      GROUP BY window_start, window_end, window_time, car_number
+    ),
+    anomaly AS (
+      SELECT
+        *,
+        ML_DETECT_ANOMALIES(tire_temp_fl_c, window_time,
+          JSON_OBJECT('minTrainingSize' VALUE 12,
+                      'maxTrainingSize' VALUE 50,
+                      'confidencePercentage' VALUE 99.99,
+                      'enableStl' VALUE FALSE))
+          OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+          AS anomaly_tire_temp_fl_result
+      FROM windowed
+    )
+    SELECT
+      car_number, lap,
+      tire_temp_fl_c, tire_temp_fr_c, tire_temp_rl_c, tire_temp_rr_c,
+      tire_pressure_fl_psi, tire_pressure_fr_psi,
+      tire_pressure_rl_psi, tire_pressure_rr_psi,
+      engine_temp_c, brake_temp_fl_c, brake_temp_fr_c,
+      battery_charge_pct, fuel_remaining_kg,
+      CASE
+        WHEN anomaly_tire_temp_fl_result.is_anomaly
+            AND anomaly_tire_temp_fl_result.actual_value
+                > anomaly_tire_temp_fl_result.upper_bound
+        THEN true
+        ELSE false
+      END AS anomaly_tire_temp_fl,
+      `position`, gap_to_ahead_sec, gap_to_leader_sec,
+      pit_stops, tire_compound, tire_age_laps
+    FROM anomaly
+    WHERE lap > 0;
+    ```
 
-Verify the output in a new cell:
+2. Verify the output in a new cell:
 
-```sql
-SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
-       anomaly_tire_temp_fl, tire_temp_fl_c
-FROM `car_state`;
-```
+    ```sql
+    SELECT car_number, lap, `position`, tire_compound, tire_age_laps,
+          anomaly_tire_temp_fl, tire_temp_fl_c
+    FROM `car_state`;
+    ```
 
-You should see one row per 20-second lap. At lap 24, `anomaly_tire_temp_fl` becomes `true` and the temperature reaches about 145°C.
-
-> [!TIP]
->
-> **Do not wait for the anomaly.** It appears later in the race (at lap 24, roughly 8 minutes in). Keep going — build the LAB 4 agent, set up LAB 5, and do the RTCE exercise while the race runs. Only the LAB 6 anomaly inspection (`pit_decisions WHERE anomaly_tire_temp_fl = true`) needs the anomaly to have fired; everything else proceeds immediately.
->
-> The race also may take up to ~20 seconds to emit its first lap (it aligns to a 20-second wall-clock boundary before starting), so the first `car_state` window can appear one interval later than expected.
+    You should see one row per 20-second lap. At lap 24, `anomaly_tire_temp_fl` becomes `true` and the temperature reaches about 145°C.
 
 ### Optional: Forecast tire temperature with new IBM Granite Time Series Models
 
-Open a new SQL cell and run the query below. It uses the same 20-second, one-per-lap tire temperature windows, but asks the built-in `AI_FORECAST` function for the next 20 values. The `model` option selects IBM Granite TinyTimeMixer directly; there is no connection or model to register.
+1. Open a new SQL cell and run the query below. It uses the same 20-second, one-per-lap tire temperature windows, but asks the built-in `AI_FORECAST` function for the next 20 values. The query uses the IBM Granite TinyTimeMixer model built directly into Confluent Cloud. 
 
-```sql
-WITH windowed AS (
-  SELECT
-    window_start,
-    window_end,
-    window_time,
-    car_number,
-    MAX(lap) AS lap,
-    AVG(tire_temp_fl_c) AS tire_temp_fl_c
-  FROM TABLE(
-    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
-  )
-  GROUP BY window_start, window_end, window_time, car_number
-),
-forecasted AS (
-  SELECT
-    *,
-    AI_FORECAST(
-      tire_temp_fl_c,
-      window_time,
-      JSON_OBJECT(
-        'model' VALUE 'ttm',
-        'horizon' VALUE 20,
-        'minContextSize' VALUE 20,
-        'maxContextSize' VALUE 50,
-        'rmseWindowSize' VALUE 5
+    ```sql
+    WITH windowed AS (
+      SELECT
+        window_start,
+        window_end,
+        window_time,
+        car_number,
+        MAX(lap) AS lap,
+        AVG(tire_temp_fl_c) AS tire_temp_fl_c
+      FROM TABLE(
+        TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
       )
-    ) OVER (
-      PARTITION BY car_number
-      ORDER BY window_time
-      RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-    ) AS forecast_result
-  FROM windowed
-)
-SELECT
-  lap,
-  window_time AS forecast_generated_at,
-  tire_temp_fl_c AS current_tire_temperature_c,
-  forecast_result.forecast[1].`timestamp` AS next_point_at,
-  forecast_result.forecast[1].mean AS next_point_c,
-  forecast_result.forecast AS full_forecast,
-  forecast_result.metadata AS forecast_metadata
-FROM forecasted
-WHERE CARDINALITY(forecast_result.forecast) > 0;
-```
+      GROUP BY window_start, window_end, window_time, car_number
+    ),
+    forecasted AS (
+      SELECT
+        *,
+        AI_FORECAST(
+          tire_temp_fl_c,
+          window_time,
+          JSON_OBJECT(
+            'model' VALUE 'ttm',
+            'horizon' VALUE 20,
+            'minContextSize' VALUE 20,
+            'maxContextSize' VALUE 50,
+            'rmseWindowSize' VALUE 5
+          )
+        ) OVER (
+          PARTITION BY car_number
+          ORDER BY window_time
+          RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS forecast_result
+      FROM windowed
+    )
+    SELECT
+      lap,
+      window_time AS forecast_generated_at,
+      tire_temp_fl_c AS current_tire_temperature_c,
+      forecast_result.forecast[1].`timestamp` AS next_point_at,
+      forecast_result.forecast[1].mean AS next_point_c,
+      forecast_result.forecast AS full_forecast,
+      forecast_result.metadata AS forecast_metadata
+    FROM forecasted
+    WHERE CARDINALITY(forecast_result.forecast) > 0;
+    ```
 
-Confluent Flink arrays are one-based, so `[1]` is the first predicted point. Inspect `full_forecast` for every point returned by the model; the number of points can vary. Stop this optional query after you see results so Lab 4 can use the compute pool.
+2. Stop this optional query after you see results so Lab 4 can use the compute pool.
 
 ### Query the live race with the Real-Time Context Engine (RTCE)
 
-Now that `car_state` exists, wire an AI agent straight to the live streams through Confluent's **Real-Time Context Engine (RTCE)** — no Kafka client, no consumer group. Do this now, while the race runs; it does not depend on the anomaly.
+Now that `car_state` exists, we will wire an AI agent straight to the live streams through Confluent's **Real-Time Context Engine (RTCE)**.
 
-**1. Enable RTCE in the Console.** RTCE is turned on per topic in the Confluent Cloud Console — nothing is pre-enabled for you. Enable it on the two topics you'll query, `car_telemetry` (the raw sensor stream) and `car_state` (the enriched output you just built):
+**Enable RTCE in the Console.** RTCE is turned on per topic in the Confluent Cloud Console — nothing is pre-enabled for you. Enable it on the two topics you'll query, `car_telemetry` (the raw sensor stream) and `car_state` (the enriched output you just built):
 
-1. Console → your cluster → **Topics → `car_telemetry`**.
-2. Open the **Real-Time Context Engine** panel (or tab) for the topic.
-3. Click **Enable**, add a short description like `Live sensor telemetry for car 88 — tire temps and pressures, speed, DRS. Many rows per lap.`, and save.
-4. Repeat for **`car_state`**, with a description like `Per-lap enriched car state with tire-anomaly flag`.
+1. In Confluent Cloud, go to your cluster, then select **Topics**.
 
-Enablement takes a few seconds each; the description is what an AI agent reads to pick the topic, so make it meaningful. (`race_standings` is a compacted upsert topic and cannot be RTCE-enabled — query `car_telemetry` or `car_state` instead.)
+    ![The Topics list in the Confluent Cloud Console](../assets/hosted/rtce-topics.png)
 
-**2. Connect your MCP client.** From the repo directory, run:
+2. Go to the **Real-Time Context Engine** column for the `car_telemetry` topic and select **Off**.
+3. Click **Turn on**.
+
+    ![Turning on the Real-Time Context Engine for a topic](../assets/hosted/rtce-turn-on.png)
+
+4. Repeat for **`car_state`**.
+
+Enablement takes a few seconds for each topic. 
+
+**Connect your MCP client.** In a new terminal window, open the repo directory and run:
 
 ```bash
 uv run setup-rtce
@@ -312,7 +282,7 @@ uv run setup-rtce
 
 Choose Claude Code, Codex, or both. The script reads your credential file and configures the RTCE connection. Restart your coding agent afterward.
 
-**3. Ask about the live race.** Run `claude`, then try:
+**Ask about the live race.** Run `claude`, then try:
 
 - "What's the front-left tire temperature on car 88 right now?"
 - "Show me the last 10 telemetry readings for car 88."
@@ -330,9 +300,7 @@ From the repo directory, print a ready-to-run query:
 uv run setup-rtce --lightning
 ```
 
-Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. The command reads your existing credential file and derives the region and cloud from its RTCE endpoint. Use `--creds path/to/file.env` if you have multiple credential files.
-
-Lightning Queries require a **Global API key**, the same key used by RTCE's MCP interface. The printed command contains its authentication token; keep it private. This command prints the request without registering an MCP client. It reads matching local Terraform outputs, or the existing credential file for hosted attendees.
+Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. 
 
 ## Lab 4 — Streaming Agent: Pit Decisions
 
@@ -460,7 +428,7 @@ SHOW AGENTS;
 Create `pit_decisions`, which invokes `AI_RUN_AGENT` and puts our agent to work:
 
 ```sql
-CREATE MATERIALIZED TABLE `pit_decisions`
+CREATE TABLE `pit_decisions`
 WITH ('changelog.mode' = 'append')
 AS
 SELECT
@@ -508,7 +476,7 @@ LATERAL TABLE(AI_RUN_AGENT(
     '  Laps Remaining: ', CAST(60 - cs.lap AS STRING)
   ),
   MAP['debug', 'true']
-))
+));
 ```
 
 Then run:
@@ -530,107 +498,19 @@ SELECT * FROM `pit_decisions`;
 
 Check the Pit Wall. The **AI PIT STRATEGIST** panel should unlock and show the decisions.
 
-## Lab 5 — Social Media Agent (Claude + Real-Time Context Engine)
+## 🧩 Challenge — Social Media Agent (Claude + Real-Time Context Engine)
 
-Draft social posts about the live race using the same Claude Code session you connected to Real-Time Context Engine (RTCE) back in Lab 3 — no separate no-code platform, no OpenAPI import. If you skipped that section, go back and run `uv run setup-rtce` now before continuing.
+Now, it's time to switch gears and take on the role of the social media team for River Racing. You've been given access to the live race data via RTCE and need to use AI to generate an engaging social media post. Based on what yuo've learned in the workshop, do the following: 
 
-### 1. Enable RTCE on the pit-decisions table
+1. Enable RTCE on the `pit-decisions` table in the Confluent Cloud Console. 
+2. Create a persona prompt for your agent to help it develop an engaging social media post. 
+3. Have your agent draft a post using real time data from your MCP connection. 
 
-Lab 3 enabled RTCE on `car_telemetry` and `car_state`. The social agent also needs the latest strategy call, so enable it on `pit_decisions` too, the same way:
-
-1. Console → your cluster → **Topics → `pit_decisions`**.
-2. Open the **Real-Time Context Engine** panel (or tab) for the topic.
-3. Click **Enable**, add a description like `Pit strategy calls (PIT NOW / PIT SOON / STAY OUT) with reasoning`, and save.
-
-### 2. Give Claude the persona
-
-Run `claude` in the repo directory (or reuse your open session from Lab 3), then paste this in:
-
-```
-You are the social-media manager for the River Racing Formula 1 team. Our driver
-is John Doe (car #88) racing the British Grand Prix at Silverstone (60 laps).
-
-Your job: when I ask, draft short, high-energy social posts about what is
-happening in OUR race, grounded in live data from the car_state and
-pit_decisions topics.
-
-DATA
-- Before writing, query car_state for the most recent lap and pit_decisions for
-  the most recent strategy call. Never invent positions, gaps, lap numbers, tire
-  conditions, or strategy calls — use only what the tools return.
-- car_state's anomaly_tire_temp_fl flag and pit_decisions' suggestion field are
-  your best sources of post hooks. Lead with the most recent meaningful event.
-- If pit_decisions' suggestion is PIT NOW or PIT SOON, that is newsworthy — say so.
-- If the topics return no rows yet, say the race feed is quiet rather than
-  making something up.
-
-VOICE
-- Confident, upbeat, fan-facing. Short sentences. 1–3 emoji max.
-- Always third person about the team ("We", "John", "the #88").
-- Under 280 characters unless I ask for a longer recap.
-- End with 2–3 hashtags from: #RiverRacing #JohnDoe #F1 #BritishGP #Silverstone
-- Never disparage other teams or drivers.
-
-OUTPUT
-- Draft the post text only. Do not claim to have published it — these are drafts
-  for me to review and post myself.
-```
-
-Unlike a shared race-feed tool, RTCE only ever exposes *your own* environment — there's no prefix to substitute here.
-
-### 3. Draft a post
-
-In the same session, try:
-
-```
-Draft a hype post about where we are in the race right now.
-```
-
-Then try:
-
+Feel free to use one of the following prompts to draft your next post: 
 - "We just made a big move — write a post celebrating it."
 - "The pit wall just made a call. Draft a post about our strategy."
 - "Write a 3-tweet recap thread of John's race so far."
 
 **Success looks like:** Claude calls `queryData` against `car_state` and `pit_decisions` (you'll see the tool calls in the transcript) and returns a drafted post citing the real lap number, position, and strategy call from your live feed — not invented numbers. If it says the feed is quiet, the race may not be running yet, or RTCE isn't enabled on one of the two topics.
-
-## Lab 6 — Wrap-Up
-
-Inspect every pit recommendation:
-
-```sql
-SELECT lap, `position`, suggestion, condition_summary, reasoning
-FROM `pit_decisions`
-WHERE suggestion <> 'STAY OUT';
-```
-
-Inspect the anomaly decision:
-
-```sql
-SELECT lap, `position`, tire_compound_current, tire_age_laps,
-       anomaly_tire_temp_fl, suggestion,
-       recommended_tire_compound, recommended_stint_laps, reasoning
-FROM `pit_decisions`
-WHERE anomaly_tire_temp_fl = true;
-```
-
-You should see `PIT NOW`, a MEDIUM recommendation, and the agent's reasoning.
-
-Confirm the pipeline objects are still present:
-
-```sql
-SHOW TABLES;        -- car_state and pit_decisions now sit alongside the sources
-SHOW AGENTS;        -- pit_strategy_agent
-```
-
-To run the workshop again, drop the lab objects:
-
-```sql
-DROP TABLE IF EXISTS `pit_decisions`;
-DROP TABLE IF EXISTS `car_state`;
-DROP AGENT IF EXISTS `pit_strategy_agent`;
-```
-
-Ask your instructor to reset the race before repeating Labs 3 and 4.
 
 **← Back to Overview**: [Main README](../../README.md)

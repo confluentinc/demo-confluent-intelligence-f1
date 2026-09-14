@@ -35,7 +35,7 @@
 --      F1_ANOMALY_FN=ai uv run reset --with-labs
 --      uv run f1-sql --file docs/demo-reference/enrichment_anomaly_ai.sql
 
-CREATE MATERIALIZED TABLE `car_state`
+CREATE TABLE `car_state`
 WITH ('changelog.mode' = 'append')
 AS
 WITH enriched AS (

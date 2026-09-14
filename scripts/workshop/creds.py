@@ -23,9 +23,17 @@ here for instructor-distributed cards; see ``_resolve_op_password``. Resolved
 passwords are then stored in plaintext under ``runs/<name>/credentials/``
 (gitignored) — the ``.md`` card is the intended human carrier.
 
-Attendees claiming through the wsa self-serve dispenser instead reconstruct
-the .env themselves with `uv run f1-onboard` from their claim email — this
-command is for instructor-distributed or self-hosted runs.
+Attendees claiming through the wsa self-serve dispenser never see a ``.md``
+card. The dispenser shows them four fields — Console URL, Console Username,
+Console Password, and a paste-ready **Env File** block (the whole
+``<prefix>.env``) — and they save that block verbatim as their own
+``credentials.env`` (see docs/tracks/HOSTED-WORKSHOP.md). This command assembles that block from the wsa CSV
+and, right before ``wsa dispenser-upload`` reads it, rewrites
+``build-output.csv`` down to those four display columns (see
+``_write_dispenser_csv``): the individual Terraform columns wsa emits are read
+here to build the block, then dropped from the sheet. It is also the command
+instructor-distributed or self-hosted runs use to write the ``.env`` + ``.md``
+cards directly.
 
 ``_card_fields`` also backs ``scripts/selfservice/cli.py``, which calls it
 directly against a plain ``terraform output -json`` dict (no wsa CSV
@@ -312,10 +320,36 @@ def _row_to_outputs(row: dict[str, str]) -> dict:
     }
 
 
+def _env_text(f: dict[str, str]) -> str:
+    """The credential card rendered as ``F1_*`` env lines.
+
+    The single rendering shared by three carriers of the same bytes: the
+    ``<prefix>.env`` file, the dispenser's copy-paste ``Env File`` field, and what
+    an attendee saves as their own ``credentials.env``. F1_-namespaced so the block
+    can be sourced without clobbering other env vars.
+    """
+    return "\n".join(f"F1_{k.upper()}={v}" for k, v in f.items()) + "\n"
+
+
+def _fields_from_env_text(text: str) -> dict[str, str]:
+    """Inverse of ``_env_text``: parse an ``F1_*`` block back into the flat card dict.
+
+    Used when regenerating cards from a ``build-output.csv`` this command already
+    curated for the dispenser — its per-attendee ``Env File`` cell is then the only
+    surviving copy of the fields (the individual Terraform columns are gone).
+    """
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("F1_") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        fields[key[len("F1_") :].lower()] = value
+    return fields
+
+
 def _write_env(creds_dir: Path, f: dict[str, str]) -> None:
-    # F1_-namespaced so it can be sourced without clobbering other env vars.
-    lines = [f"F1_{k.upper()}={v}" for k, v in f.items()]
-    (creds_dir / f"{f['prefix']}.env").write_text("\n".join(lines) + "\n")
+    (creds_dir / f"{f['prefix']}.env").write_text(_env_text(f))
 
 
 def _rtce_command(f: dict[str, str]) -> str:
@@ -450,45 +484,68 @@ full access to your environment.
     (creds_dir / f"{f['prefix']}.md").write_text(md)
 
 
-# The column we append to wsa's build-output.csv so the dispenser carries the
-# RTCE setup command. The " / " is load-bearing: it is the dispenser's
-# `Provider / Field` header convention, and a column is only surfaced when its
-# header splits on " / " into Provider / Field. The Apps Script groups on it in
-# both delivery paths — the on-screen web app (`account-dispenser/webapp/WebApp.gs`
-# `buildCredentialGroups_`) and the email backup (`account-dispenser/Code.gs`) —
-# and skips every column that doesn't split.
+# The one extra column we assemble into wsa's build-output.csv: the whole
+# ``<prefix>.env`` as a single paste-ready block. The " / " is load-bearing —
+# it's the dispenser's `Provider / Field` header convention, and a column is only
+# surfaced when its header splits on " / " into Provider / Field. The Apps Script
+# groups on it in both delivery paths — the on-screen web app
+# (`account-dispenser/webapp/WebApp.gs` `buildCredentialGroups_`) and the email
+# backup (`account-dispenser/Code.gs`).
 #
-# It must also not contain "claimed by" or "timestamp" — wsa's
+# The header must also not contain "claimed by" or "timestamp" — wsa's
 # `ensureDispenserColumns` substring-matches on those to decide whether to append
 # its own two tracking columns, and Code.gs assumes Timestamp sits immediately
 # right of Claimed By.
-DISPENSER_RTCE_COLUMN = "Real-Time Context Engine / MCP Setup Command"
+ENV_FILE_COLUMN = f"{GROUP} / Env File"
+
+# The only "<group> / <label>" columns the dispenser keeps. Everything else with a
+# " / " (every individual Terraform credential) is dropped, so an attendee sees
+# these four instead of twenty-plus: the login they type into the browser, and the
+# Env File block they save verbatim as their credentials.env. Columns
+# WITHOUT a " / " (wsa's built-in Account/Email, and the Claimed By / Timestamp it
+# appends at upload) are structural — passed through untouched.
+DISPENSER_DISPLAY_COLUMNS = [
+    COLUMNS["console_url"],
+    COLUMNS["console_username"],
+    COLUMNS["console_password"],
+    ENV_FILE_COLUMN,
+]
 
 
-def _add_dispenser_column(csv_in: Path, rows: list[dict[str, str]], commands: dict[str, str]) -> int:
-    """Append (or refresh) the RTCE command column in wsa's build-output.csv.
+def _write_dispenser_csv(csv_in: Path, rows: list[dict[str, str]]) -> int:
+    """Rewrite wsa's build-output.csv down to the dispenser's display columns.
 
     Rewrites the file in place, since `wsa dispenser-upload` reads it by a fixed
-    path inside the run directory and there's no way to point it elsewhere. Every
-    other value is copied through byte-for-byte — notably the ``(from 1Password)``
-    password placeholder, which wsa resolves itself at upload time and which must
-    NOT be replaced with the value we resolved into the cards.
+    path inside the run directory and there's no way to point it elsewhere. Each
+    row keeps its structural (non-" / ") columns byte-for-byte — notably the
+    Account number and the ``(from 1Password)`` Console Password placeholder, which
+    wsa resolves itself at upload time and which must NOT be replaced with the value
+    we resolved into the cards — plus Console URL, Console Username, and the
+    assembled ``Env File`` block; every other Terraform column is dropped from the
+    sheet.
 
-    Returns the number of rows that got a command.
+    Each row's ``Env File`` cell must already be stamped by ``creds`` (it becomes
+    the only surviving copy of the per-attendee fields, so a later `workshop creds`
+    against this same curated CSV reconstructs the cards from it). Returns the
+    number of rows carrying an Env File block.
     """
     if not rows:
         return 0
-    fieldnames = [k for k in rows[0] if k != DISPENSER_RTCE_COLUMN] + [DISPENSER_RTCE_COLUMN]
+    structural = [k for k in rows[0] if " / " not in k]
+    fieldnames = structural + DISPENSER_DISPLAY_COLUMNS
     filled = 0
+    curated: list[dict[str, str]] = []
     for row in rows:
-        command = commands.get(row.get(COLUMNS["prefix"], ""), "")
-        row[DISPENSER_RTCE_COLUMN] = command
-        if command:
+        new = {k: row.get(k, "") for k in structural}
+        for column in DISPENSER_DISPLAY_COLUMNS:
+            new[column] = row.get(column, "")
+        curated.append(new)
+        if new[ENV_FILE_COLUMN]:
             filled += 1
     with csv_in.open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=fieldnames)
         w.writeheader()
-        w.writerows(rows)
+        w.writerows(curated)
     return filled
 
 
@@ -505,36 +562,52 @@ def creds(args: argparse.Namespace) -> None:
     rows: list[dict[str, str]] = []
     unresolved: list[str] = []
     no_rtce: list[str] = []
-    # Kept verbatim so the RTCE column can be written back into wsa's CSV below.
+    # Kept verbatim so the Env File block can be stamped back onto wsa's CSV below.
     raw_rows: list[dict[str, str]] = []
-    rtce_commands: dict[str, str] = {}
     with csv_in.open(newline="") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             raw_rows.append(row)
             prefix = row.get(COLUMNS["prefix"], "")
-            if not prefix:
-                print(f"  skip row for {row.get('Email', '?')} (no prefix — attendee not applied)")
-                continue
-            out = _row_to_outputs(row)
-            # wsa leaves "(from 1Password)" in the CSV; swap in the real value
-            # so the printed card is usable, or blank it so the card renders the
-            # "ask your instructor" line instead of the placeholder.
-            if out["console_password"] == OP_PLACEHOLDER:
-                out["console_password"] = _resolve_op_password(row.get("Account", "")) if args.resolve_op else ""
-                if not out["console_password"]:
-                    unresolved.append(prefix)
-            fields = _card_fields(
-                prefix,
-                row.get("Email", ""),
-                out,
-                args.social_feed_url,
-                args.region,
-                rtce_keys=args.rtce_keys,
-            )
-            if args.rtce_keys and not fields["rtce_api_key"]:
+            if prefix:
+                out = _row_to_outputs(row)
+                # wsa leaves "(from 1Password)" in the CSV; swap in the real value
+                # so the printed card is usable, or blank it so the card renders the
+                # "ask your instructor" line instead of the placeholder.
+                if out["console_password"] == OP_PLACEHOLDER:
+                    out["console_password"] = _resolve_op_password(row.get("Account", "")) if args.resolve_op else ""
+                    if not out["console_password"]:
+                        unresolved.append(prefix)
+                fields = _card_fields(
+                    prefix,
+                    row.get("Email", ""),
+                    out,
+                    args.social_feed_url,
+                    args.region,
+                    rtce_keys=args.rtce_keys,
+                )
+            else:
+                # No Prefix column means this CSV was already curated for the
+                # dispenser (only the Env File block survives). Rebuild the card
+                # from that block so regenerating cards after an upload still works.
+                env_cell = row.get(ENV_FILE_COLUMN, "")
+                if not env_cell:
+                    print(f"  skip row for {row.get('Email', '?')} (no prefix — attendee not applied)")
+                    continue
+                fields = _fields_from_env_text(env_cell)
+                prefix = fields.get("prefix", "")
+                if not prefix:
+                    print(f"  skip row for {row.get('Email', '?')} (Env File block carries no prefix)")
+                    continue
+                if args.social_feed_url:
+                    fields["social_feed_url"] = args.social_feed_url
+                if args.resolve_op and not fields.get("console_password"):
+                    fields["console_password"] = _resolve_op_password(row.get("Account", ""))
+            if args.rtce_keys and not fields.get("rtce_api_key"):
                 no_rtce.append(prefix)
-            rtce_commands[prefix] = _rtce_command(fields)
+            # Stamp the paste-ready block onto the raw row: it's what the dispenser
+            # shows, and the only per-attendee copy left once the CSV is curated.
+            row[ENV_FILE_COLUMN] = _env_text(fields)
             _write_env(creds_dir, fields)
             _write_md(creds_dir, fields)
             rows.append(fields)
@@ -550,11 +623,13 @@ def creds(args: argparse.Namespace) -> None:
     else:
         print("\nNo attendee rows with a resolved prefix found in the CSV.")
 
-    if args.dispenser_column and any(rtce_commands.values()):
-        filled = _add_dispenser_column(csv_in, raw_rows, rtce_commands)
+    if args.dispenser_column and rows:
+        filled = _write_dispenser_csv(csv_in, raw_rows)
         print(
-            f'\nDispenser: added "{DISPENSER_RTCE_COLUMN}" to {csv_in.name} ({filled} row(s)).\n'
-            "  `wsa dispenser-upload` will carry it into each attendee's claim email."
+            f"\nDispenser: rewrote {csv_in.name} to the four attendee fields "
+            f"(Console URL, Console Username, Console Password, Env File) for {filled} row(s).\n"
+            "  `wsa dispenser-upload` shows attendees only those; attendees save the\n"
+            "  Env File block verbatim as their credentials.env."
         )
 
     if unresolved:
@@ -598,7 +673,7 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
         dest="dispenser_column",
         action="store_false",
         default=True,
-        help=f'Do not write the "{DISPENSER_RTCE_COLUMN}" column back into the wsa CSV. '
-        "By default it's appended so `wsa dispenser-upload` includes the RTCE setup command in "
-        "each attendee's claim email; this rewrites build-output.csv in place.",
+        help="Leave wsa's build-output.csv with all its columns instead of rewriting it down "
+        "to the four dispenser fields (Console URL, Console Username, Console Password, Env File). "
+        "By default it's curated in place so `wsa dispenser-upload` shows attendees only those.",
     )

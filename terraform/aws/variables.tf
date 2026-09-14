@@ -153,3 +153,17 @@ variable "race_loop" {
   type        = bool
   default     = true
 }
+
+variable "race_autostart" {
+  description = <<-EOT
+    Whether the ECS simulator provisions running (desired_count=1) or stopped
+    (desired_count=0). True (the default) keeps the standalone `uv run deploy`
+    demo live the moment Terraform returns. The multi-attendee workshop sets this
+    false in wsa-spec-aws.yaml so pre-provisioned attendee accounts stay quiet
+    until the instructor runs `uv run workshop start-races`. Only affects the
+    initial provision: desired_count is ignore_changes'd afterward, so
+    `uv run race start/stop` and the fleet scripts own it at runtime.
+  EOT
+  type        = bool
+  default     = true
+}

@@ -1,4 +1,4 @@
--- Job 2b: Pit Decisions Table — CREATE MATERIALIZED TABLE … AI_RUN_AGENT
+-- Job 2b: Pit Decisions Table — CREATE TABLE … AI_RUN_AGENT
 -- Input: car_state
 -- Output: pit_decisions
 --
@@ -18,11 +18,11 @@
 -- raw_response preserves the full agent output for debugging when parsed fields are null.
 --
 -- DEPLOYMENT ORDER: Run CREATE AGENT first (streaming_agent_create_agent.sql),
--- then start the race simulator, then run this CREATE MATERIALIZED TABLE.
+-- then start the race simulator, then run this CREATE TABLE.
 -- Uses earliest-offset so it processes all race laps. car_state emits one row
 -- per 20-second race lap, so the agent is called once per lap.
 
-CREATE MATERIALIZED TABLE `pit_decisions`
+CREATE TABLE `pit_decisions`
 WITH ('changelog.mode' = 'append')
 AS
 SELECT

@@ -1,6 +1,6 @@
 ---
 name: f1-credentials
-description: How attendee logins, passwords, deployment prefixes, and credential cards actually resolve in this repo — the three moving parts of Confluent Cloud Console access (invited users, 1Password passwords, grant_console_access RBAC), the derived per-track deployment identity in deployment_meta.py, and resolve_card()'s precedence order. Load before touching credential cards, `workshop creds`, `deployment.env`, `f1-onboard`, or anything that authenticates as an attendee.
+description: How attendee logins, passwords, deployment prefixes, and credential cards actually resolve in this repo — the three moving parts of Confluent Cloud Console access (invited users, 1Password passwords, grant_console_access RBAC), the derived per-track deployment identity in deployment_meta.py, and resolve_card()'s precedence order. Load before touching credential cards, `workshop creds`, `deployment.env`, or anything that authenticates as an attendee.
 ---
 
 # Secrets & credentials (F1 Pit Wall workshop)
@@ -74,7 +74,7 @@ mismatch from `aws-shared`'s `ecr_image_uri`, warns, and under `--automated` **r
 1. `--creds <path>`
 2. `$F1_CREDS`
 3. `credentials.env` — its `F1_CARD=<path>` pointer (skipped if the target is gone), or
-   the file itself when it holds `F1_*` keys (what `f1-onboard` writes)
+   the file itself when it holds `F1_*` keys (an attendee's pasted Env File block)
 4. the only card under `runs/*/credentials/*.env`
 
 Ambiguity is an error, never a guess: several cards and no pointer exits listing them.

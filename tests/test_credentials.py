@@ -9,6 +9,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from dotenv import dotenv_values
+
 from scripts.common.credentials import (
     clear_active_card,
     load_card,
@@ -75,10 +77,31 @@ class CardResolutionTests(unittest.TestCase):
     # --- the two families of credentials.env ---
 
     def test_credentials_env_holding_f1_keys_is_itself_the_card(self):
-        """What f1-onboard writes for workshop attendees."""
+        """A workshop attendee pastes their dispenser Env File block into credentials.env."""
         creds = self.write_creds_env(CARD_BODY)
 
         self.assertEqual(resolve_card(root=self.root), creds)
+
+    def test_load_card_recovers_a_flattened_single_line_card(self):
+        # WSA's dispenser renders the Env File block with spaces instead of
+        # newlines, so an attendee pasting it verbatim into credentials.env gets one
+        # line. dotenv would then see only F1_KAFKA_BOOTSTRAP (its value swallowing
+        # the rest); load_card must recover every key so the dashboard has its creds.
+        self.write_creds_env(
+            "F1_KAFKA_BOOTSTRAP=pkc-x:9092 F1_KAFKA_API_KEY=KK "
+            "F1_KAFKA_API_SECRET=cflt/AB+cd== F1_SR_API_KEY=SK F1_SOCIAL_FEED_URL="
+        )
+        _path, creds = load_card(root=self.root)
+        self.assertEqual(creds["F1_KAFKA_BOOTSTRAP"], "pkc-x:9092")
+        self.assertEqual(creds["F1_KAFKA_API_KEY"], "KK")
+        self.assertEqual(creds["F1_KAFKA_API_SECRET"], "cflt/AB+cd==")  # base64 '==' preserved
+        self.assertEqual(creds["F1_SR_API_KEY"], "SK")
+        self.assertEqual(creds["F1_SOCIAL_FEED_URL"], "")  # trailing empty value kept
+
+    def test_load_card_leaves_a_normal_multiline_card_unchanged(self):
+        card = self.make_card("standalone", "PROD")
+        _path, creds = load_card(root=self.root)
+        self.assertEqual(creds, dict(dotenv_values(card)))  # no spurious re-parse
 
     def test_tf_var_credentials_env_is_not_mistaken_for_a_card(self):
         self.write_creds_env("TF_VAR_prefix=bren\nTF_VAR_owner_email=a@b.com\n")

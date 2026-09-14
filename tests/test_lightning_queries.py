@@ -1,6 +1,5 @@
-"""Exercise generated requests and importing the existing workshop MCP command."""
+"""Exercise generated RTCE/Lightning requests and credential resolution."""
 
-import base64
 import json
 import os
 import subprocess
@@ -9,7 +8,6 @@ from unittest.mock import patch
 import pytest
 
 from scripts import setup_rtce
-from scripts.workshop.onboard import _parse_pasted_email, _parse_rtce_command
 
 ENDPOINT = (
     'https://mcp.eu-west-1.aws.confluent.cloud/mcp/v1/context-engine/'
@@ -77,48 +75,6 @@ def test_missing_fields_fail_without_printing_secrets(field):
 def test_rejects_non_confluent_endpoint():
     with pytest.raises(ValueError):
         setup_rtce.lightning_command(dict(CARD, F1_RTCE_MCP_ENDPOINT='https://example.com'))
-
-
-def test_claim_email_reuses_existing_mcp_credentials():
-    token = base64.b64encode(b'test-key:test-secret').decode()
-    email = (
-        f'Real-Time Context Engine / MCP Setup Command: claude mcp add --transport http '
-        f'real-time-context-engine {ENDPOINT} --header "Authorization: Basic {token}"\n'
-        'Confluent Cloud / Environment ID: env-test\n'
-    )
-    values = _parse_pasted_email(email)
-    assert values['environment_id'] == 'env-test'
-    assert values['rtce_api_key'] == 'test-key'
-    assert values['rtce_api_secret'] == 'test-secret'
-    assert values['rtce_mcp_endpoint'] == ENDPOINT
-
-
-@pytest.mark.parametrize('token', ['not-base64', '%%%%', 'bm9jb2xvbg==', 'a2V5OnNlY3JldAo='])
-def test_invalid_claim_tokens_are_ignored(token):
-    assert _parse_rtce_command(f'{ENDPOINT} --header "Authorization: Basic {token}"') == {}
-
-
-def test_onboarding_writes_imported_rtce_credentials(tmp_path):
-    from dotenv import dotenv_values
-
-    from scripts.workshop import onboard
-
-    values = {key: 'test-value' for key, _ in onboard.FIELDS}
-    values.update(
-        email='test@example.com', rtce_mcp_endpoint=ENDPOINT,
-        rtce_api_key='test-key', rtce_api_secret='test-secret',
-    )
-    destination = tmp_path / 'credentials.env'
-    with (
-        patch('sys.argv', ['f1-onboard', '--out', str(destination)]),
-        patch.object(onboard, '_prompt_fields', return_value=values),
-        patch.object(onboard.creds_mod, '_mint_rtce_key', side_effect=AssertionError),
-    ):
-        onboard.main()
-    written = dotenv_values(destination)
-    assert written['F1_RTCE_MCP_ENDPOINT'] == ENDPOINT
-    assert written['F1_RTCE_API_KEY'] == 'test-key'
-    assert written['F1_RTCE_API_SECRET'] == 'test-secret'
 
 
 def test_terraform_outputs_only_match_selected_deployment(tmp_path):

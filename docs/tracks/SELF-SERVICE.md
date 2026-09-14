@@ -68,7 +68,7 @@ The prerequisites set up some basic source topics for car telemetry and race det
 2. Paste this statement into one SQL cell and run it. Wait for it to show **Running**.
 
     ```sql
-    CREATE MATERIALIZED TABLE `car_state`
+    CREATE TABLE `car_state`
     WITH ('changelog.mode' = 'append')
     AS
     WITH enriched AS (
@@ -356,7 +356,7 @@ Next we create the `pit_decisions` table, which holds the Streaming Agent's reco
 1. Create the `pit-decisions` table by running the following statement in your SQL Workspace. 
 
     ```sql
-    CREATE MATERIALIZED TABLE `pit_decisions`
+    CREATE TABLE `pit_decisions`
     WITH ('changelog.mode' = 'append')
     AS
     SELECT

@@ -229,8 +229,10 @@ def test_missing_card_field_names_every_way_to_fix_it() -> None:
 
     message = str(excinfo.value)
     assert "F1_KAFKA_API_KEY" in message
-    for command in ("uv run deploy", "uv run selfservice up", "uv run f1-onboard", "uv run workshop creds"):
+    for command in ("uv run deploy", "uv run selfservice up", "uv run workshop creds"):
         assert command in message, f"{command} must be offered — `workshop creds` alone is organizer-only"
+    # The attendee path isn't a command any more — they save the dispenser block as a file.
+    assert "save your dispenser Env File block as credentials.env" in message
 
 
 # --- the poll loop wires it up -------------------------------------------

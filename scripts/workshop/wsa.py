@@ -567,9 +567,10 @@ def _write_cards(root: Path, run: Run, args: argparse.Namespace) -> None:
             region=args.region,
             # Warn if the Terraform-managed Global key is missing from the export.
             rtce_keys=getattr(args, "rtce_keys", True),
-            # Appends the RTCE setup command to this run's build-output.csv, so a
-            # later `wsa dispenser-upload` carries it into the claim email. Safe
-            # when the dispenser isn't used: it's one extra ignored column.
+            # Curate this run's build-output.csv down to the four attendee fields
+            # (Console URL/Username/Password + the Env File block) so a later
+            # `wsa dispenser-upload` shows attendees only those. Safe when the
+            # dispenser isn't used: it just trims the local CSV.
             dispenser_column=True,
         )
     )
@@ -592,9 +593,9 @@ def _upload_dispenser(
 ) -> None:
     """Push this run's ``build-output.csv`` into the dispenser Google Sheet.
 
-    Must run *after* `_write_cards`: `creds.py`'s `_add_dispenser_column` appends
-    the RTCE setup command to the same CSV, and the upload is what carries it into
-    each claim email.
+    Must run *after* `_write_cards`: `creds.py`'s `_write_dispenser_csv` curates the
+    same CSV down to the four attendee fields (Console URL/Username/Password and the
+    paste-ready Env File block), and the upload is what pushes those to the sheet.
 
     Four ways this does nothing, and none of them are quiet — a skipped upload means
     the sheet still lists the *previous* workshop's accounts, so attendees claim

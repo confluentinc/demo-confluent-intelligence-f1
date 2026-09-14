@@ -55,8 +55,8 @@ CARD_REMEDIATION = (
     "If this came from a credential card, recreate it the way you made it:\n"
     "    uv run deploy          standalone deploy (AWS + Confluent)\n"
     "    uv run selfservice up  solo, Confluent-only\n"
-    "    uv run f1-onboard      workshop attendee, from your claim email\n"
-    "    uv run workshop creds  organizer, from wsa's build-output.csv"
+    "    uv run workshop creds  organizer, from wsa's build-output.csv\n"
+    "  Workshop attendee: save your dispenser Env File block as credentials.env."
 )
 
 

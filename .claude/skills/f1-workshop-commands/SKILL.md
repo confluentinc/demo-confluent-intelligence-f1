@@ -49,8 +49,10 @@ uv run workshop creds --csv <wsa-repo>/wsa-output/<run-id>/build-output.csv --na
 #   workshop validate      = API-key health checks against provisioned environments, AFTER one
 uv run workshop validate --creds-glob 'runs/*/credentials/*.env'   # no AWS/login needed
 
-# Attendee, self-serve (wsa dispenser claim email -> local credentials.env)
-uv run f1-onboard                # prompts field-by-field, or --paste to parse a pasted email
+# Attendee, self-serve: NO command. Save the dispenser's Env File block verbatim as
+# ./credentials.env (e.g. `nano credentials.env`, paste, Ctrl-O Enter Ctrl-X — or any
+# editor). The block IS the card; the attendee tools resolve ./credentials.env on their
+# own. See docs/tracks/HOSTED-WORKSHOP.md Lab 1.
 
 # Flink SQL from a credential card, no Console login. NOT what LAB 1-6 teaches
 # (that's the browser SQL workspace) — this is the standalone/self-service path.

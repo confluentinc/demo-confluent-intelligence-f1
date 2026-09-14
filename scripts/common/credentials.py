@@ -9,8 +9,8 @@ Two distinct files share the ".env" name and must not be confused:
 - a credential **card**, ``runs/<name>/credentials/<prefix>.env`` (``F1_*``
   keys) — what ``f1-sql`` / ``f1-pitwall`` / ``f1-race`` authenticate with.
 
-``f1-onboard`` blurs the two: it writes an ``F1_*`` card to ``./credentials.env``
-by default, so the resolver below accepts either shape.
+A workshop attendee makes ``./credentials.env`` itself a card by pasting their
+dispenser Env File block into it, so the resolver below accepts either shape.
 
 Provides functions for:
 - Loading credentials from credentials.env files
@@ -19,6 +19,7 @@ Provides functions for:
 """
 
 import os
+import re
 import subprocess
 import sys
 import time
@@ -28,6 +29,16 @@ from dotenv import dotenv_values
 
 # Set by deploy.py / `selfservice up` in credentials.env, read by resolve_card().
 CARD_POINTER_KEY = "F1_CARD"
+
+# Recognizing a card that arrived as ONE flattened line. The wsa dispenser renders
+# the Env File block with spaces instead of newlines, so an attendee who pastes it
+# verbatim into credentials.env gets `F1_A=v1 F1_B=v2 ...` on a single line. dotenv
+# reads one KEY=VALUE per line, so it returns just the first key (whose value
+# swallows the rest) — `_parse_card` detects that and re-extracts every token.
+# Safe because no F1_ value contains a space (IDs, URLs, base64 keys, generated
+# passwords), so `\S*` captures each value losslessly.
+_F1_ASSIGNMENT = re.compile(r"F1_[A-Z0-9_]+=")
+_F1_TOKEN = re.compile(r"F1_([A-Z0-9_]+)=(\S*)")
 
 # ``WORKSHOP_EMAIL_PATTERN`` replaced this old setting name. Keep ignoring the
 # legacy key so an organizer's pre-upgrade credentials.env cannot shadow a real
@@ -75,7 +86,7 @@ def resolve_card(explicit: str | None = None, root: Path | None = None) -> Path:
       1. an explicit --creds value
       2. $F1_CREDS
       3. credentials.env — either its F1_CARD pointer, or the file itself when
-         it holds F1_* keys (what f1-onboard writes)
+         it holds F1_* keys (an attendee's pasted Env File block)
       4. the only card lying around — under runs/*/credentials/, or a loose
          *.env at the project root (an instructor-handed f1wp001.env)
 
@@ -117,8 +128,8 @@ def resolve_card(explicit: str | None = None, root: Path | None = None) -> Path:
     if not candidates:
         sys.exit(
             "No credential card found.\n"
-            "  Run `uv run deploy` (or `uv run f1-onboard` if you were given one),\n"
-            "  or pass `--creds <path>` explicitly."
+            "  Run `uv run deploy`, or (workshop attendee) save your dispenser Env File\n"
+            "  block as `credentials.env`, or pass `--creds <path>` explicitly."
         )
 
     listed = "\n".join(f"    {c.relative_to(root)}" for c in candidates)
@@ -129,12 +140,39 @@ def resolve_card(explicit: str | None = None, root: Path | None = None) -> Path:
     )
 
 
+def _parse_card(path: Path) -> dict[str, str]:
+    """Parse a credential card, tolerating a flattened single-line file.
+
+    A normal card (one ``KEY=VALUE`` per line) is returned exactly as dotenv reads
+    it. A card whose newlines were flattened to spaces — the wsa dispenser Env File
+    block, pasted verbatim into ``credentials.env`` — makes dotenv surface far fewer
+    ``F1_`` keys than the file actually assigns; in that case re-extract every
+    ``F1_KEY=value`` token instead, keeping any non-``F1_`` keys dotenv found.
+    """
+    values = dict(dotenv_values(path))
+    try:
+        text = path.read_text()
+    except OSError:
+        return values
+    f1_keys = sum(1 for k in values if k.startswith("F1_"))
+    if len(_F1_ASSIGNMENT.findall(text)) <= f1_keys:
+        return values  # not flattened — leave the normal parse untouched
+    recovered = {f"F1_{name}": value for name, value in _F1_TOKEN.findall(text)}
+    non_f1 = {k: v for k, v in values.items() if not k.startswith("F1_")}
+    return {**non_f1, **recovered}
+
+
 def load_card(explicit: str | None = None, root: Path | None = None) -> tuple[Path, dict[str, str]]:
-    """Resolve a credential card and parse it. Exits if the path is bad."""
+    """Resolve a credential card and parse it. Exits if the path is bad.
+
+    Parsing goes through ``_parse_card`` so every attendee tool (f1-pitwall, f1-sql,
+    setup-rtce, setup-mcp, f1-race) handles a card that WSA's dispenser flattened
+    onto one line — see ``_parse_card``.
+    """
     path = resolve_card(explicit, root=root)
     if not path.exists():
         sys.exit(f"Credential file not found: {path}")
-    return path, dict(dotenv_values(path))
+    return path, _parse_card(path)
 
 
 def set_active_card(root: Path, card: Path) -> None:
