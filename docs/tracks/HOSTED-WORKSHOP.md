@@ -1,4 +1,4 @@
-# Hosted workshop walkthrough
+# F1 Pitwall Simulator Hosted Workshop
 
 ![F1 Pit Wall Confluent Intelligence architecture](../assets/architecture.png)
 
@@ -290,18 +290,6 @@ Choose Claude Code, Codex, or both. The script reads your credential file and co
 
 Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and only RTCE-enabled topics are exposed. Enable more from the **Topics** page the same way you enabled these two.
 
-### Optional: Lightning Queries (low-latency REST)
-
-Lightning Queries read an RTCE-enabled topic over low-latency REST, so enable RTCE on `car_telemetry` in the Console first (step 1 above) if you haven't already.
-
-From the repo directory, print a ready-to-run query:
-
-```bash
-uv run setup-rtce --lightning
-```
-
-Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. 
-
 ## Lab 4 — Streaming Agent: Pit Decisions
 
 Create the streaming agent in a new SQL cell:
@@ -498,7 +486,7 @@ SELECT * FROM `pit_decisions`;
 
 Check the Pit Wall. The **AI PIT STRATEGIST** panel should unlock and show the decisions.
 
-## 🧩 Challenge — Social Media Agent (Claude + Real-Time Context Engine)
+## 🧩 Challenge #1 — Social Media Agent (Claude + Real-Time Context Engine)
 
 Now, it's time to switch gears and take on the role of the social media team for River Racing. You've been given access to the live race data via RTCE and need to use AI to generate an engaging social media post. Based on what yuo've learned in the workshop, do the following: 
 
@@ -512,5 +500,20 @@ Feel free to use one of the following prompts to draft your next post:
 - "Write a 3-tweet recap thread of John's race so far."
 
 **Success looks like:** Claude calls `queryData` against `car_state` and `pit_decisions` (you'll see the tool calls in the transcript) and returns a drafted post citing the real lap number, position, and strategy call from your live feed — not invented numbers. If it says the feed is quiet, the race may not be running yet, or RTCE isn't enabled on one of the two topics.
+
+## 🧩 Challenge #2 — Analyze race data with Lightning Queries 
+
+Now, we'll see how this real-time context becomes queryable with Lightning Tables and Lightning Queries. Lightning Queries read an RTCE-enabled topic over low-latency REST, so enable RTCE on `car_telemetry` in the Console first if you haven't already.
+
+From the repo directory, print a ready-to-run query:
+
+```bash
+uv run setup-rtce --lightning
+```
+
+Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. 
+
+**Now, write a new SQL statement to perform analysis on the `pit_decisions` topic**. If you haven't already, make sure that `pit_decisions` has RTCE enabled in the Confluent Cloud Console. Then, edit the `curl` command and `query` provided above to get new insights on `pit_decisions` data. Feel free to get creative with the data! 
+
 
 **← Back to Overview**: [Main README](../../README.md)
