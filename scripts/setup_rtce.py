@@ -78,9 +78,9 @@ def lightning_command(card: dict[str, str]) -> str:
     if missing:
         raise ValueError(
             "Missing credentials: " + ", ".join(missing)
-            + ". Hosted attendees: rerun f1-onboard --paste with the claim email's MCP Setup Command, "
-            "or use the instructor-provided .env file. Standalone users: supply an existing Global "
-            "key through RTCE_API_KEY and RTCE_API_SECRET."
+            + ". Hosted attendees: save your dispenser Env File block as credentials.env "
+            "(it carries the RTCE key), or use the instructor-provided .env file. Standalone "
+            "users: supply an existing Global key through RTCE_API_KEY and RTCE_API_SECRET."
         )
     region, cloud = match.groups()
     url = f"https://sql.{region}.{cloud}.confluent.cloud/query/v1alpha1"
@@ -327,7 +327,7 @@ def resolve_rtce_credentials(
         return card
     print(
         "No saved Global API key pair. Provisioning normally supplies it.\n"
-        "Hosted attendees: import the claim email with f1-onboard --paste or ask your instructor.\n"
+        "Hosted attendees: save your dispenser Env File block as credentials.env, or ask your instructor.\n"
         "Manual creation: Console > Administration > API keys > Add API key; select Global scope.\n"
         "Use an account authorized to read this deployment's topic and Schema Registry.\n"
         + _KEY_HELP,

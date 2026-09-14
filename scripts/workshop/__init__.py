@@ -8,5 +8,7 @@ scoped API keys via the wsa dispenser, never a Console login.
 Entry points (see pyproject.toml [project.scripts]):
   workshop   -> scripts.workshop.cli:main       (creds / validate)
   f1-sql     -> scripts.workshop.sql_shell:main (attendee Flink SQL REPL)
-  f1-onboard -> scripts.workshop.onboard:main   (self-serve: claim-email -> credentials.env)
+
+Self-serve attendees don't run a tool for credentials: they save the dispenser's
+Env File block verbatim as ./credentials.env (see docs/tracks/HOSTED-WORKSHOP.md).
 """

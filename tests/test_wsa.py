@@ -661,9 +661,9 @@ class BuildHandoffTests(unittest.TestCase):
         self.assertIn("uv run workshop creds --csv", out.getvalue())
 
     def test_the_dispenser_upload_runs_after_the_cards(self):
-        # Ordering is the whole point: `creds` appends the RTCE column to the same
-        # build-output.csv the upload reads, so an upload that ran first would email
-        # attendees a card without their MCP setup command.
+        # Ordering is the whole point: `creds` curates the same build-output.csv the
+        # upload reads (down to the four attendee fields, Env File included), so an
+        # upload that ran first would push the wrong columns to the sheet.
         calls: list[str] = []
         (self.root / "wsa.env").write_text("WSA_DISPENSER_SPREADSHEET_ID=1AbC-real\n")
         with (

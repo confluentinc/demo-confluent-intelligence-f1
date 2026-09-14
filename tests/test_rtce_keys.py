@@ -138,74 +138,86 @@ class SectionTests(unittest.TestCase):
         self.assertEqual(creds_mod._rtce_section(self.base(rtce_mcp_endpoint="")), "")
 
 
-class DispenserColumnTests(unittest.TestCase):
-    """The RTCE command has to reach dispenser attendees, who never see a .md card.
-
-    It rides along as an extra column in wsa's build-output.csv, which constrains
-    the header text in two ways that are invisible until an attendee gets a broken
-    email — hence the assertions below.
+class DispenserCsvTests(unittest.TestCase):
+    """The dispenser shows attendees only four fields — Console URL/Username/
+    Password and one paste-ready Env File block. `creds` curates wsa's
+    build-output.csv down to them right before `wsa dispenser-upload` reads it,
+    which constrains the column set and header text in ways that are invisible
+    until an attendee gets a broken claim page — hence the assertions below.
     """
 
+    URL_COL = creds_mod.COLUMNS["console_url"]
+    USER_COL = creds_mod.COLUMNS["console_username"]
+    PW_COL = creds_mod.COLUMNS["console_password"]
+    ENV_COL = creds_mod.ENV_FILE_COLUMN
     PREFIX_COL = creds_mod.COLUMNS["prefix"]
+    SECRET_COL = creds_mod.COLUMNS["kafka_api_secret"]
 
-    def _write(self, tmp: Path, rows: list[dict[str, str]]) -> Path:
-        path = tmp / "build-output.csv"
-        with path.open("w", newline="") as fh:
-            w = csv.DictWriter(fh, fieldnames=list(rows[0]))
-            w.writeheader()
-            w.writerows(rows)
-        return path
+    def _full_row(self, **overrides) -> dict[str, str]:
+        """One freshly-built row: wsa's built-ins, every Terraform column, and the
+        Env File block `creds` stamps on before curation."""
+        row = {
+            "Account": "1",
+            "Email": "a@b.c",
+            self.URL_COL: "https://confluent.cloud/environments/env-111",
+            self.USER_COL: "a@b.c",
+            self.PW_COL: "(from 1Password)",
+            self.PREFIX_COL: "f1wp001",
+            self.SECRET_COL: "SUPER-SECRET",
+            creds_mod.COLUMNS["environment_id"]: "env-111",
+            self.ENV_COL: "F1_PREFIX=f1wp001\nF1_KAFKA_API_SECRET=SUPER-SECRET\n",
+        }
+        row.update(overrides)
+        return row
 
-    def _roundtrip(self, rows, commands):
+    def _roundtrip(self, rows: list[dict[str, str]]):
         with tempfile.TemporaryDirectory() as td:
-            tmp = Path(td)
-            path = self._write(tmp, rows)
-            filled = creds_mod._add_dispenser_column(path, rows, commands)
+            path = Path(td) / "build-output.csv"
+            with path.open("w", newline="") as fh:
+                w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+                w.writeheader()
+                w.writerows(rows)
+            filled = creds_mod._write_dispenser_csv(path, rows)
             with path.open(newline="") as fh:
                 reader = csv.DictReader(fh)
                 return filled, reader.fieldnames, list(reader)
 
-    def test_column_lands_last_and_preserves_other_values(self):
-        # Last matters: wsa appends Claimed By/Timestamp after our columns, and
-        # Code.gs only emails columns to the LEFT of Claimed By.
-        rows = [
-            {"Account": "1", self.PREFIX_COL: "f1wp001", "Confluent Cloud / Console Password": "(from 1Password)"},
-        ]
-        filled, headers, out = self._roundtrip(rows, {"f1wp001": "claude mcp add ..."})
+    def test_keeps_only_the_four_fields_plus_structural(self):
+        filled, headers, out = self._roundtrip([self._full_row()])
         self.assertEqual(filled, 1)
-        self.assertEqual(headers[-1], creds_mod.DISPENSER_RTCE_COLUMN)
-        self.assertEqual(out[0][creds_mod.DISPENSER_RTCE_COLUMN], "claude mcp add ...")
-        # wsa resolves this placeholder itself at upload time; overwriting it with
-        # the password we resolved into the cards would leak it into the sheet.
-        self.assertEqual(out[0]["Confluent Cloud / Console Password"], "(from 1Password)")
+        self.assertEqual(headers, ["Account", "Email", self.URL_COL, self.USER_COL, self.PW_COL, self.ENV_COL])
+        # The individual Terraform secrets are dropped from the sheet...
+        self.assertNotIn(self.SECRET_COL, headers)
+        self.assertNotIn(self.PREFIX_COL, headers)
+        # ...but survive inside the paste-ready Env File block.
+        self.assertIn("F1_KAFKA_API_SECRET=SUPER-SECRET", out[0][self.ENV_COL])
 
-    def test_rows_without_a_command_get_an_empty_cell(self):
-        rows = [
-            {"Account": "1", self.PREFIX_COL: "f1wp001"},
-            {"Account": "2", self.PREFIX_COL: "f1wp002"},
-        ]
-        filled, _, out = self._roundtrip(rows, {"f1wp001": "cmd"})
+    def test_preserves_the_password_placeholder(self):
+        # wsa resolves "(from 1Password)" itself at upload time; overwriting it with
+        # the value we resolved into the cards would leak it into the sheet.
+        _, _, out = self._roundtrip([self._full_row()])
+        self.assertEqual(out[0][self.PW_COL], "(from 1Password)")
+
+    def test_curation_is_idempotent(self):
+        # A curated CSV fed back in yields the same columns and Env File, so a
+        # `workshop creds` re-run after an upload still regenerates the cards.
+        _, _, once = self._roundtrip([self._full_row()])
+        filled, headers, twice = self._roundtrip(once)
+        self.assertEqual(headers, ["Account", "Email", self.URL_COL, self.USER_COL, self.PW_COL, self.ENV_COL])
+        self.assertEqual(twice[0][self.ENV_COL], once[0][self.ENV_COL])
         self.assertEqual(filled, 1)
-        self.assertEqual(out[1][creds_mod.DISPENSER_RTCE_COLUMN], "")
 
-    def test_rerunning_refreshes_rather_than_duplicating(self):
-        rows = [{"Account": "1", self.PREFIX_COL: "f1wp001"}]
-        with tempfile.TemporaryDirectory() as td:
-            path = self._write(Path(td), rows)
-            creds_mod._add_dispenser_column(path, rows, {"f1wp001": "old"})
-            creds_mod._add_dispenser_column(path, rows, {"f1wp001": "new"})
-            with path.open(newline="") as fh:
-                reader = csv.DictReader(fh)
-                headers, out = reader.fieldnames, list(reader)
-        self.assertEqual(headers.count(creds_mod.DISPENSER_RTCE_COLUMN), 1)
-        self.assertEqual(out[0][creds_mod.DISPENSER_RTCE_COLUMN], "new")
+    def test_unstamped_row_counts_as_unfilled(self):
+        filled, _, out = self._roundtrip([self._full_row(**{self.ENV_COL: ""})])
+        self.assertEqual(filled, 0)
+        self.assertEqual(out[0][self.ENV_COL], "")
 
-    def test_header_shape_is_what_the_apps_script_requires(self):
-        header = creds_mod.DISPENSER_RTCE_COLUMN
+    def test_env_file_header_shape_is_what_the_apps_script_requires(self):
+        header = creds_mod.ENV_FILE_COLUMN
         # Code.gs skips any column whose header doesn't split on " / ".
         self.assertIn(" / ", header)
-        # wsa's ensureDispenserColumns substring-matches these to decide whether
-        # to append its own tracking columns — colliding would suppress them and
+        # wsa's ensureDispenserColumns substring-matches these to decide whether to
+        # append its own tracking columns — colliding would suppress them and
         # Code.gs hard-throws without a Claimed By column.
         self.assertNotIn("claimed by", header.lower())
         self.assertNotIn("timestamp", header.lower())

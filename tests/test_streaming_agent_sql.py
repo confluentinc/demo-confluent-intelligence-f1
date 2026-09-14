@@ -7,9 +7,9 @@ TRACKS = (
     "docs/tracks/STANDALONE-DEMO.md",
 )
 SQL_SOURCES = (
-    ("docs/demo-reference/enrichment_anomaly.sql", "CREATE MATERIALIZED TABLE `car_state`"),
+    ("docs/demo-reference/enrichment_anomaly.sql", "CREATE TABLE `car_state`"),
     ("docs/demo-reference/streaming_agent_create_agent.sql", "CREATE AGENT `pit_strategy_agent`"),
-    ("docs/demo-reference/streaming_agent_pit_decisions.sql", "CREATE MATERIALIZED TABLE `pit_decisions`"),
+    ("docs/demo-reference/streaming_agent_pit_decisions.sql", "CREATE TABLE `pit_decisions`"),
     ("docs/demo-reference/granite_tire_forecast.sql", "WITH windowed AS"),
 )
 

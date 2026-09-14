@@ -3,9 +3,13 @@
 #
 # Runs the shared simulator image (var.ecr_image_uri) as a single-task ECS
 # Fargate SERVICE producing car_telemetry + race_standings into THIS attendee's
-# cluster. desired_count=1 + RACE_LOOP means the feed starts automatically on
-# provision and replays back-to-back. Instructors can pause/restart all
-# attendees at once with scripts/instructor (which scales these services).
+# cluster. var.race_autostart picks the provisioned desired_count: 1 (the
+# standalone demo — feed live the moment Terraform returns) or 0 (the workshop —
+# stays quiet until the instructor runs `uv run workshop start-races`, so
+# pre-provisioned accounts don't flow data). RACE_LOOP replays back-to-back once
+# the task is up. desired_count is ignore_changes'd, so runtime scaling (this
+# command, scripts/instructor's fleet fan-out) owns it after the initial apply
+# and a re-apply never restarts or stops a race mid-workshop.
 # =============================================================================
 
 resource "random_id" "suffix" {
@@ -103,13 +107,21 @@ resource "aws_ecs_service" "simulator" {
   name            = "${local.ecs_prefix}-simulator"
   cluster         = aws_ecs_cluster.simulator.id
   task_definition = aws_ecs_task_definition.simulator.arn
-  desired_count   = 1
+  desired_count   = var.race_autostart ? 1 : 0
   launch_type     = "FARGATE"
 
   network_configuration {
     subnets          = var.shared_subnet_ids
     security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = true
+  }
+
+  # desired_count is the initial provisioned state only. Runtime scaling —
+  # `uv run race start/stop` and the instructor fleet scripts — drives it via the
+  # ECS API afterward, so ignore drift here or a plain `terraform apply` would
+  # stop a running race (workshop) or restart a stopped one.
+  lifecycle {
+    ignore_changes = [desired_count]
   }
 
   # The simulator fetches registered schemas on startup, so the topics/tables

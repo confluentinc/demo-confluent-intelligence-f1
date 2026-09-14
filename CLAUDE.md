@@ -252,7 +252,7 @@ Console logins (invited pool users, 1Password passwords, the
 `grant_console_access` RBAC gate), the derived per-track deployment prefixes in
 `scripts/common/deployment_meta.py`, and `resolve_card()`'s precedence order are in the
 **`f1-credentials`** skill (`.claude/skills/f1-credentials/SKILL.md`). Load it before
-touching credential cards, `workshop creds`, `deployment.env`, or `f1-onboard`.
+touching credential cards, `workshop creds`, or `deployment.env`.
 
 ---
 
@@ -309,9 +309,8 @@ attendee walkthrough.
 | `scripts/pitwall/` | `f1-pitwall` live web dashboard — Kafka consumer → FastAPI/websocket → animated browser view; progressive reveal of LAB 3/4 panels; `--mock` offline feed |
 | `scripts/social_feed/` | `f1-social-feed` shared HTTP service for LAB 5 — tails each attendee's Kafka topics, serves `GET /race-feed/{prefix}` + auto OpenAPI spec for the watsonx Orchestrate tool; reuses pitwall consumer; `--mock` offline feed |
 | `scripts/social_feed_rtce/` | `f1-social-feed-rtce` — same OpenAPI tool, but an MCP client to the Real-Time Context Engine (RTCE) instead of Kafka. Reuses `social_feed`'s `FeedState`+`create_app`; new bits are the RTCE MCP client + poller. Global API key via `RTCE_API_KEY/SECRET`; per-attendee endpoint from card `F1_RTCE_MCP_ENDPOINT`; `--probe` validates the live contract |
-| `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md`; `--resolve-op` pulls Console passwords from 1Password; copies the Terraform `rtce_api_key`/`rtce_api_secret` outputs onto each card, and `--rtce-keys` warns when those outputs are missing (the legacy `_mint_rtce_key` CLI path is retained for older workshop commands). Also appends `Real-Time Context Engine / MCP Setup Command` back into build-output.csv so the dispenser carries it (`_add_dispenser_column`, `--no-dispenser-column`) — the `" / "` in that header is the `Provider / Field` slash convention the dispenser's Apps Script groups on: it drives the on-screen web-app credential grouping (`buildCredentialGroups_` in `WebApp.gs`) and the email backup |
+| `scripts/workshop/creds.py` | `workshop creds` — wsa's build-output.csv → `runs/<name>/credentials/*.env,.md`; `--resolve-op` pulls Console passwords from 1Password; copies the Terraform `rtce_api_key`/`rtce_api_secret` outputs onto each card, and `--rtce-keys` warns when those outputs are missing (the legacy `_mint_rtce_key` CLI path is retained for older workshop commands). Also **curates build-output.csv down to the four dispenser columns** before `wsa dispenser-upload` reads it (`_write_dispenser_csv`, `--no-dispenser-column`): Console URL, Console Username, Console Password, and a single paste-ready **Env File** block (`ENV_FILE_COLUMN` = the whole `<prefix>.env`, rendered by `_env_text`). Every other Terraform column — the RTCE MCP command included — is dropped from the sheet; its keys ride inside the Env File block instead. The `" / "` in each kept header is the `Provider / Field` slash convention the dispenser's Apps Script groups on (`buildCredentialGroups_` in `WebApp.gs`, plus the email backup). Re-running against an already-curated CSV reconstructs each card from the Env File cell (`_fields_from_env_text`), so it stays idempotent |
 | `terraform/modules/environment/main.tf` | The environment, plus the `grant_console_access`-gated `confluent_user` lookup + EnvironmentAdmin binding that makes an attendee login useful |
-| `scripts/workshop/onboard.py` | `f1-onboard` — self-serve: wsa claim-email values → local `credentials.env` |
 | `scripts/workshop/validate.py` | `workshop validate` — API-key health checks against one or many cards |
 | `docs/demo-reference/enrichment_anomaly_ai.sql` | LAB 3's Granite/`AI_DETECT_ANOMALIES` variant — `F1_ANOMALY_FN=ai`. EAP-gated, and currently never flags an anomaly. |
 | `docs/demo-reference/orchestrate_social_agent.md` | Canonical LAB 5 Orchestrate agent config (persona, tool, prompts) |

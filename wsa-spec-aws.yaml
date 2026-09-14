@@ -91,6 +91,11 @@ terraform_vars:
   flink_max_cfu: "10"
   seconds_per_lap: "20" # 20s/lap -> 20-minute race (must match the 20s TUMBLE window in LAB 3 SQL)
   race_loop: "true"
+  # Provision each attendee's simulator STOPPED (desired_count=0) so pre-provisioned
+  # accounts don't stream data before the workshop. The instructor starts the fleet
+  # with `uv run workshop start-races` on the day. (Standalone `uv run deploy` leaves
+  # the variable at its `true` default and comes up live.)
+  race_autostart: "false"
   # Bind {email} to their environment as EnvironmentAdmin so the Console login
   # actually shows them something. Requires the user to exist — see the
   # PREREQUISITE note in the header.
@@ -140,15 +145,18 @@ tools_required:
 # confluent_environment resource inside terraform/aws, not by a wsa isolation
 # phase.
 
-# Credential groups — columns in the wsa build CSV and fields in the
-# dispenser claim email. The Console Password field is `source: op`: wsa writes
-# the literal "(from 1Password)" into build-output.csv and only substitutes the
-# real value in memory at `wsa dispenser-upload` time. `uv run workshop creds
-# --resolve-op` does the same substitution for instructor-distributed cards.
-# `uv run workshop creds` turns this CSV into the runs/<name>/credentials/*.env
-# cards our own tools (f1-sql, f1-pitwall, f1-social-feed) expect; `uv run
-# f1-onboard` lets a self-serve attendee rebuild that file from their
-# claim-email values.
+# Credential groups — every column wsa writes into build-output.csv. NOTE these
+# are the *inputs* `uv run workshop creds` reads to build each card, not what the
+# attendee sees: creds turns this CSV into the runs/<name>/credentials/*.env cards
+# our own tools (f1-sql, f1-pitwall, f1-social-feed) expect, and then curates the
+# CSV down to four dispenser columns (Console URL/Username/Password + a single
+# paste-ready Env File block) before `wsa dispenser-upload` reads it — so every
+# field below must stay listed even though only four reach the dispenser. A
+# self-serve attendee saves that Env File block verbatim as their credentials.env. The
+# Console Password field is `source: op`: wsa writes the literal "(from 1Password)"
+# into build-output.csv and only substitutes the real value in memory at
+# `wsa dispenser-upload` time; `uv run workshop creds --resolve-op` does the same
+# substitution for instructor-distributed cards.
 credentials:
   # wsa's CSV always leads with built-in "Account"/"Email" columns before
   # these, so no separate spec-sourced email field is declared here.

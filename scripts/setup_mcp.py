@@ -298,8 +298,9 @@ def cloud_api_credentials(project_root: Path) -> tuple[str, str]:
     ``scripts/reset.py`` reaches for the same pair; do the same here, preferring
     anything already exported.
 
-    Missing is normal — an ``f1-onboard`` attendee has a card and no
-    ``credentials.env`` — so this degrades to empty strings instead of failing.
+    Missing is normal — a workshop attendee's ``credentials.env`` holds the card's
+    F1_* keys but not the org-scoped Cloud key — so this degrades to empty strings
+    instead of failing.
     Only mcp-confluent's org-level tools (connectors, listing environments) need
     them; every Kafka/Flink/SR tool uses the card's keys.
     """
@@ -345,7 +346,8 @@ def warn_on_empty_card_fields(card: dict[str, str]) -> list[str]:
     if missing:
         print("Warning: the credential card is missing values for: " + ", ".join(missing))
         print("  Regenerate it with whichever command created this environment:")
-        print("    uv run deploy | uv run selfservice up | uv run f1-onboard | uv run workshop creds")
+        print("    uv run deploy | uv run selfservice up | uv run workshop creds")
+        print("    (workshop attendee: re-save your dispenser Env File block as credentials.env)")
     return missing
 
 

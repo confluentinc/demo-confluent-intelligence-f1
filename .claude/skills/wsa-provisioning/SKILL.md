@@ -71,9 +71,11 @@ you no longer invoke it from there: `uv run workshop spec-validate|build|clean`
   no code change. Adopting it is **ops**: deploy the Apps Script under a **personal
   Google account** (Confluent Workspace blocks anonymous `Anyone` web-app access),
   container-bound to the inventory Sheet whose ID is this repo's
-  `WSA_DISPENSER_SPREADSHEET_ID`, then hand out the `/exec` URL. Attendees can still
-  self-serve `uv run f1-onboard` their claim-email values into a local `credentials.env`,
-  or an instructor can run
+  `WSA_DISPENSER_SPREADSHEET_ID`, then hand out the `/exec` URL. The dispenser shows each
+  attendee four fields — Console URL / Username / Password and one paste-ready **Env File**
+  block — because `workshop creds` curates build-output.csv down to those before upload
+  (`_write_dispenser_csv`). Attendees save the Env File block verbatim as their own
+  `credentials.env` (no command — just paste it into a file), or an instructor can run
   `uv run workshop creds --csv <run>/build-output.csv --name <name>` and hand
   out `runs/<name>/credentials/<prefix>.{env,md}` directly — same downstream
   tools either way. The upload itself is automatic: `build` calls

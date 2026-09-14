@@ -295,10 +295,11 @@ def _print_next_steps(
   Credential cards:  {cards_dir}
   Attendees:         {attendees}
 
-Races are already running (ECS auto-starts each simulator).
+Races are provisioned STOPPED — no data flows until you start them. Start the
+fleet on the day (ideally once attendees have LAB 3 RUNNING):
 
-  Stop all races:      uv run workshop stop-races
   Start all races:     uv run workshop start-races
+  Stop all races:      uv run workshop stop-races
   Reset for new run:   uv run workshop reset-races
   Validate env health: uv run workshop validate --creds-glob '{cards_dir}*.env'
 
