@@ -1,6 +1,6 @@
 # F1 Pitwall Simulator Hosted Workshop
 
-![F1 Pit Wall Confluent Intelligence architecture](../assets/architecture.png)
+<img src="../assets/architecture.png" alt="F1 Pit Wall Confluent Intelligence architecture" width="1000">
 
 In this workshop, you take on the role of a pit crew for the River Racing F1 team. Starting with just car telemetry data and live race standings, you'll turn that raw data into actionable insights and anomaly monitoring to help your driver make optimal pit decisions. By the end of the workshop, you'll understand how Confluent Intelligence brings together streaming agents, built-in AI functions, and Real-Time Context Engine (RTCE) to power valuable insights on real-time streaming data. 
 
@@ -51,7 +51,12 @@ In this workshop, you take on the role of a pit crew for the River Racing F1 tea
     ```bash
     nano credentials.env
     ```
-3. Paste the **whole Env File block** into it, then save and exit — in `nano`, **Ctrl-O**, **Enter**, **Ctrl-X**.
+3. Paste the entire `Env File` block you received from your instructor into it. Then save and exit: in `nano`, press **Ctrl-O**, then **Enter**, then **Ctrl-X**.
+
+    <img src="../assets/hosted/env-file.png" alt="The Env File block from the credentials card, pasted into a text field" width="700">
+
+> [!NOTE]
+> The pasted lines will collapse onto a single line — this happens in any editor. That's fine — save and exit as normal.
 
 4. Now, you can start the dashboard:
 
@@ -59,7 +64,15 @@ In this workshop, you take on the role of a pit crew for the River Racing F1 tea
     uv run f1-pitwall
     ```
 
-A browser opens at **http://localhost:8000**. **Don't stop this command, and be sure to keep the dashboard open while you work.**
+A browser opens at **http://localhost:8000**.
+
+> [!WARNING]
+> **Leave this terminal tab and the browser tab open for the entire workshop.** The dashboard only runs while `uv run f1-pitwall` keeps running — closing the terminal, stopping the command, or closing the browser tab stops the dashboard.
+
+<img src="../assets/hosted/dashboard1.png" alt="The Pit Wall dashboard with the Anomaly Detection and AI Pit Strategist panels locked" width="700">
+
+> [!NOTE]
+> The **Anomaly Detection** and **AI Pit Strategist** panels start locked. They unlock as you complete the next two labs — Lab 3 (`car_state`) and Lab 4 (`pit_decisions`).
 
 ### 2. Open a SQL workspace
 
@@ -67,17 +80,17 @@ A browser opens at **http://localhost:8000**. **Don't stop this command, and be 
 
 2. You'll land in your environment, **`RIVER-RACING-f1wp###-ENV`**.
 
-    ![The RIVER-RACING environment in the Confluent Cloud Console](../assets/hosted/cc-environment.png)
+    <img src="../assets/hosted/cc-environment.png" alt="The RIVER-RACING environment in the Confluent Cloud Console" width="700">
 
 3. Open the **Flink** tab and click **SQL workspace**.
 
-    ![The Flink page in the Confluent Cloud Console](../assets/hosted/flink-page.png)
+    <img src="../assets/hosted/flink-page.png" alt="The Flink page in the Confluent Cloud Console" width="700">
 
-    ![Flink compute pools with the Open SQL workspace action](../assets/hosted/flink-compute-pools.png)
+    <img src="../assets/hosted/flink-compute-pools.png" alt="Flink compute pools with the Open SQL workspace action" width="700">
 
 4. Set the workspace's **catalog** to your environment and **database** to your cluster (`RIVER-RACING-f1wp###-CLUSTER`), using the dropdowns above the editor.
 
-    ![Selecting the catalog and database in the Flink SQL workspace](../assets/hosted/database-selection.png)
+    <img src="../assets/hosted/database-selection.png" alt="Selecting the catalog and database in the Flink SQL workspace" width="700">
 
 ## Lab 2 — Explore the Environment
 
@@ -193,6 +206,9 @@ Let's get familiar with the topics and data available in the environment.
     WHERE lap > 0;
     ```
 
+> [!WARNING]
+> This cell must keep running for the whole workshop. Don't stop it.
+
 2. Verify the output in a new cell:
 
     ```sql
@@ -203,7 +219,8 @@ Let's get familiar with the topics and data available in the environment.
 
     You should see one row per 20-second lap. At lap 24, `anomaly_tire_temp_fl` becomes `true` and the temperature reaches about 145°C.
 
-### Optional: Forecast tire temperature with new IBM Granite Time Series Models
+<details>
+<summary>Optional: Forecast tire temperature with new IBM Granite Time Series Models</summary>
 
 1. Open a new SQL cell and run the query below. It uses the same 20-second, one-per-lap tire temperature windows, but asks the built-in `AI_FORECAST` function for the next 20 values. The query uses the IBM Granite TinyTimeMixer model built directly into Confluent Cloud. 
 
@@ -255,42 +272,11 @@ Let's get familiar with the topics and data available in the environment.
 
 2. Stop this optional query after you see results so Lab 4 can use the compute pool.
 
-### Query the live race with the Real-Time Context Engine (RTCE)
-
-Now that `car_state` exists, we will wire an AI agent straight to the live streams through Confluent's **Real-Time Context Engine (RTCE)**.
-
-**Enable RTCE in the Console.** RTCE is turned on per topic in the Confluent Cloud Console — nothing is pre-enabled for you. Enable it on the two topics you'll query, `car_telemetry` (the raw sensor stream) and `car_state` (the enriched output you just built):
-
-1. In Confluent Cloud, go to your cluster, then select **Topics**.
-
-    ![The Topics list in the Confluent Cloud Console](../assets/hosted/rtce-topics.png)
-
-2. Go to the **Real-Time Context Engine** column for the `car_telemetry` topic and select **Off**.
-3. Click **Turn on**.
-
-    ![Turning on the Real-Time Context Engine for a topic](../assets/hosted/rtce-turn-on.png)
-
-4. Repeat for **`car_state`**.
-
-Enablement takes a few seconds for each topic. 
-
-**Connect your MCP client.** In a new terminal window, open the repo directory and run:
-
-```bash
-uv run setup-rtce
-```
-
-Choose Claude Code, Codex, or both. The script reads your credential file and configures the RTCE connection. Restart your coding agent afterward.
-
-**Ask about the live race.** Run `claude`, then try:
-
-- "What's the front-left tire temperature on car 88 right now?"
-- "Show me the last 10 telemetry readings for car 88."
-- "Is car 88's front-left tire flagged as anomalous?" *(queries `car_state`)*
-
-Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and only RTCE-enabled topics are exposed. Enable more from the **Topics** page the same way you enabled these two.
+</details>
 
 ## Lab 4 — Streaming Agent: Pit Decisions
+
+Now we'll create a Flink streaming agent that reads `car_state` and asks an LLM for a pit-stop recommendation on every lap.
 
 Create the streaming agent in a new SQL cell:
 
@@ -467,24 +453,74 @@ LATERAL TABLE(AI_RUN_AGENT(
 ));
 ```
 
+> [!WARNING]
+> This cell must keep running for the whole workshop. Don't stop it.
+
 Then run:
 ```sql
 SELECT * FROM `pit_decisions`;
 ```
 
-### Expected result
+Open the [dashboard](http://localhost:8000) to see the agent recommendation for lap 24.
 
-| Lap | Position | Suggestion | What's happening |
-|-----|----------|-----------|------------------|
-| 1–20 | P3 → P1 | STAY OUT | Competitive, stable |
-| 21–23 | P1 → P8 | PIT SOON | Aging SOFTs need a stop soon |
-| **24** | **P8** | **PIT NOW** | **Front-left anomaly at 145°C triggers the scheduled stop** |
-| 25 | P14 | STAY OUT | Fresh MEDIUMs after the stop |
-| 26–60 | P14 → P1–P2 | STAY OUT | Fastest car on track, climbs back |
+<img src="../assets/hosted/dashboard2.png" alt="The Pit Wall dashboard with the Anomaly Detection and AI Pit Strategist panels unlocked, showing the PIT NOW call at lap 24" width="700">
 
-**Net result: P8 at the agent's call → P1–P2 at finish.**
+## Lab 5 — Query the Live Race with the Real-Time Context Engine (RTCE)
 
-Check the Pit Wall. The **AI PIT STRATEGIST** panel should unlock and show the decisions.
+Now that `car_state` exists, we will wire an AI agent straight to the live streams through Confluent's **Real-Time Context Engine (RTCE)**.
+
+**Enable RTCE in the Console.** RTCE is turned on per topic in the Confluent Cloud Console — nothing is pre-enabled for you. Enable it on the two topics you'll query, `car_telemetry` (the raw sensor stream) and `car_state` (the enriched output you just built):
+
+1. Open the **[Topics](https://confluent.cloud/go/topics)** UI — it takes you straight to your cluster's topics.
+
+    <img src="../assets/hosted/rtce-topics.png" alt="The Topics list in the Confluent Cloud Console" width="700">
+
+2. Go to the **Real-Time Context Engine** column for the `car_telemetry` topic and select **Off**.
+3. Click **Turn on**.
+
+    <img src="../assets/hosted/rtce-turn-on.png" alt="Turning on the Real-Time Context Engine for a topic" width="700">
+
+4. Repeat for **`car_state`**.
+
+> [!NOTE]
+> Enablement can take a few minutes per topic. Wait for it to show **On** before continuing.
+
+**Connect your MCP client.** In a new terminal window, open the repo directory and run:
+
+```bash
+uv run setup-rtce
+```
+
+Choose Claude Code, Codex, or both. The script reads your credential file and configures the RTCE connection. Restart your coding agent afterward.
+
+> [!NOTE]
+> It can take 1-2 minutes to connect to RTCE. Run `/mcp` and check that `real-time-context-engine` shows as enabled/connected before asking about the live race.
+
+**Ask about the live race.** Run `claude`, then try each of these:
+
+*(queries `listTopics`)*
+```text
+What topics do I have access to in the Real-Time Context Engine?
+```
+
+<img src="../assets/hosted/rtce-listtopics.png" alt="Claude listing the topics enabled in the Real-Time Context Engine" width="700">
+
+```text
+What's the front-left tire temperature on car 88 right now?
+```
+
+<img src="../assets/hosted/rtce-cartemp.png" alt="Claude answering the front-left tire temperature question by calling the Real-Time Context Engine" width="700">
+
+```text
+Show me the last 10 telemetry readings for car 88.
+```
+
+*(queries `car_state`)*
+```text
+Is car 88's front-left tire flagged as anomalous?
+```
+
+Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and only RTCE-enabled topics are exposed. Enable more from the **Topics** page the same way you enabled these two.
 
 ## 🧩 Challenge #1 — Social Media Agent (Claude + Real-Time Context Engine)
 
@@ -513,7 +549,18 @@ uv run setup-rtce --lightning
 
 Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. 
 
-**Now, write a new SQL statement to perform analysis on the `pit_decisions` topic**. If you haven't already, make sure that `pit_decisions` has RTCE enabled in the Confluent Cloud Console. Then, edit the `curl` command and `query` provided above to get new insights on `pit_decisions` data. Feel free to get creative with the data! 
+**Your challenge:** enable RTCE on `pit_decisions` in the Console. Then edit the `curl` command's `query` to find out what tire compound the agent recommended on lap 24, and why.
+
+<details>
+<summary>Hint</summary>
+
+```sql
+SELECT lap, <column>, <column> FROM pit_decisions WHERE lap = 24 LIMIT 1
+```
+
+Fill in the first `<column>` with the recommended tire compound, and the second with the agent's reasoning for that call.
+
+</details>
 
 
 **← Back to Overview**: [Main README](../../README.md)
