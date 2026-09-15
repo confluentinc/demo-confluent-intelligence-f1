@@ -209,7 +209,8 @@ Let's get familiar with the topics and data available in the environment.
 
     You should see one row per 20-second lap. At lap 24, `anomaly_tire_temp_fl` becomes `true` and the temperature reaches about 145°C.
 
-### Optional: Forecast tire temperature with new IBM Granite Time Series Models
+<details>
+<summary>Optional: Forecast tire temperature with new IBM Granite Time Series Models</summary>
 
 1. Open a new SQL cell and run the query below. It uses the same 20-second, one-per-lap tire temperature windows, but asks the built-in `AI_FORECAST` function for the next 20 values. The query uses the IBM Granite TinyTimeMixer model built directly into Confluent Cloud. 
 
@@ -261,40 +262,7 @@ Let's get familiar with the topics and data available in the environment.
 
 2. Stop this optional query after you see results so Lab 4 can use the compute pool.
 
-### Query the live race with the Real-Time Context Engine (RTCE)
-
-Now that `car_state` exists, we will wire an AI agent straight to the live streams through Confluent's **Real-Time Context Engine (RTCE)**.
-
-**Enable RTCE in the Console.** RTCE is turned on per topic in the Confluent Cloud Console — nothing is pre-enabled for you. Enable it on the two topics you'll query, `car_telemetry` (the raw sensor stream) and `car_state` (the enriched output you just built):
-
-1. In Confluent Cloud, go to your cluster, then select **Topics**.
-
-    ![The Topics list in the Confluent Cloud Console](../assets/hosted/rtce-topics.png)
-
-2. Go to the **Real-Time Context Engine** column for the `car_telemetry` topic and select **Off**.
-3. Click **Turn on**.
-
-    ![Turning on the Real-Time Context Engine for a topic](../assets/hosted/rtce-turn-on.png)
-
-4. Repeat for **`car_state`**.
-
-Enablement takes a few seconds for each topic. 
-
-**Connect your MCP client.** In a new terminal window, open the repo directory and run:
-
-```bash
-uv run setup-rtce
-```
-
-Choose Claude Code, Codex, or both. The script reads your credential file and configures the RTCE connection. Restart your coding agent afterward.
-
-**Ask about the live race.** Run `claude`, then try:
-
-- "What's the front-left tire temperature on car 88 right now?"
-- "Show me the last 10 telemetry readings for car 88."
-- "Is car 88's front-left tire flagged as anomalous?" *(queries `car_state`)*
-
-Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and only RTCE-enabled topics are exposed. Enable more from the **Topics** page the same way you enabled these two.
+</details>
 
 ## Lab 4 — Streaming Agent: Pit Decisions
 
@@ -482,6 +450,43 @@ Then run:
 ```sql
 SELECT * FROM `pit_decisions`;
 ```
+
+Open the [dashboard](http://localhost:8000) to see the agent recommendation for lap 24.
+
+## Lab 5 — Query the Live Race with the Real-Time Context Engine (RTCE)
+
+Now that `car_state` exists, we will wire an AI agent straight to the live streams through Confluent's **Real-Time Context Engine (RTCE)**.
+
+**Enable RTCE in the Console.** RTCE is turned on per topic in the Confluent Cloud Console — nothing is pre-enabled for you. Enable it on the two topics you'll query, `car_telemetry` (the raw sensor stream) and `car_state` (the enriched output you just built):
+
+1. In Confluent Cloud, go to your cluster, then select **Topics**.
+
+    ![The Topics list in the Confluent Cloud Console](../assets/hosted/rtce-topics.png)
+
+2. Go to the **Real-Time Context Engine** column for the `car_telemetry` topic and select **Off**.
+3. Click **Turn on**.
+
+    ![Turning on the Real-Time Context Engine for a topic](../assets/hosted/rtce-turn-on.png)
+
+4. Repeat for **`car_state`**.
+
+Enablement takes a few seconds for each topic. 
+
+**Connect your MCP client.** In a new terminal window, open the repo directory and run:
+
+```bash
+uv run setup-rtce
+```
+
+Choose Claude Code, Codex, or both. The script reads your credential file and configures the RTCE connection. Restart your coding agent afterward.
+
+**Ask about the live race.** Run `claude`, then try:
+
+- "What's the front-left tire temperature on car 88 right now?"
+- "Show me the last 10 telemetry readings for car 88."
+- "Is car 88's front-left tire flagged as anomalous?" *(queries `car_state`)*
+
+Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and only RTCE-enabled topics are exposed. Enable more from the **Topics** page the same way you enabled these two.
 
 ## 🧩 Challenge #1 — Social Media Agent (Claude + Real-Time Context Engine)
 
