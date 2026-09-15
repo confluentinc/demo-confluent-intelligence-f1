@@ -482,8 +482,8 @@ Now that `car_state` exists, we will wire an AI agent straight to the live strea
 
 4. Repeat for **`car_state`**.
 
-    > [!NOTE]
-    > Enablement can take a few minutes per topic. Wait for it to show **On** before continuing.
+> [!NOTE]
+> Enablement can take a few minutes per topic. Wait for it to show **On** before continuing.
 
 **Connect your MCP client.** In a new terminal window, open the repo directory and run:
 
