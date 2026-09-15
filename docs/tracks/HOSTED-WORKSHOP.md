@@ -59,7 +59,10 @@ In this workshop, you take on the role of a pit crew for the River Racing F1 tea
     uv run f1-pitwall
     ```
 
-A browser opens at **http://localhost:8000**. **Don't stop this command, and be sure to keep the dashboard open while you work.**
+A browser opens at **http://localhost:8000**.
+
+> [!WARNING]
+> **Leave this terminal tab and the browser tab open for the entire workshop.** The dashboard only runs while `uv run f1-pitwall` keeps running — closing the terminal, stopping the command, or closing the browser tab stops the dashboard.
 
 ### 2. Open a SQL workspace
 
@@ -193,6 +196,9 @@ Let's get familiar with the topics and data available in the environment.
     WHERE lap > 0;
     ```
 
+> [!WARNING]
+> This cell must keep running for the whole workshop. Don't stop it.
+
 2. Verify the output in a new cell:
 
     ```sql
@@ -291,6 +297,8 @@ Choose Claude Code, Codex, or both. The script reads your credential file and co
 Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and only RTCE-enabled topics are exposed. Enable more from the **Topics** page the same way you enabled these two.
 
 ## Lab 4 — Streaming Agent: Pit Decisions
+
+Now we'll create a Flink streaming agent that reads `car_state` and asks an LLM for a pit-stop recommendation on every lap.
 
 Create the streaming agent in a new SQL cell:
 
@@ -467,24 +475,13 @@ LATERAL TABLE(AI_RUN_AGENT(
 ));
 ```
 
+> [!WARNING]
+> This cell must keep running for the whole workshop. Don't stop it.
+
 Then run:
 ```sql
 SELECT * FROM `pit_decisions`;
 ```
-
-### Expected result
-
-| Lap | Position | Suggestion | What's happening |
-|-----|----------|-----------|------------------|
-| 1–20 | P3 → P1 | STAY OUT | Competitive, stable |
-| 21–23 | P1 → P8 | PIT SOON | Aging SOFTs need a stop soon |
-| **24** | **P8** | **PIT NOW** | **Front-left anomaly at 145°C triggers the scheduled stop** |
-| 25 | P14 | STAY OUT | Fresh MEDIUMs after the stop |
-| 26–60 | P14 → P1–P2 | STAY OUT | Fastest car on track, climbs back |
-
-**Net result: P8 at the agent's call → P1–P2 at finish.**
-
-Check the Pit Wall. The **AI PIT STRATEGIST** panel should unlock and show the decisions.
 
 ## 🧩 Challenge #1 — Social Media Agent (Claude + Real-Time Context Engine)
 
