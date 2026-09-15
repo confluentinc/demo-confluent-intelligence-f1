@@ -1,6 +1,6 @@
 # F1 Pitwall Simulator Hosted Workshop
 
-<img src="../assets/architecture.png" alt="F1 Pit Wall Confluent Intelligence architecture" width="700">
+<img src="../assets/architecture.png" alt="F1 Pit Wall Confluent Intelligence architecture" width="1000">
 
 In this workshop, you take on the role of a pit crew for the River Racing F1 team. Starting with just car telemetry data and live race standings, you'll turn that raw data into actionable insights and anomaly monitoring to help your driver make optimal pit decisions. By the end of the workshop, you'll understand how Confluent Intelligence brings together streaming agents, built-in AI functions, and Real-Time Context Engine (RTCE) to power valuable insights on real-time streaming data. 
 
@@ -55,8 +55,8 @@ In this workshop, you take on the role of a pit crew for the River Racing F1 tea
 
     <img src="../assets/hosted/env-file.png" alt="The Env File block from the credentials card, pasted into a text field" width="700">
 
-    > [!NOTE]
-    > The pasted lines will collapse onto a single line — this happens in any editor. That's fine — save and exit as normal.
+> [!NOTE]
+> The pasted lines will collapse onto a single line — this happens in any editor. That's fine — save and exit as normal.
 
 4. Now, you can start the dashboard:
 
@@ -550,6 +550,17 @@ uv run setup-rtce --lightning
 Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. 
 
 **Now, write a new SQL statement to perform analysis on the `pit_decisions` topic**. If you haven't already, make sure that `pit_decisions` has RTCE enabled in the Confluent Cloud Console. Then, edit the `curl` command and `query` provided above to get new insights on `pit_decisions` data. Feel free to get creative with the data! 
+
+```sql
+SELECT ___ FROM pit_decisions WHERE ___ ORDER BY lap DESC LIMIT 10
+```
+
+<details>
+<summary>Hint</summary>
+
+Filter on the `suggestion` column for laps where the agent recommended something other than `STAY OUT` — that surfaces just the laps where it called for a pit stop.
+
+</details>
 
 
 **← Back to Overview**: [Main README](../../README.md)
