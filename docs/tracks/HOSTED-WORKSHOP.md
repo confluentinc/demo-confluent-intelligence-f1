@@ -549,16 +549,16 @@ uv run setup-rtce --lightning
 
 Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. 
 
-**Now, write a new SQL statement to perform analysis on the `pit_decisions` topic**. If you haven't already, make sure that `pit_decisions` has RTCE enabled in the Confluent Cloud Console. Then, edit the `curl` command and `query` provided above to get new insights on `pit_decisions` data. Feel free to get creative with the data! 
-
-```sql
-SELECT ___ FROM pit_decisions WHERE ___ ORDER BY lap DESC LIMIT 10
-```
+**Your challenge:** enable RTCE on `pit_decisions` in the Console. Then edit the `curl` command's `query` to find out what tire compound the agent recommended on lap 24, and why.
 
 <details>
 <summary>Hint</summary>
 
-Filter on the `suggestion` column for laps where the agent recommended something other than `STAY OUT` — that surfaces just the laps where it called for a pit stop.
+```sql
+SELECT lap, <column>, <column> FROM pit_decisions WHERE lap = 24 LIMIT 1
+```
+
+Fill in the first `<column>` with the recommended tire compound, and the second with the agent's reasoning for that call.
 
 </details>
 
