@@ -51,7 +51,10 @@ In this workshop, you take on the role of a pit crew for the River Racing F1 tea
     ```bash
     nano credentials.env
     ```
-3. Paste the **whole Env File block** into it, then save and exit — in `nano`, **Ctrl-O**, **Enter**, **Ctrl-X**.
+3. Paste the entire `Env File` block you received from your instructor into it. Then save and exit: in `nano`, press **Ctrl-O**, then **Enter**, then **Ctrl-X**.
+
+    > [!NOTE]
+    > The pasted lines will collapse onto a single line — this happens in any editor. That's fine — save and exit as normal.
 
 4. Now, you can start the dashboard:
 
@@ -63,6 +66,11 @@ A browser opens at **http://localhost:8000**.
 
 > [!WARNING]
 > **Leave this terminal tab and the browser tab open for the entire workshop.** The dashboard only runs while `uv run f1-pitwall` keeps running — closing the terminal, stopping the command, or closing the browser tab stops the dashboard.
+
+![The Pit Wall dashboard with the Anomaly Detection and AI Pit Strategist panels locked](../assets/hosted/dashboard1.png)
+
+> [!NOTE]
+> The **Anomaly Detection** and **AI Pit Strategist** panels start locked. They unlock as you complete the next two labs — Lab 3 (`car_state`) and Lab 4 (`pit_decisions`).
 
 ### 2. Open a SQL workspace
 
