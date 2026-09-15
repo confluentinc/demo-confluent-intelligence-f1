@@ -1,6 +1,6 @@
 # F1 Pitwall Simulator Hosted Workshop
 
-![F1 Pit Wall Confluent Intelligence architecture](../assets/architecture.png)
+<img src="../assets/architecture.png" alt="F1 Pit Wall Confluent Intelligence architecture" width="700">
 
 In this workshop, you take on the role of a pit crew for the River Racing F1 team. Starting with just car telemetry data and live race standings, you'll turn that raw data into actionable insights and anomaly monitoring to help your driver make optimal pit decisions. By the end of the workshop, you'll understand how Confluent Intelligence brings together streaming agents, built-in AI functions, and Real-Time Context Engine (RTCE) to power valuable insights on real-time streaming data. 
 
@@ -53,6 +53,8 @@ In this workshop, you take on the role of a pit crew for the River Racing F1 tea
     ```
 3. Paste the entire `Env File` block you received from your instructor into it. Then save and exit: in `nano`, press **Ctrl-O**, then **Enter**, then **Ctrl-X**.
 
+    <img src="../assets/hosted/env-file.png" alt="The Env File block from the credentials card, pasted into a text field" width="700">
+
     > [!NOTE]
     > The pasted lines will collapse onto a single line — this happens in any editor. That's fine — save and exit as normal.
 
@@ -67,7 +69,7 @@ A browser opens at **http://localhost:8000**.
 > [!WARNING]
 > **Leave this terminal tab and the browser tab open for the entire workshop.** The dashboard only runs while `uv run f1-pitwall` keeps running — closing the terminal, stopping the command, or closing the browser tab stops the dashboard.
 
-![The Pit Wall dashboard with the Anomaly Detection and AI Pit Strategist panels locked](../assets/hosted/dashboard1.png)
+<img src="../assets/hosted/dashboard1.png" alt="The Pit Wall dashboard with the Anomaly Detection and AI Pit Strategist panels locked" width="700">
 
 > [!NOTE]
 > The **Anomaly Detection** and **AI Pit Strategist** panels start locked. They unlock as you complete the next two labs — Lab 3 (`car_state`) and Lab 4 (`pit_decisions`).
@@ -78,17 +80,17 @@ A browser opens at **http://localhost:8000**.
 
 2. You'll land in your environment, **`RIVER-RACING-f1wp###-ENV`**.
 
-    ![The RIVER-RACING environment in the Confluent Cloud Console](../assets/hosted/cc-environment.png)
+    <img src="../assets/hosted/cc-environment.png" alt="The RIVER-RACING environment in the Confluent Cloud Console" width="700">
 
 3. Open the **Flink** tab and click **SQL workspace**.
 
-    ![The Flink page in the Confluent Cloud Console](../assets/hosted/flink-page.png)
+    <img src="../assets/hosted/flink-page.png" alt="The Flink page in the Confluent Cloud Console" width="700">
 
-    ![Flink compute pools with the Open SQL workspace action](../assets/hosted/flink-compute-pools.png)
+    <img src="../assets/hosted/flink-compute-pools.png" alt="Flink compute pools with the Open SQL workspace action" width="700">
 
 4. Set the workspace's **catalog** to your environment and **database** to your cluster (`RIVER-RACING-f1wp###-CLUSTER`), using the dropdowns above the editor.
 
-    ![Selecting the catalog and database in the Flink SQL workspace](../assets/hosted/database-selection.png)
+    <img src="../assets/hosted/database-selection.png" alt="Selecting the catalog and database in the Flink SQL workspace" width="700">
 
 ## Lab 2 — Explore the Environment
 
@@ -469,12 +471,12 @@ Now that `car_state` exists, we will wire an AI agent straight to the live strea
 
 1. In Confluent Cloud, go to your cluster, then select **Topics**.
 
-    ![The Topics list in the Confluent Cloud Console](../assets/hosted/rtce-topics.png)
+    <img src="../assets/hosted/rtce-topics.png" alt="The Topics list in the Confluent Cloud Console" width="700">
 
 2. Go to the **Real-Time Context Engine** column for the `car_telemetry` topic and select **Off**.
 3. Click **Turn on**.
 
-    ![Turning on the Real-Time Context Engine for a topic](../assets/hosted/rtce-turn-on.png)
+    <img src="../assets/hosted/rtce-turn-on.png" alt="Turning on the Real-Time Context Engine for a topic" width="700">
 
 4. Repeat for **`car_state`**.
 
