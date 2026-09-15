@@ -496,16 +496,29 @@ Choose Claude Code, Codex, or both. The script reads your credential file and co
 > [!NOTE]
 > It can take 1-2 minutes to connect to RTCE. Run `/mcp` and check that `real-time-context-engine` shows as enabled/connected before asking about the live race.
 
-**Ask about the live race.** Run `claude`, then try:
+**Ask about the live race.** Run `claude`, then try each of these:
 
-- `What topics do I have access to in the Real-Time Context Engine?` *(queries `listTopics`)*
-- `What's the front-left tire temperature on car 88 right now?`
-- `Show me the last 10 telemetry readings for car 88.`
-- `Is car 88's front-left tire flagged as anomalous?` *(queries `car_state`)*
+*(queries `listTopics`)*
+```text
+What topics do I have access to in the Real-Time Context Engine?
+```
 
 <img src="../assets/hosted/rtce-listtopics.png" alt="Claude listing the topics enabled in the Real-Time Context Engine" width="700">
 
+```text
+What's the front-left tire temperature on car 88 right now?
+```
+
 <img src="../assets/hosted/rtce-cartemp.png" alt="Claude answering the front-left tire temperature question by calling the Real-Time Context Engine" width="700">
+
+```text
+Show me the last 10 telemetry readings for car 88.
+```
+
+*(queries `car_state`)*
+```text
+Is car 88's front-left tire flagged as anomalous?
+```
 
 Three tools come with it — `listTopics`, `getMetadata`, `queryData` — and only RTCE-enabled topics are exposed. Enable more from the **Topics** page the same way you enabled these two.
 
