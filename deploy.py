@@ -314,16 +314,23 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
     # toward the same name.
     suggested, source = _resolve_prefix(root, cfg["owner_email"], _explicit_prefix())
     print(f"  (prefix {suggested!r} — {_PREFIX_SOURCES[source]})")
-    while True:
-        prefix = prompt_with_default(f"Prefix for this deployment (alphanumeric, max {meta.MAX_PREFIX_LEN})", suggested)
-        problem = meta.validate_prefix(prefix)
-        if not problem:
-            break
-        print(f"  {problem}")
-    # An answered prompt is explicit, so re-resolve: refuse a value that
-    # contradicts live state instead of orphaning the deployed resources.
-    resolved, _source = _resolve_prefix(root, cfg["owner_email"], prefix)
-    cfg["prefix"] = _validated_prefix_or_exit(resolved)
+    if source == "state":
+        # Locked by the deployed environment: any other answer would be refused,
+        # so don't ask.
+        cfg["prefix"] = _validated_prefix_or_exit(suggested)
+    else:
+        while True:
+            prefix = prompt_with_default(
+                f"Prefix for this deployment (alphanumeric, max {meta.MAX_PREFIX_LEN})", suggested
+            )
+            problem = meta.validate_prefix(prefix)
+            if not problem:
+                break
+            print(f"  {problem}")
+        # An answered prompt is explicit, so re-resolve: refuse a value that
+        # contradicts live state instead of orphaning the deployed resources.
+        resolved, _source = _resolve_prefix(root, cfg["owner_email"], prefix)
+        cfg["prefix"] = _validated_prefix_or_exit(resolved)
 
     # `uv run api-keys create` saves these to credentials.env; when both are
     # there, use them rather than re-asking for values the user just generated.
