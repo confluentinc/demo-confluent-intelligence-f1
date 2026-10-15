@@ -90,7 +90,7 @@ The provisioning step sets up source tables for car telemetry, live race standin
 2. Paste this statement into one SQL cell and run it. Wait for it to show **Running** (leave it running for the rest of the walkthrough).
 
     ```sql
-    CREATE TABLE `car_state` WITH ('changelog.mode' = 'append') AS
+    CREATE TABLE `car_state` WITH ('changelog.mode' = 'append', 'kafka.consumer.isolation-level' = 'read-uncommitted') AS
     WITH enriched AS (
       SELECT
         t.car_number, t.event_time, t.lap,
@@ -262,7 +262,7 @@ Next we create the `pit_decisions` table, which invokes `pit_strategy_agent` on 
 1. Create the `pit_decisions` table in your SQL Workspace (leave this query running):
 
     ```sql
-    CREATE TABLE `pit_decisions` WITH ('changelog.mode' = 'append') AS
+    CREATE TABLE `pit_decisions` WITH ('changelog.mode' = 'append', 'kafka.consumer.isolation-level' = 'read-uncommitted') AS
     SELECT
       cs.car_number, cs.lap, cs.`position`,
       cs.tire_compound AS tire_compound_current, cs.tire_age_laps, cs.anomaly_tire_temp_fl,

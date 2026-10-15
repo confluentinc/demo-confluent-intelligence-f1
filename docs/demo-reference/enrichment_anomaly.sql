@@ -35,7 +35,7 @@
 --      F1_ANOMALY_FN=ai uv run reset --with-labs
 --      uv run f1-sql --file docs/demo-reference/enrichment_anomaly_ai.sql
 
-CREATE TABLE `car_state` WITH ('changelog.mode' = 'append') AS
+CREATE TABLE `car_state` WITH ('changelog.mode' = 'append', 'kafka.consumer.isolation-level' = 'read-uncommitted') AS
 WITH enriched AS (
   SELECT
     t.car_number, t.event_time, t.lap,

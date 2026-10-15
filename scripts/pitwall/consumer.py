@@ -181,6 +181,7 @@ def _build_consumer(creds: dict[str, str], error_cb=None) -> Consumer:
             "group.id": f"f1-pitwall-{uuid.uuid4().hex[:8]}",
             "enable.auto.commit": False,
             "auto.offset.reset": "earliest",
+            "isolation.level": "read_uncommitted",
             "log_level": 0,
         }
     except KeyError as e:

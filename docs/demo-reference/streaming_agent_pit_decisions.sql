@@ -22,7 +22,7 @@
 -- Uses earliest-offset so it processes all race laps. car_state emits one row
 -- per 20-second race lap, so the agent is called once per lap.
 
-CREATE TABLE `pit_decisions` WITH ('changelog.mode' = 'append') AS
+CREATE TABLE `pit_decisions` WITH ('changelog.mode' = 'append', 'kafka.consumer.isolation-level' = 'read-uncommitted') AS
 SELECT
   cs.car_number, cs.lap, cs.`position`,
   cs.tire_compound AS tire_compound_current, cs.tire_age_laps, cs.anomaly_tire_temp_fl,
