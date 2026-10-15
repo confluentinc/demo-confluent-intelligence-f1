@@ -162,6 +162,14 @@ _TRANSIENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
 )
 
 
+# The Confluent provider auto-names Flink statements `tf-<timestamp>-<uuid>` and
+# can POST one twice (first POST lands, the response is lost, the retry gets 409).
+# The statement exists server-side but is missing from state. That "already
+# exists" is NOT a collision: the name is unique per attempt and the DDL is
+# CREATE ... IF NOT EXISTS, so a re-apply submits a fresh statement and succeeds.
+# Checked before the permanent table, which would otherwise match "already exists".
+_ORPHANED_STATEMENT = re.compile(r'Statement with name "tf-[^"]*" already exists', re.IGNORECASE)
+
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _GUTTER = re.compile(r"^[╷│╵][ \t]?", re.MULTILINE)
 _WHITESPACE = re.compile(r"\s+")
@@ -207,6 +215,8 @@ def classify_apply_failure(output: str) -> tuple[bool, str]:
     turn a recoverable blip into a failed deploy.
     """
     lines, flat = _normalise(output)
+    if _ORPHANED_STATEMENT.search(lines) or _ORPHANED_STATEMENT.search(flat):
+        return True, "an orphaned Flink statement (the re-apply is a no-op)"
     for label, pattern in _PERMANENT_PATTERNS:
         if pattern.search(lines) or pattern.search(flat):
             return False, label

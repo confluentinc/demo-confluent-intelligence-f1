@@ -114,6 +114,13 @@ Error: error updating Kafka Cluster "lkc-abc123": 409 Conflict: another operatio
 already in progress for this cluster
 """
 
+# --- SHAPE: provider double-POST of an auto-named Flink statement (409) -------
+FLINK_STATEMENT_ORPHANED = """
+Error: error creating Flink Statement "": 409 Conflict: Statement with name \
+"tf-2026-10-15-151220-ec8bb612-81f5-423c-9915-76480c7dc986" already exists.
+You can delete the existing statement, run a new statement with a different name.
+"""
+
 # A provider error nothing in either table matches.
 UNKNOWN_FAILURE = """
 Error: error creating Flink Connection: the moon is in the wrong phase
@@ -158,6 +165,11 @@ class ClassificationTests(unittest.TestCase):
 
     def test_an_existing_flink_table_is_permanent(self):
         self.assertPermanent(FLINK_TABLE_EXISTS, "the resource already exists")
+
+    def test_an_orphaned_auto_named_flink_statement_is_retryable(self):
+        self.assertTransient(
+            FLINK_STATEMENT_ORPHANED, "an orphaned Flink statement (the re-apply is a no-op)"
+        )
 
     def test_a_dns_failure_is_transient(self):
         self.assertTransient(NETWORK_FAILURE, "DNS lookup failed")
