@@ -11,7 +11,10 @@ Provides functions for:
 
 import getpass
 import os
+import shutil
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 from dotenv import dotenv_values, set_key
@@ -150,6 +153,32 @@ def check_docker_running() -> bool:
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
+
+
+def start_docker(timeout: int = 180) -> bool:
+    """Try to start a Docker daemon: Docker Desktop first, then Colima.
+
+    Returns True once `docker info` succeeds, False if neither runtime is
+    installed or the daemon is not up within `timeout` seconds.
+    """
+    if shutil.which("docker") is None:
+        return False
+    deadline = time.monotonic() + timeout
+    if sys.platform == "darwin" and Path("/Applications/Docker.app").exists():
+        print("  Starting Docker Desktop...")
+        subprocess.run(["open", "-a", "Docker"], capture_output=True)
+        while time.monotonic() < deadline:
+            if check_docker_running():
+                return True
+            time.sleep(3)
+    if shutil.which("colima"):
+        print("  Starting Colima...")
+        try:
+            subprocess.run(["colima", "start"], timeout=max(deadline - time.monotonic(), 60))
+        except subprocess.TimeoutExpired:
+            pass
+        return check_docker_running()
+    return False
 
 
 def check_aws_configured() -> bool:
