@@ -4,15 +4,14 @@
 
 > [!NOTE]
 >
-> Use this path when you have your own Confluent Cloud login and password, and will provision your own environment. **If your instructor gave you a workshop login and password,** use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md).
+> Use this path when you have your own Confluent Cloud login and will provision a Confluent-only environment (`uv run selfservice up`) with the race simulator running on your machine. **If your instructor gave you a workshop login and password,** use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md). **If you are deploying the full AWS-backed architecture (Postgres CDC + ECS Fargate simulator) with `uv run deploy`,** use the [standalone demo walkthrough](./STANDALONE-DEMO.md).
 
-## Before you start
+## 0. Clone, install, and provision
 
-You need a [Confluent Cloud account](https://confluent.cloud/signup), as well as AWS Bedrock API keys in `us-east-1` region. If you don't have these, you can easily create them yourself with `uv run api-keys create` if you are logged into the AWS CLI.
+You need a [Confluent Cloud account](https://confluent.cloud/signup) and AWS Bedrock API keys in `us-east-1`. If you don't have Bedrock keys yet, you can mint scoped IAM keys with `uv run api-keys create` once you are logged into the AWS CLI.
 
-## Clone, install, and provision
+1. Install the prerequisites:
 
-1. Install the prerequisites: 
     <details>
     <summary>for Mac</summary>
 
@@ -51,107 +50,99 @@ You need a [Confluent Cloud account](https://confluent.cloud/signup), as well as
     confluent login
     ```
 
-4. Finally, provision the environment with the following command:
+4. Provision the environment:
 
     ```bash
     uv run selfservice up
     ```
 
-    The command asks for your Confluent credentials, email, and AWS Bedrock credentials. It creates the workshop infrastructure you'll need for following steps. 
+    The command asks for your Confluent credentials, email, and AWS Bedrock credentials, then provisions your Confluent environment, cluster, Flink compute pool, source topics, `driver_race_history` seed data, and Bedrock model connections. It also writes your credential card to `runs/selfservice/credentials/DEMO.env` and records it as `F1_CARD` in `credentials.env` so local tools (`f1-race`, `f1-pitwall`, `setup-rtce`) find it automatically.
 
-## Enhance the data with built-in ML functions and start the race
+    > **Tip:** Pass `uv run selfservice up --with-labs` if you want `car_state`, `pit_strategy_agent`, and `pit_decisions` prebuilt for you instead of creating them in Sections 1–3.
 
-The prerequisites set up some basic source topics for car telemetry and race details. However, we want to enhance these with Confluent's built-in AI capabilities. In this section, we will create a new `car-state` topic that uses Confluent's built-in `ML-DETECT_ANOMALIES` function to identify any anomalies in the car's tire temperature. If there are any anomalous tire temperatures reported, that is a clear sign that the car needs to pit. 
+## 1. Enhance the data with built-in ML functions and start the race
 
-1. Open the [SQL workspace](https://confluent.cloud/workspaces/) in the Confluent Cloud Console. Select `RIVER-RACING-DEMO-ENV` as the catalog and `RIVER-RACING-DEMO-CLUSTER` as the database.
+The provisioning step sets up source tables for car telemetry, live race standings, and historical race results. Next, we will create a `car_state` table that joins telemetry with race standings over 20-second tumbling windows and uses Confluent's built-in `ML_DETECT_ANOMALIES` function to flag abnormal front-left tire temperatures.
 
-2. Paste this statement into one SQL cell and run it. Wait for it to show **Running**.
+1. Open the [SQL workspace](https://confluent.cloud/workspaces/) in the Confluent Cloud Console. Select `RIVER-RACING-DEMO-ENV` as the **catalog** and `RIVER-RACING-DEMO-CLUSTER` as the **database**.
+
+    <details>
+    <summary>Optional: Explore the pre-deployed source tables and models</summary>
 
     ```sql
-    CREATE TABLE `car_state`
-    WITH ('changelog.mode' = 'append')
-    AS
+    SHOW TABLES;
+    ```
+
+    | Table | Source | Format |
+    |-------|--------|--------|
+    | `car_telemetry` | Race simulator — car #88 sensors, every 2s | Avro |
+    | `race_standings` | Race simulator — all 22 cars, keyed by `car_number` (upsert) | Avro |
+    | `driver_race_history` | 198 historical race rows seeded during setup | JSON |
+
+    ```sql
+    SELECT COUNT(*) FROM driver_race_history;
+    SHOW MODELS;        -- llm_textgen_model
+    SHOW CONNECTIONS;   -- the Bedrock connection behind it
+    ```
+
+    </details>
+
+2. Paste this statement into one SQL cell and run it. Wait for it to show **Running** (leave it running for the rest of the walkthrough).
+
+    ```sql
+    CREATE TABLE `car_state` WITH ('changelog.mode' = 'append') AS
     WITH enriched AS (
       SELECT
         t.car_number, t.event_time, t.lap,
         t.tire_temp_fl_c, t.tire_temp_fr_c, t.tire_temp_rl_c, t.tire_temp_rr_c,
-        t.tire_pressure_fl_psi, t.tire_pressure_fr_psi,
-        t.tire_pressure_rl_psi, t.tire_pressure_rr_psi,
-        t.engine_temp_c, t.brake_temp_fl_c, t.brake_temp_fr_c,
-        t.battery_charge_pct, t.fuel_remaining_kg,
-        r.`position`, r.gap_to_ahead_sec, r.gap_to_leader_sec,
-        r.pit_stops, r.tire_compound, r.tire_age_laps
+        t.tire_pressure_fl_psi, t.tire_pressure_fr_psi, t.tire_pressure_rl_psi, t.tire_pressure_rr_psi,
+        t.engine_temp_c, t.brake_temp_fl_c, t.brake_temp_fr_c, t.battery_charge_pct, t.fuel_remaining_kg,
+        r.`position`, r.gap_to_ahead_sec, r.gap_to_leader_sec, r.pit_stops, r.tire_compound, r.tire_age_laps
       FROM `car_telemetry` t
-      JOIN `race_standings` FOR SYSTEM_TIME AS OF t.event_time AS r
-        ON t.car_number = r.car_number
+      JOIN `race_standings` /*+ OPTIONS('scan.startup.mode'='earliest-offset') */ FOR SYSTEM_TIME AS OF t.event_time AS r ON t.car_number = r.car_number
     ),
     windowed AS (
       SELECT
-        window_start, window_end, window_time, car_number,
-        MAX(lap) AS lap,
-        AVG(tire_temp_fl_c) AS tire_temp_fl_c,
-        AVG(tire_temp_fr_c) AS tire_temp_fr_c,
-        AVG(tire_temp_rl_c) AS tire_temp_rl_c,
-        AVG(tire_temp_rr_c) AS tire_temp_rr_c,
-        AVG(tire_pressure_fl_psi) AS tire_pressure_fl_psi,
-        AVG(tire_pressure_fr_psi) AS tire_pressure_fr_psi,
-        AVG(tire_pressure_rl_psi) AS tire_pressure_rl_psi,
-        AVG(tire_pressure_rr_psi) AS tire_pressure_rr_psi,
-        AVG(engine_temp_c) AS engine_temp_c,
-        AVG(brake_temp_fl_c) AS brake_temp_fl_c,
-        AVG(brake_temp_fr_c) AS brake_temp_fr_c,
-        AVG(battery_charge_pct) AS battery_charge_pct,
-        AVG(fuel_remaining_kg) AS fuel_remaining_kg,
-        MAX(`position`) AS `position`,
-        MAX(gap_to_ahead_sec) AS gap_to_ahead_sec,
-        MAX(gap_to_leader_sec) AS gap_to_leader_sec,
-        MAX(pit_stops) AS pit_stops,
-        MAX(tire_compound) AS tire_compound,
-        MAX(tire_age_laps) AS tire_age_laps
-      FROM TABLE(
-        TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
-      )
+        window_start, window_end, window_time, car_number, MAX(lap) AS lap,
+        AVG(tire_temp_fl_c) AS tire_temp_fl_c, AVG(tire_temp_fr_c) AS tire_temp_fr_c,
+        AVG(tire_temp_rl_c) AS tire_temp_rl_c, AVG(tire_temp_rr_c) AS tire_temp_rr_c,
+        AVG(tire_pressure_fl_psi) AS tire_pressure_fl_psi, AVG(tire_pressure_fr_psi) AS tire_pressure_fr_psi,
+        AVG(tire_pressure_rl_psi) AS tire_pressure_rl_psi, AVG(tire_pressure_rr_psi) AS tire_pressure_rr_psi,
+        AVG(engine_temp_c) AS engine_temp_c, AVG(brake_temp_fl_c) AS brake_temp_fl_c, AVG(brake_temp_fr_c) AS brake_temp_fr_c,
+        AVG(battery_charge_pct) AS battery_charge_pct, AVG(fuel_remaining_kg) AS fuel_remaining_kg,
+        MAX(`position`) AS `position`, MAX(gap_to_ahead_sec) AS gap_to_ahead_sec, MAX(gap_to_leader_sec) AS gap_to_leader_sec,
+        MAX(pit_stops) AS pit_stops, MAX(tire_compound) AS tire_compound, MAX(tire_age_laps) AS tire_age_laps
+      FROM TABLE(TUMBLE(TABLE enriched, DESCRIPTOR(event_time), INTERVAL '20' SECOND))
       GROUP BY window_start, window_end, window_time, car_number
     ),
     anomaly AS (
-      SELECT
-        *,
+      SELECT *,
         ML_DETECT_ANOMALIES(tire_temp_fl_c, window_time,
-          JSON_OBJECT('minTrainingSize' VALUE 12,
-                      'maxTrainingSize' VALUE 50,
-                      'confidencePercentage' VALUE 99.99,
-                      'enableStl' VALUE FALSE))
-          OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
-          AS anomaly_tire_temp_fl_result
+          JSON_OBJECT('minTrainingSize' VALUE 12, 'maxTrainingSize' VALUE 50, 'confidencePercentage' VALUE 99.99, 'enableStl' VALUE FALSE))
+          OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS anomaly_tire_temp_fl_result
       FROM windowed
     )
     SELECT
       car_number, lap,
       tire_temp_fl_c, tire_temp_fr_c, tire_temp_rl_c, tire_temp_rr_c,
-      tire_pressure_fl_psi, tire_pressure_fr_psi,
-      tire_pressure_rl_psi, tire_pressure_rr_psi,
-      engine_temp_c, brake_temp_fl_c, brake_temp_fr_c,
-      battery_charge_pct, fuel_remaining_kg,
+      tire_pressure_fl_psi, tire_pressure_fr_psi, tire_pressure_rl_psi, tire_pressure_rr_psi,
+      engine_temp_c, brake_temp_fl_c, brake_temp_fr_c, battery_charge_pct, fuel_remaining_kg,
       CASE
-        WHEN anomaly_tire_temp_fl_result.is_anomaly
-            AND anomaly_tire_temp_fl_result.actual_value
-                > anomaly_tire_temp_fl_result.upper_bound
-        THEN true
+        WHEN anomaly_tire_temp_fl_result.is_anomaly AND anomaly_tire_temp_fl_result.actual_value > anomaly_tire_temp_fl_result.upper_bound THEN true
         ELSE false
       END AS anomaly_tire_temp_fl,
-      `position`, gap_to_ahead_sec, gap_to_leader_sec,
-      pit_stops, tire_compound, tire_age_laps
+      `position`, gap_to_ahead_sec, gap_to_leader_sec, pit_stops, tire_compound, tire_age_laps
     FROM anomaly
     WHERE lap > 0;
     ```
 
-3. Now run this command in your local terminal to start the race: 
+3. Start the race in your local terminal:
 
     ```bash
     uv run f1-race
     ```
 
-    Leave it running. `car_state` emits one row per 20-second window. After 12 windows it has enough history to detect temperature anomalies of the left front tire.
+    Leave it running. `car_state` emits one row per 20-second window. After 12 windows (~4 minutes) it has enough history to detect temperature anomalies on the front-left tire; at lap 24 the tire spikes to ~145°C and `anomaly_tire_temp_fl` becomes `true`.
 
 4. In a **second terminal**, open the Pit Wall dashboard:
 
@@ -159,7 +150,7 @@ The prerequisites set up some basic source topics for car telemetry and race det
     uv run f1-pitwall
     ```
 
-    A browser opens at http://localhost:8000 with the Silverstone track map, the live leaderboard, and car #88's tyre/fuel gauges.
+    A browser opens at http://localhost:8000 with the Silverstone track map, the live leaderboard, and car #88's tyre/fuel gauges. The **Anomaly Detection** panel unlocks as `car_state` emits rows, and the **AI Pit Strategist** panel unlocks once you create `pit_decisions` in Section 3.
 
     ![Pit Wall dashboard showing a nominal front-left tire temperature](../assets/self-service/pitwall-nominal.png)
 
@@ -170,74 +161,51 @@ The prerequisites set up some basic source topics for car telemetry and race det
     FROM `car_state`;
     ```
 
-## (Optional) Forecast tire temperature with Granite Time Series models
+## 1A. (Optional) Forecast tire temperature with Granite Time Series models
 
-You can also try the built-in IBM Granite TinyTimeMixer model to forecast future tire temperatures. 
+You can also try the built-in IBM Granite TinyTimeMixer model to forecast future tire temperatures.
 
-Run the following statement in your SQL Workspace **only after `car_state` produces rows**. Stop the query after you inspect the result so Lab 4 can use the compute pool.
+Run the following statement in your SQL Workspace **only after `car_state` produces rows**. Stop the query after you inspect the result so Sections 2–3 can use the compute pool.
 
 ```sql
 WITH windowed AS (
   SELECT
-    window_start,
-    window_end,
-    window_time,
-    car_number,
-    MAX(lap) AS lap,
-    AVG(tire_temp_fl_c) AS tire_temp_fl_c
-  FROM TABLE(
-    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
-  )
+    window_start, window_end, window_time, car_number,
+    MAX(lap) AS lap, AVG(tire_temp_fl_c) AS tire_temp_fl_c
+  FROM TABLE(TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '20' SECOND))
   GROUP BY window_start, window_end, window_time, car_number
 ),
 forecasted AS (
-  SELECT
-    *,
-    AI_FORECAST(
-      tire_temp_fl_c,
-      window_time,
-      JSON_OBJECT(
-        'model' VALUE 'ttm',
-        'horizon' VALUE 20,
-        'minContextSize' VALUE 20,
-        'maxContextSize' VALUE 50,
-        'rmseWindowSize' VALUE 5
-      )
-    ) OVER (
-      PARTITION BY car_number
-      ORDER BY window_time
-      RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-    ) AS forecast_result
+  SELECT *,
+    AI_FORECAST(tire_temp_fl_c, window_time,
+      JSON_OBJECT('model' VALUE 'ttm', 'horizon' VALUE 20, 'minContextSize' VALUE 20, 'maxContextSize' VALUE 50, 'rmseWindowSize' VALUE 5))
+      OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS forecast_result
   FROM windowed
 )
 SELECT
-  lap,
-  window_time AS forecast_generated_at,
-  tire_temp_fl_c AS current_tire_temperature_c,
-  forecast_result.forecast[1].`timestamp` AS next_point_at,
-  forecast_result.forecast[1].mean AS next_point_c,
-  forecast_result.forecast AS full_forecast,
-  forecast_result.metadata AS forecast_metadata
+  lap, window_time AS forecast_generated_at, tire_temp_fl_c AS current_tire_temperature_c,
+  forecast_result.forecast[1].`timestamp` AS next_point_at, forecast_result.forecast[1].mean AS next_point_c,
+  forecast_result.forecast AS full_forecast, forecast_result.metadata AS forecast_metadata
 FROM forecasted
 WHERE CARDINALITY(forecast_result.forecast) > 0;
 ```
 
 This query uses IBM Granite **TinyTimeMixer** (`'model' VALUE 'ttm'`), a compact pre-trained time-series foundation model. You can swap the `model` value to try other built-in foundation forecasters; Google's TimesFM 2.5 is the default. See [Forecast Data Trends](https://docs.confluent.io/cloud/current/ai/builtin-functions/forecast.html) in the Confluent Cloud documentation.
 
-## Create the agent to provide pit decision guidance 
+## 2. Create the agent to provide pit decision guidance
 
-With the `car-state` data in place, we can take another step towards using AI to inform race decisions. In this section, we will create a `pit-strategy-agent` that takes in car state and race data, and uses that to determine whether the car should stay out, pit soon, or pit now. 
+With `car_state` streaming, we can create `pit_strategy_agent` to evaluate car condition and race context on every lap and recommend `STAY OUT`, `PIT SOON`, or `PIT NOW`.
 
-1. Paste and run the CREATE AGENT statement in your SQL Workspace. This statement defines the agent and its instructions. 
+1. Paste and run the `CREATE AGENT` statement in your SQL Workspace:
 
     ```sql
     CREATE AGENT `pit_strategy_agent`
     USING MODEL `llm_textgen_model`
-    USING PROMPT 'OUTPUT FORMAT — respond with exactly these 7 labeled lines in this order. No markdown, no asterisks, no bold, plain text only.
+    USING PROMPT 'OUTPUT FORMAT — respond with exactly these 7 labeled lines in this order. Plain text only, no markdown or bold.
 
     Suggestion: [PIT NOW | PIT SOON | STAY OUT]
     Condition Summary: [one sentence describing current car condition]
-    Race Context: [one sentence on race situation based on competitor standings in the input]
+    Race Context: [one sentence on race situation]
     Recommended Compound: [SOFT | MEDIUM | HARD | N/A if STAY OUT]
     Recommended Stint Laps: [integer expected laps on new tires | N/A if STAY OUT]
     Recommended Reason: [one sentence explaining compound choice | N/A if STAY OUT]
@@ -246,16 +214,16 @@ With the `car-state` data in place, we can take another step towards using AI to
     Correct STAY OUT example:
     Suggestion: STAY OUT
     Condition Summary: Front-left tire temperature is nominal at 107C with 18 laps of age on SOFT compound.
-    Race Context: Currently P3. No competitors in top 10 have pitted yet. Leader is 8.2s ahead.
+    Race Context: Currently P3. Leader is 8.2s ahead.
     Recommended Compound: N/A
     Recommended Stint Laps: N/A
     Recommended Reason: N/A
-    Reasoning: Tire temps and pressures are within normal operating windows for a SOFT at this age. Track position P3 is strong. Pitting now would surrender 4-6 seconds and drop John behind cars currently behind us.
+    Reasoning: No anomaly has been detected, so tire temps and pressures are within normal operating windows for this stage of the stint. Track position P3 is strong and pitting now would surrender 4-6 seconds.
 
     Correct PIT NOW example:
     Suggestion: PIT NOW
     Condition Summary: Front-left tire temperature anomaly at 145C, 20C above expected upper bound — failure risk imminent.
-    Race Context: Currently P8. P4 and P5 already pitted 3 laps ago and are pushing on fresh mediums.
+    Race Context: Currently P8 with 36 laps remaining.
     Recommended Compound: MEDIUM
     Recommended Stint Laps: 36
     Recommended Reason: Mediums will carry John to the flag across the remaining 36 laps and give him the pace to recover positions lost during the stop.
@@ -263,109 +231,41 @@ With the `car-state` data in place, we can take another step towards using AI to
 
     ---
 
-    You are the AI pit wall strategist for River Racing at the 2026 British Grand Prix (Silverstone, 60 laps).
-    Driver: John Doe, Car #88.
+    You are the AI pit wall strategist for River Racing at the 2026 British Grand Prix (Silverstone, 60 laps). Driver: John Doe, Car #88.
 
-    DECISION FRAMEWORK — use this priority order to reason about the Suggestion.
-    This is guidance for judgment, not a rule to execute mechanically.
+    DECISION FRAMEWORK — weigh these in priority order:
+    1. Anomaly signal: anomaly_tire_temp_fl comes from a trained statistical anomaly detector (ML_DETECT_ANOMALIES) that evaluates tire_temp_fl_c against expected bounds. PIT NOW is reserved for this signal being true — treat it as validated evidence of a real tire problem requiring an immediate stop. When it is false, a raw temperature reading that merely looks high is still within expected bounds for the stint. Nothing else in this input — not tire age, not race context, not competitor behavior — should produce PIT NOW; those inform PIT SOON or STAY OUT instead.
+    2. Pit history: a car that has already pitted this race should usually stay out and run its current tires to the end, absent a new anomaly.
+    3. Tire age and compound: a SOFT tire past ~20 laps enters its strategic pit window. Call PIT SOON (never PIT NOW) throughout this window when no anomaly is flagged.
+    4. Otherwise: default to STAY OUT.
 
-    PIT NOW vs PIT SOON — these mean different things and are not interchangeable
-    labels for "pit now would be reasonable." PIT NOW means urgent: a validated
-    problem exists and the car should come in immediately for safety. PIT SOON
-    means strategic: the tires are aging into their normal pit window and a stop
-    is coming, even if stopping on this exact lap would itself be the sound
-    strategic choice. A strategy-driven stop stays PIT SOON for its entire
-    window; it does not become PIT NOW just because the ideal moment has arrived.
-
-    1. Anomaly signal: anomaly_tire_temp_fl comes from a trained statistical anomaly
-       detector (ML_DETECT_ANOMALIES) that has already evaluated tire_temp_fl_c
-       against expected bounds for this car at this point in the race. PIT NOW is
-       reserved for this signal being true — treat it as strong, validated evidence
-       of a real tire problem serious enough to justify an urgent stop. When it is
-       false, there is no statistical evidence of a problem: a raw temperature
-       reading that merely looks high to you has already been checked and found
-       within the expected range for this stage of the stint, so weigh that check
-       heavily before treating anything as urgent on the strength of a number alone.
-       Nothing else in this input — not tire age, not race context, not competitor
-       behavior — should produce PIT NOW; those inform PIT SOON or STAY OUT instead.
-    2. Pit history: a car that has already pitted this race is usually better off
-       staying out and running its current tires to the end, absent a new problem.
-    3. Tire age and compound: a SOFT tire that has run past roughly 20 laps starts
-       trending into a strategic pit window. This is PIT SOON, not PIT NOW, for as
-       long as that window lasts — even on the lap where pitting would be ideal —
-       since pace typically falls off after that point but there is no validated
-       safety issue driving urgency.
-    4. Otherwise: STAY OUT is the reasonable default when nothing above points to a
-       reason to change strategy.
-
-    Weigh these in order of severity, and keep the PIT NOW/PIT SOON distinction
-    above intact regardless of how you weigh them — you are reasoning about a race
-    strategy call, not executing a lookup table, but the two labels still mean
-    different things. Use the TIRE DATA, RACE CONTEXT, and COMPETITOR CONTEXT
-    below to inform your Reasoning field regardless of which Suggestion you land on.
-
-    Correct STAY OUT despite a high-looking temperature example:
-    Suggestion: STAY OUT
-    Condition Summary: Front-left tire temperature reads 118C, which may look elevated, but the anomaly detector has not flagged it as unusual for this stage of the tire life.
-    Race Context: Currently P5. Field is spread out, no pit activity nearby.
-    Recommended Compound: N/A
-    Recommended Stint Laps: N/A
-    Recommended Reason: N/A
-    Reasoning: No anomaly has been detected, so there is no validated evidence of a tire problem despite the reading looking high in isolation. Pit stops are at zero and tire age is still well under the strategic pit window, so there is no other reason to come in. Staying out preserves track position.
-
-    STRICT OUTPUT VALUES — the Suggestion field must be exactly one of these three
-    literal strings, with no other characters, punctuation, or words on that line:
-    PIT NOW
-    PIT SOON
-    STAY OUT
-    No variants, synonyms, qualifiers, or explanatory text are permitted on the
-    Suggestion line (e.g. never "PIT NOW - tire failure risk" or "Stay out for now").
-    Downstream systems match this field with exact string equality.
-
-    SELF-CHECK before responding: re-read your Suggestion against the TIRE DATA and
-    RACE CONTEXT above and confirm your Reasoning genuinely explains it. If the
-    Reasoning and the Suggestion disagree with each other, fix whichever one is
-    actually wrong.
-
-    COMPETITOR CONTEXT:
-    Current top-10 standings are provided at the end of each input. Use them to identify:
-    - Which competitors have already pitted (and are now on fresher rubber)
-    - Who is still on old tires and likely to pit soon
-    - Whether John is at risk of being undercut, or has an overcut opportunity
+    STRICT OUTPUT VALUES — the Suggestion line must be the exact literal string PIT NOW, PIT SOON, or STAY OUT with no extra text. For STAY OUT, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.
 
     TIRE STRATEGY at Silverstone (60-lap race):
-    - SOFT: High-grip compound. Optimal window is laps 1-19. Still competitive laps 20-22 with some pace loss and position drops — but no failure risk unless the anomaly sensor fires. Performance cliff begins around lap 18-20.
-    - MEDIUM: Balanced compound, best for a 30-40 lap second stint after a SOFT first stint. Enables clean 1-stop strategy.
-    - HARD: Very durable but slow. Only consider if 40+ laps remain at the second stop.
-    - John Doe historical best: SOFT first stint → MEDIUM second stint (1-stop) averages +2.75 positions over 4 prior races. The pit wall warns at laps 21-23, calls PIT NOW only when the lap-24 anomaly fires, then lets the fresh MEDIUM stint run.
-
-    REMINDER: For any STAY OUT decision, write N/A for Recommended Compound, Recommended Stint Laps, and Recommended Reason.'
+    - SOFT: Optimal laps 1-19; degrades in laps 20-22 (PIT SOON window), no failure risk unless the anomaly sensor fires.
+    - MEDIUM: Best for a 30-40 lap second stint after SOFT (clean 1-stop).
+    - HARD: Durable but slow; only for 40+ lap stints.
+    - John Doe historical best: SOFT -> MEDIUM 1-stop averages +2.75 positions over 4 prior races.'
     WITH ('max_iterations' = '10');
     ```
 
-2. Confirm that the agent is created and registered properly.
+2. Confirm that the agent is registered:
 
     ```sql
     SHOW AGENTS;
     ```
 
-## Create the pit decisions table
+## 3. Create the pit decisions table
 
-Next we create the `pit_decisions` table, which holds the Streaming Agent's recommendations and output. As part of this command, we invoke the Streaming Agent using `AI_RUN_AGENT`. [See documentation for AI_RUN_AGENT here.](https://docs.confluent.io/cloud/current/flink/reference/functions/model-inference-functions.html#ai-run-agent)
+Next we create the `pit_decisions` table, which invokes `pit_strategy_agent` on every row of `car_state` using [`AI_RUN_AGENT`](https://docs.confluent.io/cloud/current/flink/reference/functions/model-inference-functions.html#ai-run-agent) and parses the structured fields. Because it reads `car_state` from `earliest-offset`, it also processes laps that have already arrived.
 
-1. Create the `pit-decisions` table by running the following statement in your SQL Workspace. 
+1. Create the `pit_decisions` table in your SQL Workspace (leave this query running):
 
     ```sql
-    CREATE TABLE `pit_decisions`
-    WITH ('changelog.mode' = 'append')
-    AS
+    CREATE TABLE `pit_decisions` WITH ('changelog.mode' = 'append') AS
     SELECT
-      cs.car_number,
-      cs.lap,
-      cs.`position`,
-      cs.tire_compound AS tire_compound_current,
-      cs.tire_age_laps,
-      cs.anomaly_tire_temp_fl,
+      cs.car_number, cs.lap, cs.`position`,
+      cs.tire_compound AS tire_compound_current, cs.tire_age_laps, cs.anomaly_tire_temp_fl,
       TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Suggestion:\*{0,2}\s*([^\n]+)', 1)) AS suggestion,
       TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Condition Summary:\*{0,2}\s*([^\n]+)', 1)) AS condition_summary,
       TRIM(REGEXP_EXTRACT(CAST(response AS STRING), '\*{0,2}Race Context:\*{0,2}\s*([^\n]+)', 1)) AS race_context,
@@ -382,24 +282,14 @@ Next we create the `pit_decisions` table, which holds the Streaming Agent's reco
         'Driver: John Doe (#', CAST(cs.car_number AS STRING), ') | Current Position: P', CAST(cs.`position` AS STRING), '\n',
         '\nTIRE DATA:\n',
         '  Compound: ', cs.tire_compound, ' | Age: ', CAST(cs.tire_age_laps AS STRING), ' laps\n',
-        '  FL Temp: ', CAST(ROUND(cs.tire_temp_fl_c, 1) AS STRING), 'C',
-        '  FR: ', CAST(ROUND(cs.tire_temp_fr_c, 1) AS STRING), 'C',
-        '  RL: ', CAST(ROUND(cs.tire_temp_rl_c, 1) AS STRING), 'C',
-        '  RR: ', CAST(ROUND(cs.tire_temp_rr_c, 1) AS STRING), 'C\n',
-        '  FL Pressure: ', CAST(ROUND(cs.tire_pressure_fl_psi, 1) AS STRING), 'psi',
-        '  FR: ', CAST(ROUND(cs.tire_pressure_fr_psi, 1) AS STRING), 'psi',
-        '  RL: ', CAST(ROUND(cs.tire_pressure_rl_psi, 1) AS STRING), 'psi',
-        '  RR: ', CAST(ROUND(cs.tire_pressure_rr_psi, 1) AS STRING), 'psi\n',
+        '  FL Temp: ', CAST(ROUND(cs.tire_temp_fl_c, 1) AS STRING), 'C  FR: ', CAST(ROUND(cs.tire_temp_fr_c, 1) AS STRING), 'C  RL: ', CAST(ROUND(cs.tire_temp_rl_c, 1) AS STRING), 'C  RR: ', CAST(ROUND(cs.tire_temp_rr_c, 1) AS STRING), 'C\n',
+        '  FL Pressure: ', CAST(ROUND(cs.tire_pressure_fl_psi, 1) AS STRING), 'psi  FR: ', CAST(ROUND(cs.tire_pressure_fr_psi, 1) AS STRING), 'psi  RL: ', CAST(ROUND(cs.tire_pressure_rl_psi, 1) AS STRING), 'psi  RR: ', CAST(ROUND(cs.tire_pressure_rr_psi, 1) AS STRING), 'psi\n',
         '  FL Tire Anomaly Detected: ', CAST(cs.anomaly_tire_temp_fl AS STRING), '\n',
         '\nCAR SYSTEMS:\n',
-        '  Engine Temp: ', CAST(ROUND(cs.engine_temp_c, 1) AS STRING), 'C',
-        '  Brake FL: ', CAST(ROUND(cs.brake_temp_fl_c, 1) AS STRING), 'C',
-        '  Brake FR: ', CAST(ROUND(cs.brake_temp_fr_c, 1) AS STRING), 'C\n',
-        '  Battery: ', CAST(ROUND(cs.battery_charge_pct, 1) AS STRING), '%',
-        '  Fuel Remaining: ', CAST(ROUND(cs.fuel_remaining_kg, 1) AS STRING), 'kg\n',
+        '  Engine Temp: ', CAST(ROUND(cs.engine_temp_c, 1) AS STRING), 'C  Brake FL: ', CAST(ROUND(cs.brake_temp_fl_c, 1) AS STRING), 'C  Brake FR: ', CAST(ROUND(cs.brake_temp_fr_c, 1) AS STRING), 'C\n',
+        '  Battery: ', CAST(ROUND(cs.battery_charge_pct, 1) AS STRING), '%  Fuel Remaining: ', CAST(ROUND(cs.fuel_remaining_kg, 1) AS STRING), 'kg\n',
         '\nRACE CONTEXT:\n',
-        '  Gap to Leader: ', CAST(ROUND(cs.gap_to_leader_sec, 2) AS STRING), 's',
-        '  Gap to Car Ahead: ', CAST(ROUND(cs.gap_to_ahead_sec, 2) AS STRING), 's\n',
+        '  Gap to Leader: ', CAST(ROUND(cs.gap_to_leader_sec, 2) AS STRING), 's  Gap to Car Ahead: ', CAST(ROUND(cs.gap_to_ahead_sec, 2) AS STRING), 's\n',
         '  Pit Stops Taken: ', CAST(cs.pit_stops AS STRING), '\n',
         '  Laps Remaining: ', CAST(60 - cs.lap AS STRING)
       ),
@@ -407,55 +297,52 @@ Next we create the `pit_decisions` table, which holds the Streaming Agent's reco
     ));
     ```
 
-## 5. Review the results
+## 4. Review the results
 
-1. Run the following statement in your SQL Workspace to see the details included in the `pit-decisions` table. 
-
-  ```sql
-  SELECT lap, `position`, suggestion, condition_summary, reasoning
-  FROM `pit_decisions`;
-  ```
-
-![Flink SQL workspace showing pit_decisions results progressing from PIT SOON to PIT NOW](../assets/self-service/pit-decisions-query.png)
-
-2. Run the following statement in your SQL Workspace to see how the pit decision changes when tire temperature anomalies occur. 
+1. Query `pit_decisions` in your SQL Workspace to see the streaming recommendations:
 
     ```sql
-    SELECT lap, `position`, tire_compound_current, tire_age_laps,
-          anomaly_tire_temp_fl, suggestion,
-          recommended_tire_compound, recommended_stint_laps, reasoning
+    SELECT lap, `position`, suggestion, condition_summary, reasoning
+    FROM `pit_decisions`;
+    ```
+
+    ![Flink SQL workspace showing pit_decisions results progressing from PIT SOON to PIT NOW](../assets/self-service/pit-decisions-query.png)
+
+2. Filter for the tire temperature anomaly to inspect the lap 24 pit call:
+
+    ```sql
+    SELECT lap, `position`, tire_compound_current, tire_age_laps, anomaly_tire_temp_fl,
+           suggestion, recommended_tire_compound, recommended_stint_laps, reasoning
     FROM `pit_decisions`
     WHERE anomaly_tire_temp_fl = true;
     ```
 
-![Flink SQL workspace showing the lap 24 PIT NOW row with the agent's full reasoning](../assets/self-service/pit-decisions-anomaly-query.png)
+    ![Flink SQL workspace showing the lap 24 PIT NOW row with the agent's full reasoning](../assets/self-service/pit-decisions-anomaly-query.png)
 
 > [!NOTE]
 >
-> At lap 24, the result should include the only `PIT NOW`, for the front-left tire anomaly. Laps 21–23 show `PIT SOON`; lap 25 returns to `STAY OUT` on fresh MEDIUMs. The Pit Wall unlocks its anomaly and AI strategist panels as the tables begin producing:
+> | Lap | Position | Suggestion | What's happening |
+> |---|---|---|---|
+> | 1–20 | P3 → P1 | `STAY OUT` | Competitive, nominal tire temps |
+> | 21–23 | P1 → P8 | `PIT SOON` | Aging SOFTs enter the strategic pit window |
+> | **24** | **P8** | **`PIT NOW`** | **Front-left anomaly (~145°C) triggers an immediate stop** |
+> | 25–60 | P14 → P1–P2 | `STAY OUT` | Recovery stint to the flag on fresh MEDIUMs |
+>
+> As `car_state` and `pit_decisions` produce rows, the Pit Wall dashboard unlocks its **Anomaly Detection** and **AI Pit Strategist** panels:
 
-![Pit Wall dashboard showing the lap 24 anomaly and unlocked AI Pit Strategist panel](../assets/self-service/pitwall-anomaly.png)
+![Pit Wall dashboard showing the lap 24 anomaly](../assets/self-service/pitwall-anomaly.png)
 
-
-## (Optional) Connect race feed to WatsonX Orchestrate
-
-To run the local race-feed service for watsonx Orchestrate:
-
-```bash
-uv run f1-social-feed --creds runs/selfservice/credentials/DEMO.env
-```
-
-Expose port 8080 through an approved HTTPS tunnel, set `servers[0].url` in `docs/assets/orchestrate/f1-race-feed-openapi.json` to that public URL, and follow [Lab 5 in the hosted walkthrough](./HOSTED-WORKSHOP.md#lab-5-social-media-agent-ibm-watsonx-orchestrate).
+![Pit Wall dashboard with both Anomaly Detection and AI Pit Strategist panels unlocked, showing the PIT NOW call at lap 24](../assets/hosted/dashboard2.png)
 
 ## (Optional) Expose `car_telemetry` to AI agents with Real-Time Context Engine
 
-Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP-compatible AI agent can query the topic. `uv run selfservice up` minted an RTCE API key onto your credential card, but RTCE is enabled **per topic in the Console** — nothing is pre-enabled, so turn it on for `car_telemetry` yourself.
+Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP-compatible AI agent can query the live stream. `uv run selfservice up` minted a Global RTCE API key onto your credential card, and you enable RTCE **per topic in the Console** for `car_telemetry` (and optionally `car_state` or `pit_decisions`).
 
-1. Under your environment's cluster, open **Topics → `car_telemetry`**, open the **Real-Time Context Engine** panel, click **Enable**. Once enabled, the **Topics** list shows Real-Time Context Engine **On**:
+1. Under your environment's cluster, open **[Topics](https://confluent.cloud/go/topics) → `car_telemetry`**, open the **Real-Time Context Engine** panel, and click **Enable** (or **Turn on**). Once enabled, the **Topics** list shows Real-Time Context Engine **On**:
 
     ![Topics list with the Real-Time Context Engine column](../assets/self-service/rtce-topics-list.png)
 
-    The panel shows the enablement details — environment, cluster, cloud, and region — that an MCP client needs to reach it:
+    The panel displays the enablement details — environment, cluster, cloud, and region — that an MCP client uses to reach it:
 
     ![Real-Time Context Engine enabled for car_telemetry](../assets/self-service/rtce-enabled.png)
 
@@ -465,12 +352,16 @@ Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP
     uv run setup-rtce
     ```
 
-    This registers RTCE as an MCP server with Claude Code (or prints a config snippet for Codex CLI), using the `F1_RTCE_MCP_ENDPOINT`/`F1_RTCE_API_KEY`/`F1_RTCE_API_SECRET` fields already on your card. Then just ask, in plain English: *"What are car 88's front-left tire temperatures over the last few laps?"*
+    This registers RTCE as an MCP server with Claude Code (or prints a config snippet for Codex CLI), using the `F1_RTCE_MCP_ENDPOINT`, `F1_RTCE_API_KEY`, and `F1_RTCE_API_SECRET` fields on your credential card. Restart your coding agent, then ask questions in plain English:
 
-    Once Real-Time Context Engine is enabled on `car_telemetry`, and you've run `uv run setup-rtce` to connect Claude or Codex, you can ask your LLM questions like:
-
+    - *What topics do I have access to in the Real-Time Context Engine?*
+    - *What's the front-left tire temperature on car 88 right now?*
     - *At what lap in the race does the engine temperature peak?*
     - *What is the front right tire temperature at lap 30?*
+
+    ![Claude listing the topics enabled in the Real-Time Context Engine](../assets/hosted/rtce-listtopics.png)
+
+    ![Claude answering the front-left tire temperature question by calling the Real-Time Context Engine](../assets/hosted/rtce-cartemp.png)
 
 ### Optional: Lightning Queries (low-latency REST)
 
@@ -488,19 +379,35 @@ Lightning Queries read an RTCE-enabled topic over low-latency REST, so enable RT
 
 ## Run the workshop again or tear it down
 
-Stop `f1-race` with Ctrl-C when you finish. Use reset only when you intend to erase the race history and repeat the workshop from a clean slate:
+Stop `f1-race` with Ctrl-C when you finish. Use `reset` when you want to erase the race history and repeat the workshop from a clean slate:
 
 ```bash
 uv run reset
 ```
 
-After reset, recreate `car_state`, wait for it to show **Running**, then start `uv run f1-race` again.
+After reset, recreate `car_state`, wait for it to show **Running**, then start `uv run f1-race` again (or run `uv run reset --with-labs` to rebuild `car_state`, `pit_strategy_agent`, and `pit_decisions` automatically before starting `uv run f1-race`).
 
 When you're ready to tear down all resources associated with the lab, run:
 
 ```bash
 uv run selfservice down
 ```
+
+If you minted temporary Bedrock IAM keys with `uv run api-keys create`, revoke them as well:
+
+```bash
+uv run api-keys destroy
+```
+
+<details>
+<summary>Troubleshooting</summary>
+
+- **`car_state` is empty at first.** `car_state` emits one row per 20-second window, and `f1-race` aligns lap 1 to the next 20-second wall-clock boundary before starting. Make sure `car_state` is **Running** before starting `uv run f1-race`.
+- **No anomaly around lap 24.** `ML_DETECT_ANOMALIES` needs 12 windows of context (`minTrainingSize = 12`) before lap 24. If `car_state` was started mid-race after lap 12, reset and start `car_state` before `uv run f1-race`.
+- **Agent fields are null but `raw_response` has text.** Inspect `SELECT lap, suggestion, raw_response FROM pit_decisions LIMIT 5;`. If `raw_response` is empty across the board, verify your Bedrock credentials have `bedrock:InvokeModel` permission in `us-east-1`.
+- **`No credential card found` / `Multiple credential cards found`.** Pass `--creds runs/selfservice/credentials/DEMO.env` or re-run `uv run selfservice up` to refresh `F1_CARD` in `credentials.env`.
+
+</details>
 
 ---
 

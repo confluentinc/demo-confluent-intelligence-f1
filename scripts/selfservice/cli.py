@@ -367,8 +367,7 @@ def up(args: argparse.Namespace) -> None:
         print("4. (optional) Connect an AI agent to the live feed via RTCE:")
         print("     uv run setup-rtce")
     if not (args.with_labs and labs_ok):
-        print("\nContinue in docs/tracks/SELF-SERVICE.md at section 5.")
-    print("Optional LAB 5 (watsonx Orchestrate) and LAB 6 (RTCE) are also covered in that walkthrough.")
+        print("\nContinue in docs/tracks/SELF-SERVICE.md at section 1.")
     print("\nTear down when finished:  uv run selfservice down")
 
     if not (seeded and labs_ok):

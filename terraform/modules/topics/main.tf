@@ -126,6 +126,7 @@ resource "confluent_flink_statement" "create_race_standings_table" {
     WITH (
       'changelog.mode' = 'upsert',
       'connector' = 'confluent',
+      'scan.startup.mode' = 'earliest-offset',
       'value.format' = 'avro-registry'
     );
   EOT

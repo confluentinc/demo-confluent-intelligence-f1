@@ -9,44 +9,21 @@
 
 WITH windowed AS (
   SELECT
-    window_start,
-    window_end,
-    window_time,
-    car_number,
-    MAX(lap) AS lap,
-    AVG(tire_temp_fl_c) AS tire_temp_fl_c
-  FROM TABLE(
-    TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '20' SECOND)
-  )
+    window_start, window_end, window_time, car_number,
+    MAX(lap) AS lap, AVG(tire_temp_fl_c) AS tire_temp_fl_c
+  FROM TABLE(TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '20' SECOND))
   GROUP BY window_start, window_end, window_time, car_number
 ),
 forecasted AS (
-  SELECT
-    *,
-    AI_FORECAST(
-      tire_temp_fl_c,
-      window_time,
-      JSON_OBJECT(
-        'model' VALUE 'ttm',
-        'horizon' VALUE 20,
-        'minContextSize' VALUE 20,
-        'maxContextSize' VALUE 50,
-        'rmseWindowSize' VALUE 5
-      )
-    ) OVER (
-      PARTITION BY car_number
-      ORDER BY window_time
-      RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-    ) AS forecast_result
+  SELECT *,
+    AI_FORECAST(tire_temp_fl_c, window_time,
+      JSON_OBJECT('model' VALUE 'ttm', 'horizon' VALUE 20, 'minContextSize' VALUE 20, 'maxContextSize' VALUE 50, 'rmseWindowSize' VALUE 5))
+      OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS forecast_result
   FROM windowed
 )
 SELECT
-  lap,
-  window_time AS forecast_generated_at,
-  tire_temp_fl_c AS current_tire_temperature_c,
-  forecast_result.forecast[1].`timestamp` AS next_point_at,
-  forecast_result.forecast[1].mean AS next_point_c,
-  forecast_result.forecast AS full_forecast,
-  forecast_result.metadata AS forecast_metadata
+  lap, window_time AS forecast_generated_at, tire_temp_fl_c AS current_tire_temperature_c,
+  forecast_result.forecast[1].`timestamp` AS next_point_at, forecast_result.forecast[1].mean AS next_point_c,
+  forecast_result.forecast AS full_forecast, forecast_result.metadata AS forecast_metadata
 FROM forecasted
 WHERE CARDINALITY(forecast_result.forecast) > 0;
