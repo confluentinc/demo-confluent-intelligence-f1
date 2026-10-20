@@ -292,10 +292,10 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
 
     print("\n--- Configuration ---\n")
 
-    def ask(label: str, env_key: str) -> str:
+    def ask(label: str, env_key: str, secret: bool = False) -> str:
         # Saved the moment it is entered, so backing out later keeps it and the
         # next run offers it as the default.
-        value = prompt_with_default(label, creds.get(env_key, ""))
+        value = prompt_with_default(label, creds.get(env_key, ""), secret=secret)
         if value != creds.get(env_key):
             set_key(str(creds_file), env_key, value)
             creds[env_key] = value
@@ -303,7 +303,7 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
 
     cfg = {
         "api_key": ask("Confluent Cloud API Key", "TF_VAR_confluent_cloud_api_key"),
-        "api_secret": ask("Confluent Cloud API Secret", "TF_VAR_confluent_cloud_api_secret"),
+        "api_secret": ask("Confluent Cloud API Secret", "TF_VAR_confluent_cloud_api_secret", secret=True),
         "owner_email": ask("Owner email (for AWS resource tagging)", "TF_VAR_owner_email"),
     }
 
@@ -342,7 +342,7 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
         print(f"  Bedrock keys:  {saved_bedrock_key[:8]}... (from credentials.env)")
     else:
         cfg["aws_bedrock_key"] = ask("AWS Bedrock Access Key", "TF_VAR_aws_bedrock_access_key")
-        cfg["aws_bedrock_secret"] = ask("AWS Bedrock Secret Key", "TF_VAR_aws_bedrock_secret_key")
+        cfg["aws_bedrock_secret"] = ask("AWS Bedrock Secret Key", "TF_VAR_aws_bedrock_secret_key", secret=True)
     while True:
         raw = prompt_with_default(
             f"Seconds per lap (60-lap race, so 20 = ~20 min; minimum {MIN_SECONDS_PER_LAP})",

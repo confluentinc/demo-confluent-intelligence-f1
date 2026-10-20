@@ -18,12 +18,12 @@ from __future__ import annotations
 
 import os
 import stat
-from getpass import getpass
 from pathlib import Path
 
 from dotenv import set_key
 
 from scripts.common.credentials import load_or_create_credentials_file
+from scripts.common.ui import prompt_secret
 
 REQUIRED_SECRETS = [
     ("TF_VAR_confluent_cloud_api_key", "Confluent Cloud API Key"),
@@ -39,7 +39,7 @@ _SECRET_KEYS = {"TF_VAR_confluent_cloud_api_secret", "TF_VAR_aws_bedrock_secret_
 def _prompt_value(env_key: str, label: str) -> str:
     if env_key in _SECRET_KEYS:
         while True:
-            value = getpass(f"  {label}: ").strip()
+            value = prompt_secret(f"  {label}: ").strip()
             if value:
                 return value
             print("    This field is required.")

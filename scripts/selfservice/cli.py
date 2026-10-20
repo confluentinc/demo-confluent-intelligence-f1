@@ -220,14 +220,14 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
     cfg = {
         "api_key": prompt_with_default("Confluent Cloud API Key", creds.get("TF_VAR_confluent_cloud_api_key", "")),
         "api_secret": prompt_with_default(
-            "Confluent Cloud API Secret", creds.get("TF_VAR_confluent_cloud_api_secret", "")
+            "Confluent Cloud API Secret", creds.get("TF_VAR_confluent_cloud_api_secret", ""), secret=True
         ),
         "owner_email": prompt_with_default("Owner email", creds.get("TF_VAR_owner_email", "")),
         "aws_bedrock_key": prompt_with_default(
             "AWS Bedrock Access Key", creds.get("TF_VAR_aws_bedrock_access_key", "")
         ),
         "aws_bedrock_secret": prompt_with_default(
-            "AWS Bedrock Secret Key", creds.get("TF_VAR_aws_bedrock_secret_key", "")
+            "AWS Bedrock Secret Key", creds.get("TF_VAR_aws_bedrock_secret_key", ""), secret=True
         ),
         "aws_session_token": "",
     }
@@ -244,7 +244,9 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
 
     if cfg["aws_bedrock_key"].startswith("ASIA"):
         cfg["aws_session_token"] = prompt_with_default(
-            "AWS Session Token (required for temporary credentials)", creds.get("TF_VAR_aws_session_token", "")
+            "AWS Session Token (required for temporary credentials)",
+            creds.get("TF_VAR_aws_session_token", ""),
+            secret=True,
         )
 
     _persist(root, creds_file, cfg, interactive=True)
