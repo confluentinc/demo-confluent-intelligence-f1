@@ -65,6 +65,7 @@ resource "confluent_flink_statement" "create_car_telemetry_table" {
       'connector' = 'confluent',
       'kafka.cleanup-policy' = 'delete',
       'kafka.compaction.time' = '0 ms',
+      'kafka.consumer.isolation-level' = 'read-uncommitted',
       'kafka.max-message-size' = '2097164 bytes',
       'kafka.message-timestamp-type' = 'create-time',
       'kafka.retention.size' = '0 bytes',
@@ -126,6 +127,8 @@ resource "confluent_flink_statement" "create_race_standings_table" {
     WITH (
       'changelog.mode' = 'upsert',
       'connector' = 'confluent',
+      'kafka.consumer.isolation-level' = 'read-uncommitted',
+      'scan.startup.mode' = 'earliest-offset',
       'value.format' = 'avro-registry'
     );
   EOT

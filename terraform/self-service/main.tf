@@ -219,6 +219,7 @@ resource "confluent_flink_statement" "create_driver_race_history_table" {
     WITH (
       'changelog.mode' = 'append',
       'connector' = 'confluent',
+      'kafka.consumer.isolation-level' = 'read-uncommitted',
       'scan.startup.mode' = 'earliest-offset',
       'value.format' = 'avro-registry'
     );

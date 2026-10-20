@@ -62,7 +62,7 @@
 --    `enrichment_anomaly.sql` (the default) instead.
 
 CREATE TABLE `car_state`
-WITH ('changelog.mode' = 'append')
+WITH ('changelog.mode' = 'append', 'kafka.consumer.isolation-level' = 'read-uncommitted')
 AS
 WITH enriched AS (
   SELECT

@@ -39,6 +39,7 @@ from scripts.common.login_checks import (
     check_docker_running,
     check_terraform_installed,
     ensure_confluent_login,
+    start_docker,
 )
 from scripts.common.simulator_control import (
     create_lab_objects,
@@ -290,14 +291,20 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
             creds["TF_VAR_confluent_cloud_api_secret"] = api_secret
 
     print("\n--- Configuration ---\n")
+
+    def ask(label: str, env_key: str) -> str:
+        # Saved the moment it is entered, so backing out later keeps it and the
+        # next run offers it as the default.
+        value = prompt_with_default(label, creds.get(env_key, ""))
+        if value != creds.get(env_key):
+            set_key(str(creds_file), env_key, value)
+            creds[env_key] = value
+        return value
+
     cfg = {
-        "api_key": prompt_with_default("Confluent Cloud API Key", creds.get("TF_VAR_confluent_cloud_api_key", "")),
-        "api_secret": prompt_with_default(
-            "Confluent Cloud API Secret", creds.get("TF_VAR_confluent_cloud_api_secret", "")
-        ),
-        "owner_email": prompt_with_default(
-            "Owner email (for AWS resource tagging)", creds.get("TF_VAR_owner_email", "")
-        ),
+        "api_key": ask("Confluent Cloud API Key", "TF_VAR_confluent_cloud_api_key"),
+        "api_secret": ask("Confluent Cloud API Secret", "TF_VAR_confluent_cloud_api_secret"),
+        "owner_email": ask("Owner email (for AWS resource tagging)", "TF_VAR_owner_email"),
     }
 
     # Offered as the prompt default rather than imposed: derived from $USER (or a
@@ -307,23 +314,35 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
     # toward the same name.
     suggested, source = _resolve_prefix(root, cfg["owner_email"], _explicit_prefix())
     print(f"  (prefix {suggested!r} — {_PREFIX_SOURCES[source]})")
-    while True:
-        prefix = prompt_with_default(f"Prefix for this deployment (alphanumeric, max {meta.MAX_PREFIX_LEN})", suggested)
-        problem = meta.validate_prefix(prefix)
-        if not problem:
-            break
-        print(f"  {problem}")
-    # An answered prompt is explicit, so re-resolve: refuse a value that
-    # contradicts live state instead of orphaning the deployed resources.
-    resolved, _source = _resolve_prefix(root, cfg["owner_email"], prefix)
-    cfg["prefix"] = _validated_prefix_or_exit(resolved)
+    if source == "state":
+        # Locked by the deployed environment: any other answer would be refused,
+        # so don't ask.
+        cfg["prefix"] = _validated_prefix_or_exit(suggested)
+    else:
+        while True:
+            prefix = prompt_with_default(
+                f"Prefix for this deployment (alphanumeric, max {meta.MAX_PREFIX_LEN})", suggested
+            )
+            problem = meta.validate_prefix(prefix)
+            if not problem:
+                break
+            print(f"  {problem}")
+        # An answered prompt is explicit, so re-resolve: refuse a value that
+        # contradicts live state instead of orphaning the deployed resources.
+        resolved, _source = _resolve_prefix(root, cfg["owner_email"], prefix)
+        cfg["prefix"] = _validated_prefix_or_exit(resolved)
 
-    cfg["aws_bedrock_key"] = prompt_with_default(
-        "AWS Bedrock Access Key", creds.get("TF_VAR_aws_bedrock_access_key", "")
-    )
-    cfg["aws_bedrock_secret"] = prompt_with_default(
-        "AWS Bedrock Secret Key", creds.get("TF_VAR_aws_bedrock_secret_key", "")
-    )
+    # `uv run api-keys create` saves these to credentials.env; when both are
+    # there, use them rather than re-asking for values the user just generated.
+    saved_bedrock_key = creds.get("TF_VAR_aws_bedrock_access_key", "")
+    saved_bedrock_secret = creds.get("TF_VAR_aws_bedrock_secret_key", "")
+    if saved_bedrock_key and saved_bedrock_secret:
+        cfg["aws_bedrock_key"] = saved_bedrock_key
+        cfg["aws_bedrock_secret"] = saved_bedrock_secret
+        print(f"  Bedrock keys:  {saved_bedrock_key[:8]}... (from credentials.env)")
+    else:
+        cfg["aws_bedrock_key"] = ask("AWS Bedrock Access Key", "TF_VAR_aws_bedrock_access_key")
+        cfg["aws_bedrock_secret"] = ask("AWS Bedrock Secret Key", "TF_VAR_aws_bedrock_secret_key")
     while True:
         raw = prompt_with_default(
             f"Seconds per lap (60-lap race, so 20 = ~20 min; minimum {MIN_SECONDS_PER_LAP})",
@@ -337,9 +356,8 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
 
     cfg["aws_session_token"] = ""
     if cfg["aws_bedrock_key"].startswith("ASIA"):
-        cfg["aws_session_token"] = prompt_with_default(
-            "AWS Session Token (required for temporary credentials)",
-            creds.get("TF_VAR_aws_session_token", ""),
+        cfg["aws_session_token"] = ask(
+            "AWS Session Token (required for temporary credentials)", "TF_VAR_aws_session_token"
         )
 
     _persist(root, creds_file, cfg, interactive=True)
@@ -467,9 +485,14 @@ def main():
     cfg = _collect_config(root, creds_file, creds, args.automated)
 
     if not check_docker_running():
-        print("\nError: Docker is not ready (needed to build the simulator image).")
-        print("Start Docker Desktop or run `colima start`, then verify with: docker info")
-        sys.exit(1)
+        print("\nDocker is not running (needed to build the simulator image).")
+        started = False
+        if not args.automated and input("Try to start it now? (y/n) [y]: ").strip().lower() in ("", "y", "yes"):
+            started = start_docker()
+        if not started:
+            print("\nError: Docker is not ready.")
+            print("Start Docker Desktop or run `colima start`, then verify with: docker info")
+            sys.exit(1)
     print("\n  Docker running")
 
     if not check_aws_configured():
@@ -573,21 +596,22 @@ def main():
         labs_ok = _build_labs_and_restart(attendee_out, root)
 
     print("\n=== Deployment Complete ===\n")
-    print("The race simulator runs as an always-on ECS service (RACE_LOOP=true) — the feed is")
-    print(f"already live. Your credential card:  {card}")
+    print(f"Your credential card:  {card}")
     print("It's recorded as F1_CARD in credentials.env, so the tools below need no flags.\n")
     if args.with_labs and labs_ok:
-        print("LAB 3 and LAB 4 are already running — `car_state` and `pit_decisions` are filling.")
-        print("  `car_state` stays empty for ~6 min while anomaly detection fills its")
-        print("  first 12 windows of context. The anomaly fires around lap 24.\n")
-    print("1. Open the SQL shell for the labs:")
-    print("     uv run f1-sql")
-    print("2. Open the live dashboard (second terminal):")
+        print("LAB 3 and LAB 4 are already running and the ECS race simulator is live.")
+        print("  `car_state` emits one row per 20s lap; anomaly detection warms up over")
+        print("  12 laps (~4 min) and flags the front-left tire anomaly at lap 24.\n")
+    else:
+        print("The ECS race simulator is provisioned stopped so you can create `car_state`")
+        print("first, then start the race from lap 1 with `uv run race start`.\n")
+    print("1. Follow the walkthrough in the Confluent Cloud SQL Workspace:")
+    print("     docs/tracks/STANDALONE-DEMO.md")
+    print("2. Start or control this deployment's race feed:")
+    print("     uv run race start | status | stop | restart")
+    print("3. Open the live dashboard (second terminal):")
     print("     uv run f1-pitwall")
-    print("3. Control this deployment's race feed:")
-    print("     uv run race status | stop | start | restart")
-    print("\nWalkthrough: docs/tracks/STANDALONE-DEMO.md")
-    print("Tear down all resources:  uv run destroy")
+    print("\nTear down all resources:  uv run destroy")
     if not labs_ok:
         sys.exit(1)
 

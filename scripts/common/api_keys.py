@@ -174,11 +174,13 @@ aws iam delete-user --user-name {username}
     logger.info(f"Saved credentials to {AWS_CREDENTIALS_FILE}")
 
     env_file = project_root / "credentials.env"
-    if env_file.exists():
-        set_key(str(env_file), "TF_VAR_aws_bedrock_access_key", access_key_id)
-        set_key(str(env_file), "TF_VAR_aws_bedrock_secret_key", secret_access_key)
-        set_key(str(env_file), "TF_VAR_aws_iam_username", username)
-        logger.info("Updated credentials.env")
+    # set_key creates the file when missing; skipping a fresh checkout meant
+    # `uv run deploy` never saw the keys that were just created.
+    env_file.touch(exist_ok=True)
+    set_key(str(env_file), "TF_VAR_aws_bedrock_access_key", access_key_id)
+    set_key(str(env_file), "TF_VAR_aws_bedrock_secret_key", secret_access_key)
+    set_key(str(env_file), "TF_VAR_aws_iam_username", username)
+    logger.info("Updated credentials.env")
 
 
 def _cleanup_user_dependencies(iam_client, username: str, logger: logging.Logger) -> bool:

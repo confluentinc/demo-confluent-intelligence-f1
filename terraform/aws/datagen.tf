@@ -3,13 +3,12 @@
 #
 # Runs the shared simulator image (var.ecr_image_uri) as a single-task ECS
 # Fargate SERVICE producing car_telemetry + race_standings into THIS attendee's
-# cluster. var.race_autostart picks the provisioned desired_count: 1 (the
-# standalone demo — feed live the moment Terraform returns) or 0 (the workshop —
-# stays quiet until the instructor runs `uv run workshop start-races`, so
-# pre-provisioned accounts don't flow data). RACE_LOOP replays back-to-back once
-# the task is up. desired_count is ignore_changes'd, so runtime scaling (this
-# command, scripts/instructor's fleet fan-out) owns it after the initial apply
-# and a re-apply never restarts or stops a race mid-workshop.
+# cluster. var.race_autostart picks the provisioned desired_count (default 0 so
+# pre-provisioned environments stay quiet until `uv run race start`,
+# `uv run deploy --with-labs`, or `uv run workshop start-races` starts them).
+# RACE_LOOP replays back-to-back once the task is up. desired_count is
+# ignore_changes'd, so runtime scaling owns it after the initial apply and a
+# re-apply never restarts or stops a race mid-workshop.
 # =============================================================================
 
 resource "random_id" "suffix" {
