@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import getpass
 import json
 import os
 import re
@@ -49,6 +48,7 @@ from dotenv import set_key
 
 from scripts.common.credentials import load_card
 from scripts.common.terraform import get_project_root
+from scripts.common.ui import prompt_secret
 
 _SERVER_NAME = "real-time-context-engine"
 
@@ -339,8 +339,8 @@ def resolve_rtce_credentials(
         outputs = terraform_rtce_outputs(card)
         key, secret = offer_cli_key(outputs.get("service_account_id", "")) if allow_create else ("", "")
         if not (key and secret):
-            key = getpass.getpass("Global API key: ").strip()
-            secret = getpass.getpass("Global API secret: ").strip()
+            key = input("Global API key: ").strip()
+            secret = prompt_secret("Global API secret: ").strip()
     except (EOFError, KeyboardInterrupt):
         raise SystemExit("Global API key entry cancelled.") from None
     if not (key and secret):

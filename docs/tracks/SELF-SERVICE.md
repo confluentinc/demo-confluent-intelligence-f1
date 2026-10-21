@@ -10,7 +10,26 @@
 
 You need a [Confluent Cloud account](https://confluent.cloud/signup) and AWS Bedrock API keys in `us-east-1`. If you don't have Bedrock keys yet, you can mint scoped IAM keys with `uv run api-keys create` once you are logged into the AWS CLI.
 
-1. Install the prerequisites:
+> [!TIP]
+> **TechXChange attendee, or provided a workstation by the workshop host?** Skip step 2 (install the prerequisites) — it's already set up for you. Start with step 1 to add your promo code.
+
+1. Add a payment method (credit card or promo code) in Confluent Cloud.
+
+    A payment method or promo code is required for Terraform to create your cluster. Free credit is used first, so you typically won't be charged during the workshop.
+
+    1. Go directly to **[Billing & payment](https://confluent.cloud/settings/billing/payment)**.
+    2. Open the **Payment details and contacts** tab.
+    3. Choose **one** of the two options:
+
+        - **Option A — Credit card:** click **Add credit card / bank account**, enter your **card details**, then **Save**.
+        - **Option B — Promo code (provided by the workshop host):** scroll down to **Promos**, click **+ Promo code**, enter the code you were given, then **Apply**. No credit card is needed.
+
+        <img src="../assets/self-service/billing-promo-code.png" alt="Billing and payment — Promos, + Promo code" width="500">
+
+2. Install the prerequisites:
+
+    <details>
+    <summary><strong>Prerequisites for your own machine</strong> — skip this step if you are a TechXChange attendee or were given a workstation (click to expand)</summary>
 
     <details>
     <summary>for Mac</summary>
@@ -37,26 +56,53 @@ You need a [Confluent Cloud account](https://confluent.cloud/signup) and AWS Bed
 
     </details>
 
-2. Clone the repo:
+    </details>
+
+3. Open a **Terminal** on your machine — click **Activities** (top-left), then the **Terminal** icon in the dock.
+
+    <img src="../assets/self-service/open-terminal.png" alt="Open Terminal from the dock" width="500">
+
+    Go to the workshop folder and pull the latest changes:
+
+    ```bash
+    cd workshop/4549/
+    git pull
+    ```
+
+    <details>
+    <summary><strong>Using your own machine?</strong> Clone the repo instead</summary>
 
     ```bash
     git clone https://github.com/confluentinc/demo-confluent-intelligence-f1.git
     cd demo-confluent-intelligence-f1
     ```
 
-3. Sign into Confluent Cloud:
+    </details>
+
+4. Sign into Confluent Cloud with the **email and password you used to sign up**:
 
     ```bash
     confluent login
     ```
 
-4. Provision the environment:
+5. Provision the environment:
 
     ```bash
     uv run selfservice up
     ```
 
-    The command asks for your Confluent credentials, email, and AWS Bedrock credentials, then provisions your Confluent environment, cluster, Flink compute pool, source topics, `driver_race_history` seed data, and Bedrock model connections. It also writes your credential card to `runs/selfservice/credentials/DEMO.env` and records it as `F1_CARD` in `credentials.env` so local tools (`f1-race`, `f1-pitwall`, `setup-rtce`) find it automatically.
+    <img src="../assets/self-service/selfservice-up.png" alt="uv run selfservice up — API key generation, configuration prompts, and Ready to provision? prompt" width="600">
+
+    The command prompts for the following:
+
+    | Prompt | Where to get it |
+    |---|---|
+    | Generate new Confluent Cloud API keys? | Answer `y` — `uv` creates the API key and secret for you |
+    | Confluent Cloud API Key / Secret | Press **Enter** to confirm the key and secret `uv` just created |
+    | Owner email | The email you used to sign up for Confluent Cloud |
+    | AWS Bedrock Access Key / Secret Key | Your AWS IAM user's access key with Bedrock access (or the one your instructor gave you) |
+
+    It then provisions your Confluent environment, cluster, Flink compute pool, source topics, `driver_race_history` seed data, and Bedrock model connections. It also writes your credential card to `runs/selfservice/credentials/DEMO.env` and records it as `F1_CARD` in `credentials.env` so local tools (`f1-race`, `f1-pitwall`, `setup-rtce`) find it automatically.
 
     > **Tip:** Pass `uv run selfservice up --with-labs` if you want `car_state`, `pit_strategy_agent`, and `pit_decisions` prebuilt for you instead of creating them in Sections 1–3.
 

@@ -119,7 +119,8 @@ def test_cli_fallback_saves_pair_without_manual_prompt(tmp_path):
         patch.object(setup_rtce, 'terraform_rtce_outputs', return_value={'service_account_id': 'sa-test'}),
         patch('sys.stdin.isatty', return_value=True),
         patch.object(setup_rtce, 'offer_cli_key', return_value=('new-key', 'new-secret')) as offer,
-        patch.object(setup_rtce.getpass, 'getpass', side_effect=AssertionError),
+        patch.object(setup_rtce, 'prompt_secret', side_effect=AssertionError),
+        patch('builtins.input', side_effect=AssertionError),
     ):
         setup_rtce.resolve_rtce_credentials(card, path)
     offer.assert_called_once_with('sa-test')
@@ -133,7 +134,8 @@ def test_manual_fallback_after_cli_declined(capsys):
         patch.object(setup_rtce, 'terraform_rtce_outputs', return_value={}),
         patch('sys.stdin.isatty', return_value=True),
         patch.object(setup_rtce, 'offer_cli_key', return_value=('', '')),
-        patch.object(setup_rtce.getpass, 'getpass', side_effect=['manual-key', 'manual-secret']),
+        patch('builtins.input', return_value='manual-key'),
+        patch.object(setup_rtce, 'prompt_secret', return_value='manual-secret'),
     ):
         result = setup_rtce.resolve_rtce_credentials(dict(CARD, F1_RTCE_API_KEY=''))
     assert result['F1_RTCE_API_SECRET'] == 'manual-secret'

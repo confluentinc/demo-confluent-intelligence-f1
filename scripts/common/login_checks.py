@@ -9,7 +9,6 @@ Provides functions for:
 - Checking Terraform installation
 """
 
-import getpass
 import os
 import shutil
 import subprocess
@@ -18,6 +17,8 @@ import time
 from pathlib import Path
 
 from dotenv import dotenv_values, set_key
+
+from scripts.common.ui import prompt_secret
 
 USERNAME_KEY = "TF_VAR_confluent_username"
 PASSWORD_KEY = "TF_VAR_confluent_password"
@@ -68,7 +69,7 @@ def _prompt_and_save_login(creds_file, creds: dict) -> bool:
         if not username:
             print("  Skipped. Run `confluent login` manually if your session expires.")
             return False
-        password = getpass.getpass("  Password: ")
+        password = prompt_secret("  Password: ")
 
         if _try_confluent_login(username, password):
             set_key(str(creds_file), USERNAME_KEY, username)
