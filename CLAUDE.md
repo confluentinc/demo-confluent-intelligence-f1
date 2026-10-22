@@ -241,8 +241,8 @@ will mislead you here; check the CREATE TABLE options too.
 | File | Purpose | Created by |
 |------|---------|------------|
 | `credentials.env` | Deploy secrets (`TF_VAR_*`) + the `F1_CARD` pointer | `deploy.py` |
-| `runs/<track>/deployment.env` | Per-track deployment inputs: resolved prefix, pacing, region, card path | `deploy.py`, `selfservice up` |
-| `runs/<name>/credentials/<prefix>.env` | Credential card (`F1_*`) — what the attendee tools authenticate with | `workshop creds`, `deploy.py`, `selfservice up` |
+| `runs/<track>/deployment.env` | Per-track deployment inputs: resolved prefix, pacing, region, card path | `deploy.py` (both tracks) |
+| `runs/<name>/credentials/<prefix>.env` | Credential card (`F1_*`) — what the attendee tools authenticate with | `workshop creds`, `deploy.py` (both tracks) |
 | `runs/<name>/credentials/<prefix>.md` | The printed handout: Console URL/username/password first, then env IDs | `workshop creds` |
 | `confluent-mcp.env` | MCP server env (mode `0600`), rewritten whole each run | `setup-mcp` |
 
@@ -279,7 +279,7 @@ where a missing Google OAuth client leaves attendee passwords live are all in th
 
 ## File Sync Rule
 
-`docs/demo-reference/*.sql` is the executable Flink SQL source of truth. Its `CREATE TABLE car_state`, `CREATE AGENT pit_strategy_agent`, `CREATE TABLE pit_decisions`, and optional `AI_FORECAST` statements must match the copy/paste SQL in all three attendee walkthroughs: `docs/tracks/HOSTED-WORKSHOP.md`, `docs/tracks/SELF-SERVICE.md`, and `docs/tracks/STANDALONE-DEMO.md`. When changing a statement, update the source file and every walkthrough copy in the same change, then compare the fenced SQL with the source before merging. `docs/demo-reference/orchestrate_social_agent.md` remains the source of truth for the non-SQL Lab 5 configuration. The organizer guide links to the walkthrough and must not duplicate attendee SQL.
+`docs/demo-reference/*.sql` is the executable Flink SQL source of truth. Its `CREATE TABLE car_state`, `CREATE AGENT pit_strategy_agent`, and `CREATE TABLE pit_decisions` statements must match the copy/paste SQL in all three attendee walkthroughs: `docs/tracks/HOSTED-WORKSHOP.md`, `docs/tracks/SELF-SERVICE.md`, and `docs/tracks/STANDALONE-DEMO.md`. The optional `AI_FORECAST` statement syncs only to HOSTED and STANDALONE — SELF-SERVICE no longer carries it. When changing a statement, update the source file and every walkthrough copy in the same change, then compare the fenced SQL with the source before merging. `docs/demo-reference/orchestrate_social_agent.md` remains the source of truth for the non-SQL Lab 5 configuration. The organizer guide links to the walkthrough and must not duplicate attendee SQL.
 
 The old split lab files remain in git history and aren't part of the sync set.
 Do not restore `labs/instructor-led/` or copy SQL into organizer docs. The default
@@ -295,7 +295,11 @@ attendee walkthrough.
 
 | File | Purpose |
 |------|---------|
-| `deploy.py` | Standalone two-tier deploy (shared + one attendee); `--with-labs`, `F1_SHARED_PREFIX` |
+| `deploy.py` | `uv run deploy` — the one solo deploy command: prompts for (or `--track`) self-service vs standalone; the standalone two-tier flow (shared + one attendee) lives here; `--with-labs`, `F1_SHARED_PREFIX`. Prefer it in docs and output |
+| `scripts/selfservice/cli.py` | `uv run selfservice up\|down` — thin shortcuts that forward to `deploy --track self-service` / `destroy --only self-service`; no logic of their own |
+| `scripts/selfservice/provision.py` | Self-service track of `uv run deploy` (terraform/self-service + seed); `export_selfservice_tf_env` is also `uv run destroy`'s entry point |
+| `scripts/common/deploy_common.py` | What both tracks share: track picker, prefix/pacing resolution, LLM provider (saved as `TF_VAR_llm_provider` in credentials.env; a deployed track keeps the provider its state shows unless the var is exported), key minting, live Bedrock invoke test, masked summary, card writing, Flink workspace URL, start-dashboard offer |
+| `scripts/common/destroy.py` | `uv run destroy` — the one teardown for both tracks (`--force`/`--yes`, `--only deploy\|self-service`, `--delete-credentials`); once nothing is deployed, removes the setup-mcp/setup-rtce Claude Code registrations and offers to delete credentials.env |
 | `scripts/reset.py` | Clear a deployment's lab objects + truncate source topics; stops the feed first, `--track`, `--with-labs` |
 | `scripts/race_control.py` | `uv run race status\|start\|stop\|restart` — scoped to THIS deployment's one ECS service |
 | `scripts/setup_mcp.py` | `uv run setup-mcp` — register `@confluentinc/mcp-confluent` with Claude Code (project-local) or Codex (user-global) from a credential card |

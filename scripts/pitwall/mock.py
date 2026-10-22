@@ -144,9 +144,7 @@ def run_mock(state: RaceState, stop) -> None:
                 return
             car44_before = race.get_car(OUR_CAR_NUMBER).copy()
             race.advance_lap()
-            car44, post_pit = source_state_for_lap(
-                car44_before, race.get_car(OUR_CAR_NUMBER), lap
-            )
+            car44, post_pit = source_state_for_lap(car44_before, race.get_car(OUR_CAR_NUMBER), lap)
 
             ts = _now_millis()
             for standing in race.get_standings():

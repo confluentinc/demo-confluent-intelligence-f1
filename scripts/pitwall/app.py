@@ -5,8 +5,8 @@
   uv run f1-pitwall --mock                # offline demo / dev (no Kafka)
 
 Starts a local web server, opens a browser, and streams the race — leaderboard,
-car #88 telemetry gauges, and (once you build them in LAB 3 / LAB 4) the anomaly
-and AI pit-decision panels. Reads topics directly with the Kafka + Schema
+car #88 telemetry gauges, and (once you build them — Step 1 / Step 3, or Lab 3 /
+Lab 4 in the hosted workshop) the anomaly and AI pit-decision panels. Reads topics directly with the Kafka + Schema
 Registry keys on your credential card; it only consumes, so it never touches your
 Flink compute pool. Stop with Ctrl-C.
 
@@ -21,14 +21,30 @@ import argparse
 import logging
 import threading
 import webbrowser
+from pathlib import Path
 
 import uvicorn
 
-from scripts.common.credentials import load_card
+from scripts.common import deployment_meta as meta
+from scripts.common.credentials import PROJECT_ROOT, load_card
 from scripts.pitwall.server import create_app
 from scripts.pitwall.state import RaceState
 
 logger = logging.getLogger("f1-pitwall")
+
+
+def _labels_for_card(path: Path) -> str:
+    """'steps' for a self-service / standalone card, 'labs' for a hosted one.
+
+    Only `deploy --track self-service` and `deploy` write cards under runs/<track>/credentials/;
+    a hosted attendee's card is the pasted Env File block or an instructor-handed
+    file, and the hosted walkthrough numbers its sections as labs.
+    """
+    resolved = path.resolve()
+    for track in (meta.SELFSERVICE, meta.STANDALONE):
+        if resolved.is_relative_to((PROJECT_ROOT / "runs" / track.name).resolve()):
+            return "steps"
+    return "labs"
 
 
 def main() -> None:
@@ -45,6 +61,12 @@ def main() -> None:
         "--verbose",
         action="store_true",
         help="Also log the errors the consumer suppresses (e.g. car_state missing before LAB 3)",
+    )
+    parser.add_argument(
+        "--labels",
+        choices=("steps", "labs"),
+        help="How the locked panels name their section: 'steps' (self-service/standalone) "
+        "or 'labs' (hosted workshop). Default: inferred from the credential card.",
     )
     args = parser.parse_args()
 
@@ -63,9 +85,11 @@ def main() -> None:
         from scripts.pitwall.mock import run_mock
 
         feed = threading.Thread(target=run_mock, args=(state, stop), daemon=True)
+        labels = args.labels or "steps"
     else:
         path, creds = load_card(args.creds)
         logger.info("Using credential card: %s", path)
+        labels = args.labels or _labels_for_card(path)
 
         from scripts.pitwall.consumer import run_consumer
 
@@ -78,7 +102,7 @@ def main() -> None:
     if not args.no_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
 
-    app = create_app(state)
+    app = create_app(state, labels)
     try:
         uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
     except KeyboardInterrupt:

@@ -6,11 +6,17 @@ TRACKS = (
     "docs/tracks/SELF-SERVICE.md",
     "docs/tracks/STANDALONE-DEMO.md",
 )
+# (source, marker, tracks that must carry it). The optional Granite forecast was
+# dropped from SELF-SERVICE, so it only syncs to the other two walkthroughs.
 SQL_SOURCES = (
-    ("docs/demo-reference/enrichment_anomaly.sql", "CREATE TABLE `car_state`"),
-    ("docs/demo-reference/streaming_agent_create_agent.sql", "CREATE AGENT `pit_strategy_agent`"),
-    ("docs/demo-reference/streaming_agent_pit_decisions.sql", "CREATE TABLE `pit_decisions`"),
-    ("docs/demo-reference/granite_tire_forecast.sql", "WITH windowed AS"),
+    ("docs/demo-reference/enrichment_anomaly.sql", "CREATE TABLE `car_state`", TRACKS),
+    ("docs/demo-reference/streaming_agent_create_agent.sql", "CREATE AGENT `pit_strategy_agent`", TRACKS),
+    ("docs/demo-reference/streaming_agent_pit_decisions.sql", "CREATE TABLE `pit_decisions`", TRACKS),
+    (
+        "docs/demo-reference/granite_tire_forecast.sql",
+        "WITH windowed AS",
+        ("docs/tracks/HOSTED-WORKSHOP.md", "docs/tracks/STANDALONE-DEMO.md"),
+    ),
 )
 
 
@@ -31,9 +37,9 @@ def _normalize(text: str) -> str:
 
 
 def test_attendee_walkthrough_sql_matches_the_canonical_sources():
-    for source_path, marker in SQL_SOURCES:
+    for source_path, marker, tracks in SQL_SOURCES:
         statement = _dedent(_statement(source_path, marker))
-        for track_path in TRACKS:
+        for track_path in tracks:
             track = _dedent((ROOT / track_path).read_text())
             assert statement in track, f"{marker} from {source_path} missing in {track_path}"
 

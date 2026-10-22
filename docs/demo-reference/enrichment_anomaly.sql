@@ -1,7 +1,7 @@
 -- Job 1: Enrichment + Anomaly Detection
 -- Attendees write this by hand in LAB 3 of docs/tracks/HOSTED-WORKSHOP.md.
 -- `uv run reset --with-labs`, `uv run deploy --with-labs`, and
--- `uv run selfservice up --with-labs` submit this exact file instead. There is no
+-- `uv run deploy --track self-service --with-labs` submit this exact file instead. There is no
 -- dbt in this repo.
 -- Input: car_telemetry (stream), race_standings (versioned table)
 -- Output: car_state (one record per 20-second race lap)

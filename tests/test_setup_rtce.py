@@ -27,18 +27,14 @@ class WriteCodexConfigTests(unittest.TestCase):
 
             self.assertTrue(ok)
             text = config_path.read_text()
-            self.assertIn('[mcp_servers.real-time-context-engine]', text)
+            self.assertIn("[mcp_servers.real-time-context-engine]", text)
             self.assertIn(ENDPOINT, text)
             self.assertIn(f"Basic {TOKEN}", text)
 
     def test_preserves_unrelated_existing_content(self):
         with TemporaryDirectory() as tmp:
             config_path = Path(tmp) / "config.toml"
-            config_path.write_text(
-                "# a comment worth keeping\n"
-                "[mcp_servers.other]\n"
-                'command = "some-other-server"\n'
-            )
+            config_path.write_text('# a comment worth keeping\n[mcp_servers.other]\ncommand = "some-other-server"\n')
 
             with redirect_stdout(io.StringIO()):
                 write_codex_config(ENDPOINT, TOKEN, config_path)
@@ -47,7 +43,7 @@ class WriteCodexConfigTests(unittest.TestCase):
             self.assertIn("# a comment worth keeping", text)
             self.assertIn("[mcp_servers.other]", text)
             self.assertIn("some-other-server", text)
-            self.assertIn('[mcp_servers.real-time-context-engine]', text)
+            self.assertIn("[mcp_servers.real-time-context-engine]", text)
 
     def test_rerun_replaces_existing_rtce_entry(self):
         with TemporaryDirectory() as tmp:
@@ -60,7 +56,7 @@ class WriteCodexConfigTests(unittest.TestCase):
             text = config_path.read_text()
             self.assertNotIn("old-endpoint", text)
             self.assertIn(ENDPOINT, text)
-            self.assertEqual(text.count('[mcp_servers.real-time-context-engine]'), 1)
+            self.assertEqual(text.count("[mcp_servers.real-time-context-engine]"), 1)
 
     def test_dry_run_does_not_write(self):
         with TemporaryDirectory() as tmp:

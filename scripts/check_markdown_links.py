@@ -162,14 +162,8 @@ def markdown_anchors(text: str) -> set[str]:
 
 
 def tracked_files(root: Path) -> set[PurePosixPath]:
-    result = subprocess.run(
-        ["git", "ls-files", "-z"], cwd=root, check=True, capture_output=True, text=True
-    )
-    return {
-        PurePosixPath(name)
-        for name in result.stdout.split("\0")
-        if name and (root / name).is_file()
-    }
+    result = subprocess.run(["git", "ls-files", "-z"], cwd=root, check=True, capture_output=True, text=True)
+    return {PurePosixPath(name) for name in result.stdout.split("\0") if name and (root / name).is_file()}
 
 
 def check_links(root: Path, tracked: set[PurePosixPath]) -> list[str]:

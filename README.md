@@ -1,5 +1,7 @@
 # F1 Pit Wall AI: River Racing at Silverstone
 
+[![Sign up for Confluent Cloud](https://img.shields.io/badge/Sign%20up%20for%20Confluent%20Cloud-007BFF?style=for-the-badge&logo=apachekafka&logoColor=white)](https://www.confluent.io/confluent-cloud/tryfree/?utm_campaign=tm.plg_cd.techxchange2026&utm_source=lab&utm_medium=github)
+
 Build a real-time AI pit-strategy system on Confluent Cloud. Live telemetry and race standings flow into Kafka, Flink SQL detects a tire anomaly, and a Streaming Agent recommends when River Racing should pit.
 
 <div align="center">
@@ -11,6 +13,8 @@ Build a real-time AI pit-strategy system on Confluent Cloud. Live telemetry and 
 > [!IMPORTANT]
 >
 > **Are you attending the upcoming self-service workshop?** Use the **[self-service workshop walkthrough](docs/tracks/SELF-SERVICE.md)**. You'll sign in with your own Confluent Cloud account, provision an environment, and run the race on your computer.
+>
+> No account yet? [Sign up for Confluent Cloud](https://www.confluent.io/confluent-cloud/tryfree/?utm_campaign=tm.plg_cd.techxchange2026&utm_source=lab&utm_medium=github) before you deploy.
 
 > [!NOTE]
 >

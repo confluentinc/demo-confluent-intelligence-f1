@@ -54,6 +54,7 @@ RESET_WORKERS = 8
 
 def _card_to_tf(card: dict[str, str | None]) -> dict[str, str]:
     """Map F1_* card keys back to the Terraform output shape reset.py expects."""
+
     def get(key: str) -> str:
         return (card.get(f"F1_{key.upper()}") or "").strip()
 

@@ -127,7 +127,30 @@ resource "confluent_tag_binding" "car_telemetry_raw_data" {
 # needs, rather than making the shared module conditional and risking a
 # resource-address change for terraform/aws's already-applied state.
 
+# llm_provider = "confluent" swaps the Bedrock connection for CSP Hosted Flink
+# Model Inference: Confluent runs the model in its own AWS account, so there is
+# no connection and no AWS key. Same model name either way, so LAB 4's agent SQL
+# doesn't change. Switching an already-applied deployment re-runs CREATE MODEL
+# against an existing name — tear down first.
+locals {
+  use_bedrock = var.llm_provider == "bedrock"
+
+  llm_textgen_with = local.use_bedrock ? join(", ", [
+    "'provider' = 'bedrock'",
+    "'task' = 'text_generation'",
+    "'bedrock.connection' = '${one(confluent_flink_connection.bedrock_textgen_connection[*].display_name)}'",
+    "'bedrock.params.max_tokens' = '50000'",
+    ]) : join(", ", [
+    "'provider' = 'confluent'",
+    "'task' = 'text_generation'",
+    "'confluent.model' = '${var.csp_hosted_model}'",
+    "'confluent.params.max_tokens' = '50000'",
+  ])
+}
+
 resource "confluent_flink_connection" "bedrock_textgen_connection" {
+  count = local.use_bedrock ? 1 : 0
+
   organization { id = data.confluent_organization.main.id }
   environment { id = module.environment.environment_id }
   compute_pool { id = module.flink.compute_pool_id }
@@ -159,7 +182,7 @@ resource "confluent_flink_statement" "llm_textgen_model" {
     secret = module.flink.flink_api_secret
   }
 
-  statement = "CREATE MODEL `${local.name_prefix}-ENV`.`${local.name_prefix}-CLUSTER`.`llm_textgen_model` INPUT (prompt STRING) OUTPUT (response STRING) WITH ('provider' = 'bedrock', 'task' = 'text_generation', 'bedrock.connection' = '${confluent_flink_connection.bedrock_textgen_connection.display_name}', 'bedrock.params.max_tokens' = '50000');"
+  statement = "CREATE MODEL `${local.name_prefix}-ENV`.`${local.name_prefix}-CLUSTER`.`llm_textgen_model` INPUT (prompt STRING) OUTPUT (response STRING) WITH (${local.llm_textgen_with});"
 
   properties = {
     "sql.current-catalog"  = "${local.name_prefix}-ENV"
@@ -176,6 +199,11 @@ resource "confluent_flink_statement" "llm_textgen_model" {
 moved {
   from = module.llm.confluent_flink_connection.bedrock_textgen_connection
   to   = confluent_flink_connection.bedrock_textgen_connection
+}
+
+moved {
+  from = confluent_flink_connection.bedrock_textgen_connection
+  to   = confluent_flink_connection.bedrock_textgen_connection[0]
 }
 
 moved {

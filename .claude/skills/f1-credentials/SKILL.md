@@ -78,8 +78,8 @@ mismatch from `aws-shared`'s `ecr_image_uri`, warns, and under `--automated` **r
 4. the only card under `runs/*/credentials/*.env`
 
 Ambiguity is an error, never a guess: several cards and no pointer exits listing them.
-`deploy.py` and `selfservice up` call `set_active_card()`; `destroy` and
-`selfservice down` call `clear_active_card(only_if_under=...)`, scoped so tearing down
+Both `deploy` tracks call `set_active_card()`; `destroy` calls
+`clear_active_card(only_if_under=...)`, scoped so tearing down
 one deployment leaves another's pointer alone. The organizer fan-out tools
 (`f1-social-feed`, `f1-social-feed-rtce`, `workshop validate`) deliberately keep
 explicit `--creds` / `--creds-glob` — operating over many cards is their whole job.

@@ -67,6 +67,26 @@ variable "flink_max_cfu" {
   default     = 10
 }
 
+# --- LLM provider ---
+
+variable "llm_provider" {
+  description = "Backs llm_textgen_model: 'bedrock' (shared AWS Bedrock keys) or 'confluent' (CSP Hosted Flink Model Inference — no keys)"
+  type        = string
+  # Kept on Bedrock for wsa workshop builds (CSP not yet E2E-tested on this tier);
+  # `uv run deploy --track standalone` passes TF_VAR_llm_provider explicitly.
+  default     = "bedrock"
+  validation {
+    condition     = contains(["bedrock", "confluent"], var.llm_provider)
+    error_message = "llm_provider must be 'bedrock' or 'confluent'."
+  }
+}
+
+variable "csp_hosted_model" {
+  description = "Model id for llm_provider = 'confluent'. Case-sensitive: the model service matches it exactly."
+  type        = string
+  default     = "anthropic.claude-sonnet-4-6"
+}
+
 # --- AWS Bedrock (shared across all attendees) ---
 
 variable "aws_bedrock_access_key" {
@@ -163,6 +183,6 @@ variable "race_autostart" {
     the initial provision: desired_count is ignore_changes'd afterward, so runtime
     scaling owns it.
   EOT
-  type    = bool
-  default = false
+  type        = bool
+  default     = false
 }

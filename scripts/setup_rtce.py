@@ -77,25 +77,31 @@ def lightning_command(card: dict[str, str]) -> str:
     missing = [name for name in required if not card.get(name)]
     if missing:
         raise ValueError(
-            "Missing credentials: " + ", ".join(missing)
+            "Missing credentials: "
+            + ", ".join(missing)
             + ". Hosted attendees: save your dispenser Env File block as credentials.env "
             "(it carries the RTCE key), or use the instructor-provided .env file. Standalone "
             "users: supply an existing Global key through RTCE_API_KEY and RTCE_API_SECRET."
         )
     region, cloud = match.groups()
     url = f"https://sql.{region}.{cloud}.confluent.cloud/query/v1alpha1"
-    payload = json.dumps({
-        "catalog_name": card["F1_ENVIRONMENT_ID"],
-        "database_name": card["F1_CLUSTER_ID"],
-        "query": "SELECT car_number, lap, tire_temp_fl_c FROM car_telemetry ORDER BY lap DESC LIMIT 10",
-    }, indent=2)
+    payload = json.dumps(
+        {
+            "catalog_name": card["F1_ENVIRONMENT_ID"],
+            "database_name": card["F1_CLUSTER_ID"],
+            "query": "SELECT car_number, lap, tire_temp_fl_c FROM car_telemetry ORDER BY lap DESC LIMIT 10",
+        },
+        indent=2,
+    )
     token = basic_token(card["F1_RTCE_API_KEY"], card["F1_RTCE_API_SECRET"])
-    return " \\\n  ".join((
-        "curl -sS -X POST " + shlex.quote(url),
-        "-H " + shlex.quote("Authorization: Basic " + token),
-        "-H " + shlex.quote("Content-Type: application/json"),
-        "-d " + shlex.quote(payload),
-    ))
+    return " \\\n  ".join(
+        (
+            "curl -sS -X POST " + shlex.quote(url),
+            "-H " + shlex.quote("Authorization: Basic " + token),
+            "-H " + shlex.quote("Content-Type: application/json"),
+            "-d " + shlex.quote(payload),
+        )
+    )
 
 
 def claude_argv(endpoint: str, token: str) -> tuple[list[str], list[str]]:
@@ -103,8 +109,15 @@ def claude_argv(endpoint: str, token: str) -> tuple[list[str], list[str]]:
     return (
         ["claude", "mcp", "remove", _SERVER_NAME, "-s", "local"],
         [
-            "claude", "mcp", "add", "--transport", "http", _SERVER_NAME, endpoint,
-            "--header", f"Authorization: Basic {token}",
+            "claude",
+            "mcp",
+            "add",
+            "--transport",
+            "http",
+            _SERVER_NAME,
+            endpoint,
+            "--header",
+            f"Authorization: Basic {token}",
         ],
     )
 
@@ -118,11 +131,7 @@ def codex_config_snippet(endpoint: str, token: str) -> str:
     literal `http_headers` block (this repo's Confluent Basic token, not a
     long-lived secret) is the simplest correct snippet.
     """
-    return (
-        f'[mcp_servers.{_SERVER_NAME}]\n'
-        f'url = "{endpoint}"\n'
-        f'http_headers = {{ "Authorization" = "Basic {token}" }}\n'
-    )
+    return f'[mcp_servers.{_SERVER_NAME}]\nurl = "{endpoint}"\nhttp_headers = {{ "Authorization" = "Basic {token}" }}\n'
 
 
 def register_claude(endpoint: str, token: str, dry_run: bool = False) -> bool:
@@ -228,7 +237,7 @@ def warn_on_empty_card_fields(card: dict[str, str]) -> list[str]:
     if missing:
         print("Error: the credential card has no RTCE keys — missing: " + ", ".join(missing))
         print("  Regenerate it with RTCE keys enabled:")
-        print("    uv run selfservice up   |   uv run workshop creds --rtce-keys")
+        print("    uv run deploy --track self-service   |   uv run workshop creds --rtce-keys")
     return missing
 
 
@@ -254,7 +263,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="print the commands/snippet, but change no agent config",
     )
     parser.add_argument(
-        "--lightning", action="store_true",
+        "--lightning",
+        action="store_true",
         help="print a ready-to-run Lightning Query curl command; do not configure an MCP client",
     )
     args = parser.parse_args(argv)
@@ -275,16 +285,21 @@ def terraform_rtce_outputs(card: dict[str, str]) -> dict[str, str]:
         try:
             result = subprocess.run(
                 ["terraform", "output", "-json", f"-state={state}"],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if result.returncode:
                 continue
             outputs = {k: v["value"] for k, v in json.loads(result.stdout).items()}
         except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError):
             continue
-        if (outputs.get("environment_id") == card.get("F1_ENVIRONMENT_ID")
-                and outputs.get("cluster_id") == card.get("F1_CLUSTER_ID")
-                and outputs.get("environment_id") and outputs.get("cluster_id")):
+        if (
+            outputs.get("environment_id") == card.get("F1_ENVIRONMENT_ID")
+            and outputs.get("cluster_id") == card.get("F1_CLUSTER_ID")
+            and outputs.get("environment_id")
+            and outputs.get("cluster_id")
+        ):
             return outputs
     return {}
 
@@ -294,8 +309,17 @@ def offer_cli_key(service_account_id: str = "") -> tuple[str, str]:
     print(f"Create a Global API key for {owner}? [y/N] ", end="", file=sys.stderr)
     if input().strip().lower() not in ("y", "yes"):
         return "", ""
-    argv = ["confluent", "api-key", "create", "--resource", "global",
-            "--description", "RTCE and Lightning Queries", "-o", "json"]
+    argv = [
+        "confluent",
+        "api-key",
+        "create",
+        "--resource",
+        "global",
+        "--description",
+        "RTCE and Lightning Queries",
+        "-o",
+        "json",
+    ]
     if service_account_id:
         argv += ["--service-account", service_account_id]
     try:
@@ -310,7 +334,10 @@ def offer_cli_key(service_account_id: str = "") -> tuple[str, str]:
 
 
 def resolve_rtce_credentials(
-    card: dict[str, str], card_path: Path | None = None, *, allow_create: bool = True,
+    card: dict[str, str],
+    card_path: Path | None = None,
+    *,
+    allow_create: bool = True,
 ) -> dict[str, str]:
     """Use overrides, matching Terraform outputs, saved credentials, then CLI/manual fallback."""
     card = dict(card)
@@ -329,8 +356,7 @@ def resolve_rtce_credentials(
         "No saved Global API key pair. Provisioning normally supplies it.\n"
         "Hosted attendees: save your dispenser Env File block as credentials.env, or ask your instructor.\n"
         "Manual creation: Console > Administration > API keys > Add API key; select Global scope.\n"
-        "Use an account authorized to read this deployment's topic and Schema Registry.\n"
-        + _KEY_HELP,
+        "Use an account authorized to read this deployment's topic and Schema Registry.\n" + _KEY_HELP,
         file=sys.stderr,
     )
     if not sys.stdin.isatty():

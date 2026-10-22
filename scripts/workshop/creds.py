@@ -164,11 +164,17 @@ def _mint_rtce_key(sa_id: str, prefix: str) -> tuple[str, str]:
     try:
         result = subprocess.run(
             [
-                "confluent", "api-key", "create",
-                "--resource", "global",
-                "--service-account", sa_id,
-                "--description", f"RTCE MCP access for workshop attendee {prefix}",
-                "-o", "json",
+                "confluent",
+                "api-key",
+                "create",
+                "--resource",
+                "global",
+                "--service-account",
+                sa_id,
+                "--description",
+                f"RTCE MCP access for workshop attendee {prefix}",
+                "-o",
+                "json",
             ],
             capture_output=True,
             text=True,
@@ -374,7 +380,7 @@ def _rtce_section(f: dict[str, str]) -> str:
     if not command:
         return ""
     # Wrapped for the card's fixed width; `claude mcp add` takes it either way.
-    wrapped = command.replace(' --header ', ' \\\n  --header ')
+    wrapped = command.replace(" --header ", " \\\n  --header ")
     return f"""
 ## Ask an AI agent about the live race (Real-Time Context Engine)
 

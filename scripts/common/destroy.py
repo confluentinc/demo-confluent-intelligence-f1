@@ -1,6 +1,12 @@
 """
-Destroy what YOU deployed on this machine — `uv run deploy` and/or
-`uv run selfservice up`. Pick what to tear down, confirm, then destroy.
+Destroy what YOU deployed on this machine with `uv run deploy` (either track).
+Pick what to tear down, confirm, then destroy. `--force` skips every prompt.
+
+After a fully successful teardown you are offered to delete credentials.env too
+(default yes; default no while another deployment still needs it). If nothing is
+left deployed, the Claude Code MCP registrations `setup-mcp` / `setup-rtce` made
+for this project are removed as well — they point at the dead environment.
+`--only self-service` scopes the run to one group (`uv run selfservice down`).
 
 Deployments are offered as groups, not raw Terraform tiers, because `aws` and
 `aws-shared` are never created independently: `uv run deploy` always applies
@@ -24,13 +30,16 @@ this directory — _looks_like_workshop_shared() catches that and demands a type
 confirmation before touching it.
 """
 
+import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 from .credentials import load_or_create_credentials_file
-from .deployment_meta import TRACKS, retire_track
+from .deployment_meta import TRACKS, has_state, retire_track
 from .terraform import cleanup_terraform_artifacts, get_project_root, run_terraform_output
 from .terraform_runner import run_terraform_destroy
 
@@ -110,8 +119,8 @@ def _retire_tier(root: Path, tier: str) -> None:
     the dead track's cards restores the single-candidate case resolution needs.
 
     Also removes the self-service `.seeded` marker, which used to survive
-    `uv run destroy` (only `selfservice down` unlinked it). The next
-    `selfservice up` then printed "already seeded" over an empty
+    `uv run destroy` (only the old `destroy` unlinked it). The next
+    self-service deploy then printed "already seeded" over an empty
     `driver_race_history`: LAB 2's COUNT(*) returns 0 and LAB 4's history join
     returns nothing, with no error anywhere.
 
@@ -146,6 +155,92 @@ def _looks_like_workshop_shared(root: Path) -> bool:
     return not (tf / "aws" / "terraform.tfstate").exists()
 
 
+# Project-local Claude Code registrations made by `uv run setup-mcp` and
+# `uv run setup-rtce` (their _SERVER_NAME), plus the env file setup-mcp writes.
+MCP_SERVERS = ("confluent-cloud-mcp-server", "real-time-context-engine")
+MCP_ENV_FILE = "confluent-mcp.env"
+
+
+def _cleanup_mcp(root: Path) -> None:
+    """Drop this project's MCP registrations; they point at a destroyed environment.
+
+    Best-effort: a missing `claude` CLI or an absent registration is not an error.
+    Codex entries live in the user-global ~/.codex/config.toml and may serve other
+    projects, so they are only mentioned, never edited.
+    """
+    env_file = root / MCP_ENV_FILE
+    if env_file.exists():
+        env_file.unlink()
+        print(f"  Removed {MCP_ENV_FILE}")
+    if shutil.which("claude"):
+        for name in MCP_SERVERS:
+            result = subprocess.run(
+                ["claude", "mcp", "remove", name, "-s", "local"], cwd=root, capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                print(f"  Removed Claude Code MCP server '{name}'")
+    if (Path.home() / ".codex" / "config.toml").exists():
+        print(f"  Codex: remove {', '.join(MCP_SERVERS)} from ~/.codex/config.toml if you registered them.")
+
+
+def _offer_credentials_cleanup(creds_file: Path, args: argparse.Namespace, still_deployed: bool) -> None:
+    """Ask whether to delete credentials.env too.
+
+    Only after a fully successful destroy. It holds the Confluent API key, the
+    saved Console login, and the Bedrock keys, so a finished attendee shouldn't
+    leave it behind (default yes). It also feeds the other deployment's teardown,
+    so while anything is still deployed the default flips to keep it. `--force`
+    keeps it unless `--delete-credentials` is also passed.
+    """
+    if not creds_file.exists():
+        return
+    if args.delete_credentials:
+        delete = True
+    elif args.force:
+        delete = False
+    else:
+        if still_deployed:
+            print("\nNote: credentials.env also backs a deployment that is still running here.")
+        default = "n" if still_deployed else "y"
+        answer = (
+            input(
+                "\nAlso delete credentials.env (API keys, Confluent login, Bedrock keys)? "
+                "(y/n — choose n if you plan to re-deploy using these credentials after tearing down) "
+                f"[{default}]: "
+            )
+            .strip()
+            .lower()
+            or default
+        )
+        delete = answer == "y"
+    if delete:
+        creds_file.unlink()
+        print(f"Deleted {creds_file.name}.")
+    else:
+        print(f"Kept {creds_file.name} — `uv run deploy` will reuse it.")
+
+
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="destroy", description="Tear down what `uv run deploy` created here")
+    parser.add_argument(
+        "--force",
+        "--yes",
+        action="store_true",
+        help="No prompts: destroy every deployment found (refuses workshop-looking shared infra)",
+    )
+    parser.add_argument(
+        "--only",
+        choices=[name for name, _tiers, _desc in GROUPS],
+        help="Consider only this deployment group (`uv run selfservice down` passes self-service)",
+    )
+    parser.add_argument(
+        "--delete-credentials",
+        action="store_true",
+        help="Also delete credentials.env without asking (with --force it is kept otherwise)",
+    )
+    return parser.parse_args(argv)
+
+
 def _select_groups(available: list[tuple[str, list[str], str]]) -> list[tuple[str, list[str], str]]:
     """Prompt for which deployments to destroy. Enter accepts all.
 
@@ -175,8 +270,9 @@ def _select_groups(available: list[tuple[str, list[str], str]]) -> list[tuple[st
     return picked
 
 
-def main():
+def main(argv: list[str] | None = None):
     """Main entry point for destroy."""
+    args = _parse_args(argv)
     print("=== F1 Demo - Destroy ===\n")
 
     root = get_project_root()
@@ -191,6 +287,8 @@ def main():
     # Offer only the groups that actually have state on disk.
     available = []
     for name, tiers, desc in GROUPS:
+        if args.only and name != args.only:
+            continue
         present = [t for t in tiers if (root / "terraform" / t / "terraform.tfstate").exists()]
         if not present:
             continue
@@ -202,18 +300,18 @@ def main():
         available.append((name, present, desc))
 
     if not available:
-        all_tiers = [t for _n, tiers, _d in GROUPS for t in tiers]
+        all_tiers = [t for n, tiers, _d in GROUPS if not args.only or n == args.only for t in tiers]
         print(f"Nothing to destroy — no terraform state in: {', '.join(all_tiers)}")
         print("(A wsa-provisioned workshop is torn down with `wsa clean`, not this script.)")
         sys.exit(0)
 
-    selected = _select_groups(available)
+    selected = available if args.force else _select_groups(available)
     envs_to_destroy = [t for _n, tiers, _d in selected for t in tiers]
 
     print(f"\nWill destroy: {', '.join(envs_to_destroy)}")
     print("WARNING: This will permanently destroy all resources!")
 
-    if input("\nProceed? (y/n): ").strip().lower() != "y":
+    if not args.force and input("\nProceed? (y/n): ").strip().lower() != "y":
         print("Cancelled.")
         sys.exit(0)
 
@@ -226,6 +324,10 @@ def main():
         print("If it backs a workshop, destroying it kills the Postgres and")
         print("simulator image every attendee depends on. Use `wsa clean` instead.")
         print("!" * 72)
+        if args.force:
+            # Unattended is exactly when this must not happen by reflex.
+            print("\n--force will not destroy this. Re-run without --force to confirm by hand.")
+            sys.exit(1)
         if input("\nType 'destroy-shared' to continue anyway: ").strip() != "destroy-shared":
             print("Cancelled.")
             sys.exit(0)
@@ -257,8 +359,8 @@ def main():
                 # shared_* variables come from the aws-shared outputs.
                 _inject_shared_vars(root)
             elif env == "self-service":
-                # Reuse the same TF_VAR set `uv run selfservice down` builds.
-                from scripts.selfservice.cli import export_selfservice_tf_env
+                # Reuse the TF_VAR set the self-service track of `uv run deploy` builds.
+                from scripts.selfservice.provision import export_selfservice_tf_env
 
                 export_selfservice_tf_env(creds)
 
@@ -290,6 +392,14 @@ def main():
         sys.exit(1)
 
     print("\nDestroy process completed!")
+
+    # MCP servers only once nothing at all is deployed from here: they may still
+    # serve a deployment that wasn't selected.
+    shared_live = (root / "terraform" / "aws-shared" / "terraform.tfstate").exists()
+    still_deployed = shared_live or any(has_state(root, track) for track in TRACKS.values())
+    if not still_deployed:
+        _cleanup_mcp(root)
+    _offer_credentials_cleanup(_creds_file, args, still_deployed)
 
 
 if __name__ == "__main__":

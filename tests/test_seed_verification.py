@@ -103,9 +103,7 @@ class SeedTestCase(unittest.TestCase):
         ):
             out = io.StringIO()
             with redirect_stdout(out):
-                ok = seed.ensure_driver_race_history(
-                    CARD, self.root, meta.SELFSERVICE, count_timeout=COUNT_TIMEOUT
-                )
+                ok = seed.ensure_driver_race_history(CARD, self.root, meta.SELFSERVICE, count_timeout=COUNT_TIMEOUT)
         return ok, out.getvalue()
 
 

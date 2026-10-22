@@ -133,6 +133,23 @@ def ensure_confluent_login(creds: dict | None = None, creds_file=None, interacti
     return False
 
 
+def ensure_saved_confluent_login(creds: dict, creds_file) -> bool:
+    """Make sure credentials.env holds a working Confluent Cloud login, then log in.
+
+    Unlike `ensure_confluent_login`, a live CLI session is not enough: when no
+    email/password is saved yet, prompt for them (verified by a real login before
+    they are written) so later runs, and the CLI's 8-hour token refresh, never
+    need the user again. Mirrors quickstart-streaming-agents' deploy step 0.
+    """
+    username = (creds.get(USERNAME_KEY) or "").strip()
+    password = (creds.get(PASSWORD_KEY) or "").strip()
+    if not (username and password):
+        # Skipped or failed three times: fall back to whatever session the CLI
+        # already has rather than asking a second time.
+        return _prompt_and_save_login(creds_file, creds) or check_confluent_login()
+    return ensure_confluent_login(creds, creds_file=creds_file, interactive=True)
+
+
 def check_terraform_installed() -> bool:
     """
     Check if Terraform CLI is installed.

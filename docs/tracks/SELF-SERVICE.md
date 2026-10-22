@@ -4,11 +4,11 @@
 
 > [!NOTE]
 >
-> Use this path when you have your own Confluent Cloud login and will provision a Confluent-only environment (`uv run selfservice up`) with the race simulator running on your machine. **If your instructor gave you a workshop login and password,** use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md). **If you are deploying the full AWS-backed architecture (Postgres CDC + ECS Fargate simulator) with `uv run deploy`,** use the [standalone demo walkthrough](./STANDALONE-DEMO.md).
+> Use this path when you have your own Confluent Cloud login and will provision a Confluent-only environment (`uv run deploy --track self-service`) with the race simulator running on your machine. **If your instructor gave you a workshop login and password,** use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md). **If you are deploying the full AWS-backed architecture (Postgres CDC + ECS Fargate simulator) with `uv run deploy --track standalone`,** use the [standalone demo walkthrough](./STANDALONE-DEMO.md).
 
 ## 0. Clone, install, and provision
 
-You need a [Confluent Cloud account](https://confluent.cloud/signup) and AWS Bedrock API keys in `us-east-1`. If you don't have Bedrock keys yet, you can mint scoped IAM keys with `uv run api-keys create` once you are logged into the AWS CLI.
+You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.confluent.io/confluent-cloud/tryfree/?utm_campaign=tm.plg_cd.techxchange2026&utm_source=lab&utm_medium=github)) No AWS keys are needed with the default LLM provider, CSP Hosted Flink Model Inference; AWS Bedrock API keys in `us-east-1` are only needed if you pick Bedrock at the setup prompt. If you want Bedrock but don't have keys yet, you can mint scoped IAM keys with `uv run api-keys create` once you are logged into the AWS CLI.
 
 > [!TIP]
 > **TechXChange attendee, or provided a workstation by the workshop host?** Skip step 2 (install the prerequisites) — it's already set up for you. Start with step 1 to add your promo code.
@@ -79,32 +79,32 @@ You need a [Confluent Cloud account](https://confluent.cloud/signup) and AWS Bed
 
     </details>
 
-4. Sign into Confluent Cloud with the **email and password you used to sign up**:
+4. Provision the environment:
 
     ```bash
-    confluent login
+    uv run deploy --track self-service
     ```
 
-5. Provision the environment:
-
-    ```bash
-    uv run selfservice up
-    ```
-
-    <img src="../assets/self-service/selfservice-up.png" alt="uv run selfservice up — API key generation, configuration prompts, and Ready to provision? prompt" width="600">
+    <img src="../assets/self-service/selfservice-up.png" alt="uv run deploy --track self-service — API key generation, configuration prompts, and Ready to provision? prompt" width="600">
 
     The command prompts for the following:
 
     | Prompt | Where to get it |
     |---|---|
+    | Confluent Cloud Email / Password | The **email and password you used to sign up**. They are verified with a real login, then saved to `credentials.env` so later commands log in automatically. (SSO login? Press **Enter** to skip, and run `confluent login` before re-running.) |
     | Generate new Confluent Cloud API keys? | Answer `y` — `uv` creates the API key and secret for you |
+    | LLM provider for the pit-strategy agent | Press **Enter** for **CSP Hosted Flink Model Inference** (the default), which runs Claude on Confluent and needs no AWS keys. Option 2 is **AWS Bedrock** with your own keys |
     | Confluent Cloud API Key / Secret | Press **Enter** to confirm the key and secret `uv` just created |
-    | Owner email | The email you used to sign up for Confluent Cloud |
-    | AWS Bedrock Access Key / Secret Key | Your AWS IAM user's access key with Bedrock access (or the one your instructor gave you) |
+    | Owner email | Press **Enter** — it defaults to the email you just logged in with |
+    | AWS Bedrock Access Key / Secret Key | Your AWS IAM user's access key with Bedrock access (or the one your instructor gave you). Skipped when you chose CSP Hosted inference |
 
-    It then provisions your Confluent environment, cluster, Flink compute pool, source topics, `driver_race_history` seed data, and Bedrock model connections. It also writes your credential card to `runs/selfservice/credentials/DEMO.env` and records it as `F1_CARD` in `credentials.env` so local tools (`f1-race`, `f1-pitwall`, `setup-rtce`) find it automatically.
+    Before anything is created, it test-invokes Claude on Bedrock with your keys (skipped for CSP Hosted inference) and prints a summary of `credentials.env` with secrets masked; answer `y` at **Ready to provision?**
 
-    > **Tip:** Pass `uv run selfservice up --with-labs` if you want `car_state`, `pit_strategy_agent`, and `pit_decisions` prebuilt for you instead of creating them in Sections 1–3.
+    It then provisions your Confluent environment, cluster, Flink compute pool, source topics, `driver_race_history` seed data, and the `llm_textgen_model` (plus its Bedrock connection when you chose Bedrock). It also writes your credential card to `runs/selfservice/credentials/DEMO.env` and records it as `F1_CARD` in `credentials.env` so local tools (`f1-race`, `f1-pitwall`, `setup-rtce`) find it automatically. At the end it prints your Flink SQL Workspace link and offers to start the Pit Wall dashboard in the background.
+
+    > `uv run selfservice up` and `uv run selfservice down` still work as shortcuts for this command and for teardown.
+
+    > **Tip:** Pass `uv run deploy --track self-service --with-labs` if you want `car_state`, `pit_strategy_agent`, and `pit_decisions` prebuilt for you instead of creating them in Sections 1–3.
 
 ## 1. Enhance the data with built-in ML functions and start the race
 
@@ -128,7 +128,7 @@ The provisioning step sets up source tables for car telemetry, live race standin
     ```sql
     SELECT COUNT(*) FROM driver_race_history;
     SHOW MODELS;        -- llm_textgen_model
-    SHOW CONNECTIONS;   -- the Bedrock connection behind it
+    SHOW CONNECTIONS;   -- the Bedrock connection behind it (none with CSP Hosted inference)
     ```
 
     </details>
@@ -206,37 +206,6 @@ The provisioning step sets up source tables for car telemetry, live race standin
     SELECT car_number, lap, `position`, tire_compound, tire_age_laps, anomaly_tire_temp_fl, tire_temp_fl_c
     FROM `car_state`;
     ```
-
-## 1A. (Optional) Forecast tire temperature with Granite Time Series models
-
-You can also try the built-in IBM Granite TinyTimeMixer model to forecast future tire temperatures.
-
-Run the following statement in your SQL Workspace **only after `car_state` produces rows**. Stop the query after you inspect the result so Sections 2–3 can use the compute pool.
-
-```sql
-WITH windowed AS (
-  SELECT
-    window_start, window_end, window_time, car_number,
-    MAX(lap) AS lap, AVG(tire_temp_fl_c) AS tire_temp_fl_c
-  FROM TABLE(TUMBLE(TABLE `car_telemetry`, DESCRIPTOR(event_time), INTERVAL '20' SECOND))
-  GROUP BY window_start, window_end, window_time, car_number
-),
-forecasted AS (
-  SELECT *,
-    AI_FORECAST(tire_temp_fl_c, window_time,
-      JSON_OBJECT('model' VALUE 'ttm', 'horizon' VALUE 20, 'minContextSize' VALUE 20, 'maxContextSize' VALUE 50, 'rmseWindowSize' VALUE 5))
-      OVER (PARTITION BY car_number ORDER BY window_time RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS forecast_result
-  FROM windowed
-)
-SELECT
-  lap, window_time AS forecast_generated_at, tire_temp_fl_c AS current_tire_temperature_c,
-  forecast_result.forecast[1].`timestamp` AS next_point_at, forecast_result.forecast[1].mean AS next_point_c,
-  forecast_result.forecast AS full_forecast, forecast_result.metadata AS forecast_metadata
-FROM forecasted
-WHERE CARDINALITY(forecast_result.forecast) > 0;
-```
-
-This query uses IBM Granite **TinyTimeMixer** (`'model' VALUE 'ttm'`), a compact pre-trained time-series foundation model. You can swap the `model` value to try other built-in foundation forecasters; Google's TimesFM 2.5 is the default. See [Forecast Data Trends](https://docs.confluent.io/cloud/current/ai/builtin-functions/forecast.html) in the Confluent Cloud documentation.
 
 ## 2. Create the agent to provide pit decision guidance
 
@@ -378,11 +347,11 @@ Next we create the `pit_decisions` table, which invokes `pit_strategy_agent` on 
 
 ![Pit Wall dashboard showing the lap 24 anomaly](../assets/self-service/pitwall-anomaly.png)
 
-![Pit Wall dashboard with both Anomaly Detection and AI Pit Strategist panels unlocked, showing the PIT NOW call at lap 24](../assets/hosted/dashboard2.png)
+![Pit Wall dashboard with both Anomaly Detection and AI Pit Strategist panels unlocked, showing the PIT NOW call at lap 24](../assets/self-service/pitwall-pit-now.png)
 
 ## (Optional) Expose `car_telemetry` to AI agents with Real-Time Context Engine
 
-Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP-compatible AI agent can query the live stream. `uv run selfservice up` minted a Global RTCE API key onto your credential card, and you enable RTCE **per topic in the Console** for `car_telemetry` (and optionally `car_state` or `pit_decisions`).
+Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP-compatible AI agent can query the live stream. `uv run deploy --track self-service` minted a Global RTCE API key onto your credential card, and you enable RTCE **per topic in the Console** for `car_telemetry` (and optionally `car_state` or `pit_decisions`).
 
 1. Under your environment's cluster, open **[Topics](https://confluent.cloud/go/topics) → `car_telemetry`**, open the **Real-Time Context Engine** panel, and click **Enable** (or **Turn on**). Once enabled, the **Topics** list shows Real-Time Context Engine **On**:
 
@@ -400,28 +369,71 @@ Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP
 
     This registers RTCE as an MCP server with Claude Code (or prints a config snippet for Codex CLI), using the `F1_RTCE_MCP_ENDPOINT`, `F1_RTCE_API_KEY`, and `F1_RTCE_API_SECRET` fields on your credential card. Restart your coding agent, then ask questions in plain English:
 
-    - *What topics do I have access to in the Real-Time Context Engine?*
-    - *What's the front-left tire temperature on car 88 right now?*
-    - *At what lap in the race does the engine temperature peak?*
-    - *What is the front right tire temperature at lap 30?*
+    ```text
+    How has the engine temperature been trending over the last few laps?
+    ```
+
+    ```text
+    What topics do I have access to in the Real-Time Context Engine?
+    ```
+
+    ```text
+    What's the front-left tire temperature on car 88 right now?
+    ```
+
+    ```text
+    At what lap in the race does the engine temperature peak?
+    ```
+
+    ```text
+    What is the front right tire temperature at lap 30?
+    ```
+
+    ![Claude answering how the engine temperature has trended over the last few laps by calling the Real-Time Context Engine](../assets/self-service/rtce-engine-trend.png)
 
     ![Claude listing the topics enabled in the Real-Time Context Engine](../assets/hosted/rtce-listtopics.png)
 
     ![Claude answering the front-left tire temperature question by calling the Real-Time Context Engine](../assets/hosted/rtce-cartemp.png)
 
-### Optional: Lightning Queries (low-latency REST)
+## 🧩 (Optional) Challenge #1 — Social Media Agent (Claude + Real-Time Context Engine)
 
-Lightning Queries read an RTCE-enabled topic over low-latency REST, so enable RTCE on `car_telemetry` in the Console first (see above) if you haven't already.
+Now, it's time to switch gears and take on the role of the social media team for River Racing. You've been given access to the live race data via RTCE and need to use AI to generate an engaging social media post. Based on what you've learned in the workshop, do the following:
 
-1. From the repo directory, print a ready-to-run query:
+1. Enable RTCE on the `car_state` and `pit_decisions` topics in the Confluent Cloud Console (the same way you enabled `car_telemetry` above).
+2. Create a persona prompt for your agent to help it develop an engaging social media post. 
+3. Have your agent draft a post using real time data from your MCP connection. 
 
-    ```bash
-    uv run setup-rtce --lightning
-    ```
+Feel free to use one of the following prompts to draft your next post: 
+- "We just made a big move — write a post celebrating it."
+- "The pit wall just made a call. Draft a post about our strategy."
+- "Write a 3-tweet recap thread of John's race so far."
 
-    Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. The command reads your existing credential file and derives the region and cloud from its RTCE endpoint. Use `--creds path/to/file.env` if you have multiple credential files.
+**Success looks like:** Claude calls `queryData` against `car_state` and `pit_decisions` (you'll see the tool calls in the transcript) and returns a drafted post citing the real lap number, position, and strategy call from your live feed — not invented numbers. If it says the feed is quiet, the race may not be running yet, or RTCE isn't enabled on one of the two topics.
 
-    Lightning Queries require a **Global API key**, the same key used by RTCE's MCP interface. The printed command contains its authentication token; keep it private.
+## 🧩 (Optional) Challenge #2 — Analyze race data with Lightning Queries
+
+Now, we'll see how this real-time context becomes queryable with Lightning Tables and Lightning Queries. Lightning Queries read an RTCE-enabled topic over low-latency REST, so enable RTCE on `car_telemetry` in the Console first if you haven't already.
+
+From the repo directory, print a ready-to-run query:
+
+```bash
+uv run setup-rtce --lightning
+```
+
+Copy the printed `curl` command into your terminal and run it. It returns the last 10 telemetry rows by lap; edit the SQL in `query` to filter for car 88 or select other columns. 
+
+**Your challenge:** enable RTCE on `pit_decisions` in the Console. Then edit the `curl` command's `query` to find out what tire compound the agent recommended on lap 24, and why.
+
+<details>
+<summary>Hint</summary>
+
+```sql
+SELECT lap, <column>, <column> FROM pit_decisions WHERE lap = 24 LIMIT 1
+```
+
+Fill in the first `<column>` with the recommended tire compound, and the second with the agent's reasoning for that call.
+
+</details>
 
 ## Run the workshop again or tear it down
 
@@ -436,8 +448,10 @@ After reset, recreate `car_state`, wait for it to show **Running**, then start `
 When you're ready to tear down all resources associated with the lab, run:
 
 ```bash
-uv run selfservice down
+uv run destroy
 ```
+
+After the environment is destroyed, it asks whether to delete `credentials.env` too (default **yes**). Answer `n` if you plan to re-deploy with the same credentials.
 
 If you minted temporary Bedrock IAM keys with `uv run api-keys create`, revoke them as well:
 
@@ -450,8 +464,8 @@ uv run api-keys destroy
 
 - **`car_state` is empty at first.** `car_state` emits one row per 20-second window, and `f1-race` aligns lap 1 to the next 20-second wall-clock boundary before starting. Make sure `car_state` is **Running** before starting `uv run f1-race`.
 - **No anomaly around lap 24.** `ML_DETECT_ANOMALIES` needs 12 windows of context (`minTrainingSize = 12`) before lap 24. If `car_state` was started mid-race after lap 12, reset and start `car_state` before `uv run f1-race`.
-- **Agent fields are null but `raw_response` has text.** Inspect `SELECT lap, suggestion, raw_response FROM pit_decisions LIMIT 5;`. If `raw_response` is empty across the board, verify your Bedrock credentials have `bedrock:InvokeModel` permission in `us-east-1`.
-- **`No credential card found` / `Multiple credential cards found`.** Pass `--creds runs/selfservice/credentials/DEMO.env` or re-run `uv run selfservice up` to refresh `F1_CARD` in `credentials.env`.
+- **Agent fields are null but `raw_response` has text.** Inspect `SELECT lap, suggestion, raw_response FROM pit_decisions LIMIT 5;`. If `raw_response` is empty across the board, verify your Bedrock credentials have `bedrock:InvokeModel` permission in `us-east-1` (Bedrock), or that your org can use CSP Hosted inference (`SHOW MODELS` lists `system.anthropic.*` models).
+- **`No credential card found` / `Multiple credential cards found`.** Pass `--creds runs/selfservice/credentials/DEMO.env` or re-run `uv run deploy --track self-service` to refresh `F1_CARD` in `credentials.env`.
 
 </details>
 

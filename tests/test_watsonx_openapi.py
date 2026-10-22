@@ -28,9 +28,7 @@ def test_watsonx_spec_exposes_only_the_race_feed_operation():
     assert operation["operationId"] == "get_race_feed"
     assert operation["description"]
     assert any(
-        parameter["name"] == "prefix"
-        and parameter["in"] == "path"
-        and parameter["required"] is True
+        parameter["name"] == "prefix" and parameter["in"] == "path" and parameter["required"] is True
         for parameter in operation["parameters"]
     )
 

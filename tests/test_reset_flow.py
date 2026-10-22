@@ -39,9 +39,7 @@ STANDALONE_TF = {
 
 # Self-service publishes the Kafka keys only inside attendee_credentials, and has
 # no ECS outputs at all.
-SELFSERVICE_TF = {
-    k: v for k, v in STANDALONE_TF.items() if not k.startswith("ecs_") and not k.startswith("kafka_")
-}
+SELFSERVICE_TF = {k: v for k, v in STANDALONE_TF.items() if not k.startswith("ecs_") and not k.startswith("kafka_")}
 SELFSERVICE_TF["attendee_credentials"] = {"kafka_api_key": "K", "kafka_api_secret": "S"}
 
 
@@ -296,7 +294,7 @@ class LocalRaceDetectionTests(unittest.TestCase):
     def test_merely_mentioning_it_is_not_a_running_race(self):
         # Substring matching flagged all of these, and reset then refused to run.
         self.assertFalse(reset.is_local_race("grep -rn f1-race-notes scripts/"))
-        self.assertFalse(reset.is_local_race('/bin/zsh -c eval \'exec -a "uv run f1-race" sleep 8\''))
+        self.assertFalse(reset.is_local_race("/bin/zsh -c eval 'exec -a \"uv run f1-race\" sleep 8'"))
         self.assertFalse(reset.is_local_race("vim scripts/selfservice/race.py"))
         self.assertFalse(reset.is_local_race("uv run reset --track selfservice"))
         self.assertFalse(reset.is_local_race("tail -f f1-race.log"))

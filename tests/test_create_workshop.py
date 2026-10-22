@@ -144,9 +144,7 @@ class AttendeeCountAuthorityTests(unittest.TestCase):
                     create_mod.create(self.args(attendees=40))
                 self.assertEqual(os.environ["TF_VAR_attendee_count"], "40")
                 # The resolved pattern is exported for every downstream wsa call.
-                self.assertEqual(
-                    os.environ[wsa_mod.WSA_EMAIL_PATTERN_ENV], "org+f1wp{N}@example.com"
-                )
+                self.assertEqual(os.environ[wsa_mod.WSA_EMAIL_PATTERN_ENV], "org+f1wp{N}@example.com")
         namespace = build.call_args.args[0]
         self.assertEqual(namespace.accounts, "1-40")
         self.assertEqual(namespace.account_count, 40)

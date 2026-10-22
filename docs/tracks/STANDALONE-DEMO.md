@@ -4,11 +4,11 @@
 
 > [!NOTE]
 >
-> Use this path when you want to deploy the full single-environment AWS + Confluent Cloud demo (`uv run deploy`, including EC2 Postgres with CDC and an always-on ECS Fargate simulator). **If your instructor gave you a workshop login and password,** use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md). **If you want a Confluent-only environment with the race simulator running locally on your computer (`uv run selfservice up`),** use the [self-service workshop walkthrough](./SELF-SERVICE.md).
+> Use this path when you want to deploy the full single-environment AWS + Confluent Cloud demo (`uv run deploy --track standalone`, including EC2 Postgres with CDC and an always-on ECS Fargate simulator). **If your instructor gave you a workshop login and password,** use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md). **If you want a Confluent-only environment with the race simulator running locally on your computer (`uv run deploy --track self-service`),** use the [self-service workshop walkthrough](./SELF-SERVICE.md).
 
 ## 0. Clone, install, and provision
 
-You need a [Confluent Cloud account](https://confluent.cloud/signup), an AWS account with the AWS CLI configured (`aws sts get-caller-identity`), Docker running (`docker info`, used once to build and push the simulator image to ECR), and AWS Bedrock API keys in `us-east-1`. If you don't have Bedrock keys yet, you can mint scoped IAM keys (`InvokeModel` only) with `uv run api-keys create`.
+You need a [Confluent Cloud account](https://confluent.cloud/signup), an AWS account with the AWS CLI configured (`aws sts get-caller-identity`), Docker running (`docker info`, used once to build and push the simulator image to ECR), and, only if you pick AWS Bedrock over the default CSP Hosted Flink Model Inference, Bedrock API keys in `us-east-1`. If you want Bedrock but don't have keys yet, you can mint scoped IAM keys (`InvokeModel` only) with `uv run api-keys create`.
 
 1. Install the prerequisites:
 
@@ -58,18 +58,18 @@ You need a [Confluent Cloud account](https://confluent.cloud/signup), an AWS acc
 4. Provision the environment:
 
     ```bash
-    uv run deploy
+    uv run deploy --track standalone
     ```
 
-    The command prompts for your Confluent credentials (or offers to generate an OrganizationAdmin API key via the Confluent CLI), owner email (for AWS resource tagging), deployment prefix, AWS Bedrock keys, and seconds per lap (default **20s/lap**, matching the 20-second `TUMBLE` window in Section 1). Answers are saved to `credentials.env`, so subsequent runs can use `uv run deploy --automated`.
+    The command prompts for your Confluent Cloud login (saved so later commands log in automatically), offers to generate an OrganizationAdmin API key via the Confluent CLI, then asks for the LLM provider (**CSP Hosted Flink Model Inference** by default, which needs no AWS keys, or **AWS Bedrock**), owner email (for AWS resource tagging), deployment prefix, AWS Bedrock keys (Bedrock only), and seconds per lap (default **20s/lap**, matching the 20-second `TUMBLE` window in Section 1). With Bedrock it test-invokes Claude with your keys first; either way it shows a masked summary before applying. Answers are saved to `credentials.env`, so subsequent runs can use `uv run deploy --automated --track standalone`.
 
     Two Terraform tiers apply back-to-back (~25–30 minutes total, mostly EC2 Postgres and the Docker image build):
     - **`terraform/aws-shared`** — VPC lookup, EC2 Postgres seeded with 198 historical race rows, and the ECR repository + simulator Docker image.
-    - **`terraform/aws`** — Confluent environment, cluster, Schema Registry, Flink compute pool, Bedrock connections + LLM models, topics, Postgres CDC connector, and an ECS Fargate service running the race simulator (`RACE_LOOP=true`).
+    - **`terraform/aws`** — Confluent environment, cluster, Schema Registry, Flink compute pool, LLM models (plus the Bedrock connection when you chose Bedrock), topics, Postgres CDC connector, and an ECS Fargate service running the race simulator (`RACE_LOOP=true`).
 
-    When it finishes, it writes your credential card to `runs/standalone/credentials/<prefix>.env` and records it as `F1_CARD` in `credentials.env` so local tools (`f1-pitwall`, `race`, `reset`, `setup-rtce`) find it automatically.
+    When it finishes, it writes your credential card to `runs/standalone/credentials/<prefix>.env` and records it as `F1_CARD` in `credentials.env` so local tools (`f1-pitwall`, `race`, `reset`, `setup-rtce`) find it automatically. It also prints your Flink SQL Workspace link and offers to start the Pit Wall dashboard in the background.
 
-    > **Tip:** Pass `uv run deploy --with-labs` if you want `car_state`, `pit_strategy_agent`, and `pit_decisions` prebuilt and the race restarted behind them automatically instead of creating them in Sections 1–3.
+    > **Tip:** Pass `uv run deploy --track standalone --with-labs` if you want `car_state`, `pit_strategy_agent`, and `pit_decisions` prebuilt and the race restarted behind them automatically instead of creating them in Sections 1–3.
 
 ## 1. Enhance the data with built-in ML functions and start the race
 
@@ -95,7 +95,7 @@ The provisioning step sets up source tables for car telemetry, live race standin
     SELECT car_number, `position`, gap_to_leader_sec, tire_compound, tire_age_laps FROM race_standings;
     SELECT COUNT(*) FROM driver_race_history;
     SHOW MODELS;        -- llm_textgen_model
-    SHOW CONNECTIONS;   -- the Bedrock connection behind it
+    SHOW CONNECTIONS;   -- the Bedrock connection behind it (none with CSP Hosted inference)
     ```
 
     Stop any streaming `SELECT` queries before continuing.
@@ -347,7 +347,7 @@ Next we create the `pit_decisions` table, which invokes `pit_strategy_agent` on 
 
 ![Pit Wall dashboard showing the lap 24 anomaly](../assets/self-service/pitwall-anomaly.png)
 
-![Pit Wall dashboard with both Anomaly Detection and AI Pit Strategist panels unlocked, showing the PIT NOW call at lap 24](../assets/hosted/dashboard2.png)
+![Pit Wall dashboard with both Anomaly Detection and AI Pit Strategist panels unlocked, showing the PIT NOW call at lap 24](../assets/self-service/pitwall-pit-now.png)
 
 ## (Optional) Expose `car_telemetry` to AI agents with Real-Time Context Engine
 
@@ -420,7 +420,7 @@ aws logs tail --region us-east-1 "$(cd terraform/aws && terraform output -raw ec
 
 ```bash
 export TF_VAR_seconds_per_lap=15
-uv run deploy --automated
+uv run deploy --automated --track standalone
 ```
 
 </details>
@@ -441,6 +441,8 @@ Everything in the standalone deployment incurs ongoing AWS and Confluent Cloud c
 uv run destroy
 ```
 
+Once nothing is left deployed, it removes the `setup-mcp` / `setup-rtce` registrations for this project and asks whether to delete `credentials.env` too (default **yes**). Answer `n` if you plan to re-deploy with the same credentials.
+
 If you minted temporary Bedrock IAM keys with `uv run api-keys create`, revoke them as well:
 
 ```bash
@@ -454,7 +456,7 @@ uv run api-keys destroy
 - **`car_telemetry` looks idle.** Check that the ECS task is running with `uv run race status`, or restart it with `uv run race restart`.
 - **No anomaly around lap 24.** `ML_DETECT_ANOMALIES` needs 12 windows of context (`minTrainingSize = 12`) before lap 24. If `car_state` started after lap 12, run `uv run race restart` (or `uv run reset --with-labs`).
 - **Agent fields are null but `raw_response` has text.** Inspect `SELECT lap, suggestion, raw_response FROM pit_decisions LIMIT 5;`. If `raw_response` is empty across the board, verify your Bedrock credentials have `bedrock:InvokeModel` permission in `us-east-1`.
-- **`No credential card found` / `Multiple credential cards found`.** Pass `--creds runs/standalone/credentials/<prefix>.env` or re-run `uv run deploy --automated` to refresh `F1_CARD` in `credentials.env`.
+- **`No credential card found` / `Multiple credential cards found`.** Pass `--creds runs/standalone/credentials/<prefix>.env` or re-run `uv run deploy --automated --track standalone` to refresh `F1_CARD` in `credentials.env`.
 
 </details>
 

@@ -18,13 +18,21 @@ import json
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from scripts.pitwall.state import RaceState
 
 STATIC_DIR = Path(__file__).parent / "static"
 PUSH_INTERVAL_SEC = 0.25
+
+# Where each locked panel tells the attendee to go. The walkthroughs number the
+# sections differently: SELF-SERVICE / STANDALONE build car_state in Step 1 and
+# pit_decisions in Step 3; HOSTED-WORKSHOP calls them Lab 3 and Lab 4.
+STEP_LABELS = {
+    "steps": {"ANOMALY_STEP": "Step 1", "AGENT_STEP": "Step 3"},
+    "labs": {"ANOMALY_STEP": "Lab 3", "AGENT_STEP": "Lab 4"},
+}
 NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 
 
@@ -44,13 +52,20 @@ class NoCacheStaticFiles(StaticFiles):
         return response
 
 
-def create_app(state: RaceState) -> FastAPI:
+def _render_index(labels: str) -> str:
+    html = (STATIC_DIR / "index.html").read_text()
+    for key, value in STEP_LABELS[labels].items():
+        html = html.replace(f"{{{{{key}_TITLE}}}}", value).replace(f"{{{{{key}}}}}", value.upper())
+    return html
+
+
+def create_app(state: RaceState, labels: str = "steps") -> FastAPI:
     app = FastAPI(title="F1 Pit Wall")
     app.mount("/static", NoCacheStaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/")
-    async def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html", headers=NO_CACHE)
+    async def index() -> HTMLResponse:
+        return HTMLResponse(_render_index(labels), headers=NO_CACHE)
 
     @app.get("/healthz")
     async def healthz() -> dict:

@@ -103,9 +103,7 @@ def export_secrets(secrets: dict[str, str]) -> None:
             os.environ[key] = value
 
 
-def persist_secrets(
-    creds_file: Path, secrets: dict[str, str], only_keys: set[str] | None = None
-) -> None:
+def persist_secrets(creds_file: Path, secrets: dict[str, str], only_keys: set[str] | None = None) -> None:
     """Write secrets to ``credentials.env`` and chmod 0600.
 
     When ``only_keys`` is provided, only those keys are written — secrets

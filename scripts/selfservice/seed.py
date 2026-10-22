@@ -14,8 +14,8 @@ failures came out of that:
 - ``FlinkSession.wait`` returns as soon as a statement reaches ``RUNNING`` (right
   for the interactive shell, wrong here), so a bounded INSERT that later *failed*
   still got a marker and was never retried.
-- the marker survived ``uv run destroy``, so ``selfservice up`` → ``destroy`` →
-  ``selfservice up`` printed "already seeded" over an empty table. LAB 2's
+- the marker survived ``uv run destroy``, so ``deploy --track self-service`` → ``destroy`` →
+  ``deploy --track self-service`` printed "already seeded" over an empty table. LAB 2's
   ``COUNT(*)`` returns 0 and LAB 4's history join returns nothing, with no error
   anywhere.
 
@@ -229,7 +229,7 @@ def ensure_driver_race_history(
         # Most often a cold compute pool scheduling the first statement slowly, so
         # the fix is simply to try again. Safe to repeat *because* it counts first:
         # a re-run inserts only into a table it has confirmed to be empty.
-        print("  Re-run `uv run selfservice up` — it counts before inserting, so it cannot double-seed.")
+        print("  Re-run `uv run deploy --track self-service` — it counts before inserting, so it cannot double-seed.")
         print(f"  Or check by hand: uv run f1-sql  ->  SELECT COUNT(*) FROM `{TABLE}`;")
         return False
 
@@ -241,7 +241,7 @@ def ensure_driver_race_history(
     if count != 0:
         print(f"  {TABLE} holds {count} rows, expected {expected}.")
         print("  Refusing to insert again — that would add a second copy of every row.")
-        print("  Tear down and re-provision (`uv run selfservice down && uv run selfservice up`).")
+        print("  Tear down and re-provision (`uv run destroy && uv run deploy --track self-service`).")
         return False
 
     print(f"  Seeding {TABLE} ({expected} rows) via a bounded Flink INSERT...")
@@ -253,7 +253,7 @@ def ensure_driver_race_history(
     count, problem = count_rows(session, expected, timeout=count_timeout)
     if count is None:
         print(f"  INSERT completed but the row count could not be confirmed: {problem}")
-        print("  Re-run `uv run selfservice up` to verify (it will not insert twice).")
+        print("  Re-run `uv run deploy --track self-service` to verify (it will not insert twice).")
         return False
     if count != expected:
         print(f"  INSERT completed but {TABLE} holds {count} rows, expected {expected}.")
