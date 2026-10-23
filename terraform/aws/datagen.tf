@@ -60,6 +60,13 @@ resource "aws_security_group" "ecs" {
     Name        = "${lower(var.prefix)}-ecs"
     owner_email = var.owner_email
   }
+
+  # Changing shared_vpc_id replaces this group. Running tasks still hold ENIs in
+  # the old one, so the new group must exist and the service must switch to it
+  # before the old one is deleted (name_prefix lets both coexist).
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_ecs_cluster" "simulator" {

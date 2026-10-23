@@ -33,13 +33,13 @@ variable "postgres_max_replication_slots" {
 }
 
 variable "simulator_vpc_cidr" {
-  description = "CIDR for the dedicated simulator VPC. Two /24 public subnets are carved from it."
+  description = "CIDR for the dedicated simulator VPC. Must be an IPv4 /16: two /24 public subnets are carved from it."
   type        = string
   default     = "10.42.0.0/16"
 
   validation {
-    condition     = can(cidrnetmask(var.simulator_vpc_cidr))
-    error_message = "simulator_vpc_cidr must be a valid IPv4 CIDR block."
+    condition     = can(cidrnetmask(var.simulator_vpc_cidr)) && endswith(var.simulator_vpc_cidr, "/16")
+    error_message = "simulator_vpc_cidr must be an IPv4 /16 block (e.g. 10.42.0.0/16); the /24 subnets are carved from it."
   }
 }
 

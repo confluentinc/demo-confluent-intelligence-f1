@@ -33,6 +33,9 @@ resource "aws_ecr_repository" "simulator" {
 resource "null_resource" "docker_build_push" {
   triggers = {
     image_tag = local.image_tag
+    # A repository rename/replacement (e.g. a new workshop prefix) leaves the new
+    # repo empty unless the push reruns; depends_on only orders, it does not retrigger.
+    repository_url = aws_ecr_repository.simulator.repository_url
   }
 
   provisioner "local-exec" {
