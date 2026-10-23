@@ -330,7 +330,11 @@ class EmailPatternResolutionTests(unittest.TestCase):
         stdin = Mock()
         stdin.isatty.return_value = True
         with (
-            patch.dict(os.environ, {wsa_mod.EMAIL_PATTERN_ENV: ""}, clear=False),
+            patch.dict(
+                os.environ,
+                {wsa_mod.EMAIL_PATTERN_ENV: "", wsa_mod.WSA_EMAIL_PATTERN_ENV: ""},
+                clear=False,
+            ),
             patch.object(wsa_mod.sys, "stdin", stdin),
             patch("builtins.input", return_value="organizer+f1wp{N}@example.com"),
             contextlib.redirect_stdout(io.StringIO()),
@@ -370,6 +374,9 @@ class SpecValidateEmailPatternTests(unittest.TestCase):
             with (
                 patch.object(wsa_mod, "get_project_root", return_value=root),
                 patch.object(wsa_mod, "find_wsa", return_value=Path("/fake/bin/wsa")),
+                # Secret collection is not under test; without this the case
+                # depends on the developer's exported TF_VAR_* values.
+                patch.object(wsa_mod, "ensure_secrets"),
                 patch.object(wsa_mod, "_stream_wsa", return_value=0) as stream,
                 contextlib.redirect_stdout(io.StringIO()),
             ):
@@ -1099,6 +1106,35 @@ class RaceControlNamingTests(unittest.TestCase):
         self.assertTrue(callable(stop_all_races.stop_races))
         self.assertFalse(hasattr(start_all_races, "main"))
         self.assertFalse(hasattr(stop_all_races, "main"))
+
+
+class SharedPrefixTests(unittest.TestCase):
+    """The shared phase's ECR repo name follows the workshop prefix."""
+
+    def test_shared_prefix_strips_placeholder_and_lowercases(self):
+        self.assertEqual(wsa_mod.shared_prefix_for("f1wp{NNN}"), "f1-f1wp")
+        self.assertEqual(wsa_mod.shared_prefix_for("F1WS{N}"), "f1-f1ws")
+
+    def test_derived_spec_sets_shared_phase_prefix(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "wsa-spec-aws.yaml").write_text(
+                yaml.safe_dump(
+                    {
+                        "terraform_vars": {"prefix": "f1wp{NNN}"},
+                        "phases": [
+                            {"name": "shared", "scope": "once", "path": "terraform/aws-shared/"},
+                            {"name": "accounts", "scope": "per_account", "path": "terraform/aws/"},
+                        ],
+                    }
+                )
+            )
+            out = wsa_mod._derive_spec(root, prefix="rally{NNN}")
+            derived = yaml.safe_load(out.read_text())
+        self.assertEqual(derived["terraform_vars"]["prefix"], "rally{NNN}")
+        shared, accounts = derived["phases"]
+        self.assertEqual(shared["terraform_vars"], {"prefix": "f1-rally"})
+        self.assertNotIn("terraform_vars", accounts)
 
 
 if __name__ == "__main__":

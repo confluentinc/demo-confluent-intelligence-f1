@@ -32,6 +32,17 @@ variable "postgres_max_replication_slots" {
   }
 }
 
+variable "simulator_vpc_cidr" {
+  description = "CIDR for the dedicated simulator VPC. Two /24 public subnets are carved from it."
+  type        = string
+  default     = "10.42.0.0/16"
+
+  validation {
+    condition     = can(cidrnetmask(var.simulator_vpc_cidr))
+    error_message = "simulator_vpc_cidr must be a valid IPv4 CIDR block."
+  }
+}
+
 variable "postgres_instance_type" {
   description = "EC2 instance type for the shared Postgres host"
   type        = string

@@ -2,7 +2,7 @@
 # Shared workshop infrastructure — run ONCE by the organizer (via wsa).
 #
 # Provisions the AWS resources that every attendee reuses:
-#   - the default VPC + public subnets (used by attendee ECS simulator tasks)
+#   - a dedicated VPC + public subnets (used by attendee ECS simulator tasks; network.tf)
 #   - one Postgres host seeded with driver_race_history, sized and configured
 #     with enough replication slots for every attendee's CDC connector
 #   - one ECR repository holding the race-simulator image (built once here;
@@ -18,19 +18,6 @@ locals {
   # host at 105 slots (one per CDC connector plus ten spare) so changing an
   # attendee count does not alter EC2 user_data on a resumed run.
   max_replication_slots = var.postgres_max_replication_slots
-}
-
-# Use the account's default VPC + public subnets. Attendee ECS tasks run here
-# with public IPs to reach Confluent Cloud; the Postgres host lives here too.
-data "aws_vpc" "default" {
-  default = true
-}
-
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
 }
 
 module "postgres" {

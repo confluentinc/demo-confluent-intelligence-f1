@@ -63,6 +63,11 @@ phases:
   - name: shared
     scope: once
     path: terraform/aws-shared/
+    # Names the shared ECR repo (<prefix>-simulator). Tracks the attendee prefix so
+    # each workshop instance gets its own repo: scripts/workshop/wsa.py rewrites it
+    # to f1-<attendee prefix base> whenever the prefix is overridden.
+    terraform_vars:
+      prefix: "f1-f1wp"
   - name: accounts
     scope: per_account
     path: terraform/aws/
