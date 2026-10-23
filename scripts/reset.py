@@ -118,9 +118,9 @@ SOURCE_TOPICS = ["car_telemetry", "race_standings"]
 # dependants. Both orders are correct; the doc's is the one that also works while
 # the labs are running.
 LAB_DROPS = [
-    ("drop-car-state",     "DROP TABLE IF EXISTS `car_state`"),
+    ("drop-car-state", "DROP TABLE IF EXISTS `car_state`"),
     ("drop-pit-decisions", "DROP TABLE IF EXISTS `pit_decisions`"),
-    ("drop-pit-agent",     "DROP AGENT IF EXISTS `pit_strategy_agent`"),
+    ("drop-pit-agent", "DROP AGENT IF EXISTS `pit_strategy_agent`"),
 ]
 
 # A DDL statement is done when it reaches COMPLETED. RUNNING is *not* success here
@@ -154,7 +154,7 @@ LOCAL_RACE_TOKENS = ("f1-race", "scripts.selfservice.race")
 
 # LAB_BUILDS, scale_simulator, wait_for_drain, wait_for_running, flink_session
 # and create_lab_objects live in scripts/common/simulator_control.py — `uv run
-# race`, `uv run deploy --with-labs` and `uv run selfservice up --with-labs` need
+# race`, `uv run deploy --with-labs` and `uv run deploy --track self-service --with-labs` need
 # the same behavior. They are re-exported above so existing importers of
 # `scripts.reset` keep working. That module also owns the `F1_ANOMALY_FN` switch
 # choosing which LAB 3 implementation `--with-labs` submits (ARIMA by default,
@@ -203,7 +203,7 @@ def select_track(root: Path, requested: str | None) -> Track:
         for track in (STANDALONE, SELFSERVICE):
             print(f"  {tf_state_path(root, track)}")
         print("\n`uv run reset` needs the state written by `uv run deploy` or")
-        print("`uv run selfservice up`, which only exists on the machine that ran them")
+        print("`uv run deploy --track self-service`, which only exists on the machine that ran them")
         print("(it is gitignored). If you're a workshop attendee, ask your instructor to")
         print("reset your environment — a wsa-provisioned workshop keeps its state in")
         print("wsa's own run directory, out of this checkout's reach.")
@@ -489,9 +489,15 @@ def delete_topic_and_subjects(topic: str, env_id: str, cluster_id: str, exists: 
     else:
         rc, _, stderr = run_cli(
             [
-                "confluent", "kafka", "topic", "delete", topic,
-                "--environment", env_id,
-                "--cluster", cluster_id,
+                "confluent",
+                "kafka",
+                "topic",
+                "delete",
+                topic,
+                "--environment",
+                env_id,
+                "--cluster",
+                cluster_id,
             ],
             confirm=True,
         )
@@ -505,10 +511,16 @@ def delete_topic_and_subjects(topic: str, env_id: str, cluster_id: str, exists: 
 
     for subject in [f"{topic}-key", f"{topic}-value"]:
         base_cmd = [
-            "confluent", "schema-registry", "schema", "delete",
-            "--subject", subject,
-            "--version", "all",
-            "--environment", env_id,
+            "confluent",
+            "schema-registry",
+            "schema",
+            "delete",
+            "--subject",
+            subject,
+            "--version",
+            "all",
+            "--environment",
+            env_id,
         ]
         soft_rc, _, soft_err = run_cli(base_cmd, confirm=True)
         hard_rc, _, hard_err = run_cli([*base_cmd, "--permanent"], confirm=True)

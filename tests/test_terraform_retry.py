@@ -167,9 +167,7 @@ class ClassificationTests(unittest.TestCase):
         self.assertPermanent(FLINK_TABLE_EXISTS, "the resource already exists")
 
     def test_an_orphaned_auto_named_flink_statement_is_retryable(self):
-        self.assertTransient(
-            FLINK_STATEMENT_ORPHANED, "an orphaned Flink statement (the re-apply is a no-op)"
-        )
+        self.assertTransient(FLINK_STATEMENT_ORPHANED, "an orphaned Flink statement (the re-apply is a no-op)")
 
     def test_a_dns_failure_is_transient(self):
         self.assertTransient(NETWORK_FAILURE, "DNS lookup failed")
@@ -210,9 +208,9 @@ class ClassificationTests(unittest.TestCase):
         # stderr also carries warnings; none of them should look like a verdict.
         warning = (
             "\nWarning: Argument is deprecated\n\n"
-            '  with confluent_kafka_topic.car_telemetry,\n'
+            "  with confluent_kafka_topic.car_telemetry,\n"
             "  on main.tf line 20, in resource:\n"
-            "  20: resource \"confluent_kafka_topic\" \"car_telemetry\" {\n"
+            '  20: resource "confluent_kafka_topic" "car_telemetry" {\n'
         )
         retry, reason = tr.classify_apply_failure(warning)
         self.assertTrue(retry)

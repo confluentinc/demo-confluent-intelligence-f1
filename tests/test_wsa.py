@@ -260,9 +260,7 @@ class EmailPatternResolutionTests(unittest.TestCase):
         (self.root / wsa_mod.SPEC_FILE).write_text("name: test\n")
 
     def test_flag_wins_and_is_persisted(self):
-        (self.root / "credentials.env").write_text(
-            f"{wsa_mod.EMAIL_PATTERN_ENV}=file+f1wp{{N}}@example.com\n"
-        )
+        (self.root / "credentials.env").write_text(f"{wsa_mod.EMAIL_PATTERN_ENV}=file+f1wp{{N}}@example.com\n")
         with patch.dict(
             os.environ,
             {wsa_mod.EMAIL_PATTERN_ENV: "env+f1wp{N}@example.com"},
@@ -278,9 +276,7 @@ class EmailPatternResolutionTests(unittest.TestCase):
         self.assertEqual(persisted[wsa_mod.EMAIL_PATTERN_ENV], chosen)
 
     def test_environment_wins_over_credentials_file(self):
-        (self.root / "credentials.env").write_text(
-            f"{wsa_mod.EMAIL_PATTERN_ENV}=file+f1wp{{N}}@example.com\n"
-        )
+        (self.root / "credentials.env").write_text(f"{wsa_mod.EMAIL_PATTERN_ENV}=file+f1wp{{N}}@example.com\n")
         with patch.dict(
             os.environ,
             {wsa_mod.EMAIL_PATTERN_ENV: "env+f1wp{N}@example.com"},
@@ -370,6 +366,7 @@ class SpecValidateEmailPatternTests(unittest.TestCase):
             with (
                 patch.object(wsa_mod, "get_project_root", return_value=root),
                 patch.object(wsa_mod, "find_wsa", return_value=Path("/fake/bin/wsa")),
+                patch.object(wsa_mod, "ensure_secrets"),
                 patch.object(wsa_mod, "_stream_wsa", return_value=0) as stream,
                 contextlib.redirect_stdout(io.StringIO()),
             ):
@@ -522,9 +519,7 @@ class BuildHandoffTests(unittest.TestCase):
     def test_bare_base_prefix_gets_the_account_placeholder(self):
         # `--prefix f1ws` (no placeholder) must not name every account the same —
         # build appends {NNN} before deriving the spec.
-        (self.root / wsa_mod.SPEC_FILE).write_text(
-            "name: test\nterraform_vars:\n  prefix: f1wp{NNN}\n"
-        )
+        (self.root / wsa_mod.SPEC_FILE).write_text("name: test\nterraform_vars:\n  prefix: f1wp{NNN}\n")
         with self.fake_build(), patch.object(creds_mod, "creds"):
             with contextlib.redirect_stdout(io.StringIO()):
                 wsa_mod.build(self.build_args(prefix="f1ws"))
@@ -574,9 +569,7 @@ class BuildHandoffTests(unittest.TestCase):
             patch.object(creds_mod, "creds"),
         ):
             with contextlib.redirect_stdout(io.StringIO()):
-                wsa_mod.build(
-                    self.build_args(email_pattern="organizer+f1wp{N}@example.com")
-                )
+                wsa_mod.build(self.build_args(email_pattern="organizer+f1wp{N}@example.com"))
             self.assertEqual(
                 os.environ[wsa_mod.WSA_EMAIL_PATTERN_ENV],
                 "organizer+f1wp{N}@example.com",
@@ -585,9 +578,7 @@ class BuildHandoffTests(unittest.TestCase):
 
     def test_prefix_matching_the_spec_is_not_an_override(self):
         # --prefix equal to the committed value uses the committed spec, no file.
-        (self.root / wsa_mod.SPEC_FILE).write_text(
-            "name: test\nterraform_vars:\n  prefix: f1wp{NNN}\n"
-        )
+        (self.root / wsa_mod.SPEC_FILE).write_text("name: test\nterraform_vars:\n  prefix: f1wp{NNN}\n")
         with self.fake_build(), patch.object(creds_mod, "creds"):
             with contextlib.redirect_stdout(io.StringIO()):
                 wsa_mod.build(self.build_args(prefix="f1wp{NNN}"))

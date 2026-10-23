@@ -110,9 +110,7 @@ class CardResolutionTests(unittest.TestCase):
         self.assertEqual(resolve_card(root=self.root), card)
 
     def test_legacy_workshop_setting_is_not_mistaken_for_a_card(self):
-        self.write_creds_env(
-            "TF_VAR_prefix=bren\nF1_WORKSHOP_EMAIL_PATTERN=organizer+f1wp{N}@example.com\n"
-        )
+        self.write_creds_env("TF_VAR_prefix=bren\nF1_WORKSHOP_EMAIL_PATTERN=organizer+f1wp{N}@example.com\n")
         card = self.make_card("workshop", "f1wp001")
 
         self.assertEqual(resolve_card(root=self.root), card)
@@ -234,7 +232,7 @@ class ActiveCardWriteTests(unittest.TestCase):
         self.assertEqual(self.creds.read_text(), "")
 
     def test_scoped_clear_leaves_another_deployments_pointer_alone(self):
-        """`selfservice down` must not unset a pointer aimed at the standalone card."""
+        """Tearing down self-service must not unset a pointer aimed at the standalone card."""
         set_active_card(self.root, self.card)
 
         clear_active_card(self.root, only_if_under=self.root / "runs" / "selfservice")

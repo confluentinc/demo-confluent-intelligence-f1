@@ -39,7 +39,7 @@ resource "null_resource" "docker_build_push" {
     command = <<-EOT
       set -e
       if ! docker info >/dev/null 2>&1; then
-        echo "Error: Docker is not ready. Start Docker Desktop or Colima, verify with 'docker info', then retry." >&2
+        echo "Error: Docker is not ready. Start Docker Desktop or Colima (Linux: sudo systemctl start docker), verify with 'docker info', then retry." >&2
         exit 1
       fi
       aws ecr get-login-password --region ${var.region} | \

@@ -61,7 +61,7 @@ def prompt_with_default(prompt_text: str, default: str = "", secret: bool = Fals
             display_default = mask_secret(default)
         else:
             display_default = default if len(default) <= 50 else default[:47] + "..."
-        value = read(f'{prompt_text} [{display_default}]: ').strip()
+        value = read(f"{prompt_text} [{display_default}]: ").strip()
         return value if value else default
     else:
         value = read(f"{prompt_text}: ").strip()

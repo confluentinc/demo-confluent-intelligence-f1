@@ -11,7 +11,7 @@ applied per attendee (by `wsa`, or once by `deploy.py`). The `aws` tier consumes
 shared state). `self-service` stands alone.
 
 `terraform/self-service/` is Confluent-**only** — no AWS (Postgres/CDC/ECS/ECR),
-and its `driver_race_history` table starts empty: `uv run selfservice up` seeds it
+and its `driver_race_history` table starts empty: `uv run deploy --track self-service` seeds it
 with a bounded Flink INSERT and the local `f1-race` simulator feeds the topics.
 
 Each tier inlines its own Bedrock textgen connection + `CREATE MODEL

@@ -78,9 +78,7 @@ def create_app(store: FeedStore) -> FastAPI:
         ),
     )
     # Orchestrate calls this from the browser/cloud; allow cross-origin reads.
-    app.add_middleware(
-        CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["*"]
-    )
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["*"])
 
     @app.get("/healthz")
     async def healthz() -> dict:

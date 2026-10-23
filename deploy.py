@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
 """
-Standalone deploy for a SINGLE F1 environment — the full-architecture demo.
+`uv run deploy` — provision ONE F1 environment on this machine. It asks which:
 
-Provisions the two-tier layout for one attendee prefix:
-  1. terraform/aws-shared  — shared VPC/subnets, Postgres, ECR + simulator image
-  2. terraform/aws         — one Confluent environment + ECS simulator, wired to
-                             the shared outputs
+  1. Self-service — Confluent Cloud only; the race runs locally (`uv run f1-race`).
+     See scripts/selfservice/provision.py.
+  2. Standalone   — the full architecture, in two tiers for one attendee prefix:
+       terraform/aws-shared  — shared VPC/subnets, Postgres, ECR + simulator image
+       terraform/aws         — one Confluent environment + ECS simulator, wired to
+                               the shared outputs
 
 For a real multi-attendee workshop, use `wsa` with wsa-spec-aws.yaml instead —
-this script is the manual single-environment equivalent. Nothing here is read by
-`wsa`, which is why the cost and naming defaults below can differ from the
+the standalone track is the manual single-environment equivalent. Nothing here is
+read by `wsa`, which is why the cost and naming defaults below can differ from the
 workshop's without changing workshop behavior.
 
 Usage:
-  uv run deploy                        # prompts, defaults resolved from identity
-  uv run deploy --automated            # no prompts; a *bare* environment
-  uv run deploy --automated --with-labs  # ready-to-demo: LAB 3 + LAB 4 prebuilt
+  uv run deploy                                       # prompts for the track and inputs
+  uv run deploy --track self-service                  # skip the track prompt
+  uv run deploy --automated --track standalone        # no prompts; a *bare* environment
+  uv run deploy --automated --track standalone --with-labs  # LAB 3 + LAB 4 prebuilt
 
 `--automated` and `--with-labs` are deliberately orthogonal: `--automated` means
 "don't prompt", not "build the labs". A smoke test wants a bare environment.
+Tear either track down with `uv run destroy`.
 """
 
 import argparse
@@ -28,17 +32,15 @@ import sys
 
 from dotenv import set_key
 
+from scripts.common import deploy_common as common
 from scripts.common import deployment_meta as meta
-from scripts.common.credentials import (
-    generate_confluent_api_keys,
-    load_or_create_credentials_file,
-    set_active_card,
-)
+from scripts.common.credentials import load_or_create_credentials_file
 from scripts.common.login_checks import (
     check_aws_configured,
     check_docker_running,
     check_terraform_installed,
-    ensure_confluent_login,
+    docker_installed,
+    docker_start_hint,
     start_docker,
 )
 from scripts.common.simulator_control import (
@@ -50,15 +52,15 @@ from scripts.common.simulator_control import (
 from scripts.common.terraform import get_project_root, run_terraform_output
 from scripts.common.terraform_runner import run_terraform
 from scripts.common.ui import prompt_with_default
-from scripts.workshop import creds as creds_mod
+from scripts.selfservice import provision as selfservice
 
 TRACK = meta.STANDALONE
 
-# Credential cards for this flow land in runs/<RUN_NAME>/credentials/ (mirrors
-# `uv run selfservice up`, which writes to runs/selfservice/).
+# Credential cards for this flow land in runs/<RUN_NAME>/credentials/ (the
+# self-service track writes to runs/selfservice/).
 RUN_NAME = TRACK.name
 
-REGION = "us-east-1"
+REGION = common.REGION
 
 # The shared tier's *own* naming prefix — not the attendee prefix. `var.prefix` in
 # terraform/aws-shared names the ECR repository (`${lower(var.prefix)}-simulator`,
@@ -84,94 +86,26 @@ DEFAULT_POSTGRES_INSTANCE_TYPE = "t3.small"
 # LAB 3 SQL — one window per lap. Changing this requires a matching SQL-window
 # change (see CLAUDE.md). Below ~10s/lap anomaly detection can't accumulate its 12
 # windows before lap 24 and the anomaly never fires.
-DEFAULT_SECONDS_PER_LAP = "20"
+DEFAULT_SECONDS_PER_LAP = common.DEFAULT_SECONDS_PER_LAP
 MIN_SECONDS_PER_LAP = meta.MIN_SECONDS_PER_LAP
 
-# How resolve_prefix arrived at a value, phrased for the person reading the run.
-_PREFIX_SOURCES = {
-    "state": "already deployed — cannot be changed without tearing down first",
-    "saved": f"reused from runs/{RUN_NAME}/deployment.env",
-    "explicit": "from the exported TF_VAR_prefix",
-    "derived": "derived from your identity, stable across re-runs",
-}
+_PREFIX_SOURCES = common.prefix_sources(TRACK, "derived from your identity, stable across re-runs")
 
 
 def _seconds_per_lap_default(root, creds: dict) -> str:
-    """Pacing to use when the user doesn't pick one.
-
-    Precedence: an explicit TF_VAR_seconds_per_lap in the environment (so
-    `export TF_VAR_seconds_per_lap=15; uv run deploy` still works), then this
-    track's saved metadata (so the same value sticks across re-runs — including
-    `--automated` re-runs, which used to persist nothing), then a legacy value in
-    credentials.env, then the demo default.
-    """
-    return (
-        os.environ.get("TF_VAR_seconds_per_lap")
-        or meta.load_meta(root, TRACK).get(meta.KEY_SECONDS_PER_LAP)
-        or creds.get("TF_VAR_seconds_per_lap")
-        or DEFAULT_SECONDS_PER_LAP
-    )
-
-
-def _explicit_prefix() -> str | None:
-    """A prefix the user asked for *deliberately*, or None.
-
-    Only an **exported** `TF_VAR_prefix` counts. credentials.env's `TF_VAR_prefix`
-    is deliberately NOT consulted: it is a single root file that both solo tracks
-    used to write, so whichever ran last left its prefix in it — reading it back
-    is precisely how standalone ended up deploying under self-service's name, and
-    how two live environments both ended up called RIVER-RACING-PROD-ENV. Worse
-    for item 10, two people whose credentials.env both said `solo` would derive
-    the same account-global ECR repository name and one of them would fail hard.
-    The saved per-track metadata replaces that file as the memory of "what this
-    track used".
-    """
-    return (os.environ.get("TF_VAR_prefix") or "").strip() or None
+    return common.seconds_per_lap_default(root, TRACK, creds)
 
 
 def _resolve_prefix(root, owner_email: str, explicit: str | None) -> tuple[str, str]:
-    """(prefix, source) for this track, or exit. Never renames a deployed track."""
-    prefix, source, error = meta.resolve_prefix(root, TRACK, owner_email=owner_email, explicit=explicit)
-    if error:
-        print(f"\nError: {error}")
-        sys.exit(1)
-    # Live state wins over saved metadata, but say so rather than silently
-    # correcting: metadata that disagrees with state means an interrupted run or a
-    # hand-edited file, and the operator should know which name is authoritative.
-    saved = meta.load_meta(root, TRACK).get(meta.KEY_RESOLVED_PREFIX)
-    if source == "state" and saved and saved != prefix:
-        print(f"\nNote: runs/{RUN_NAME}/deployment.env records {saved!r}, but the deployed")
-        print(f"      environment is {prefix!r}. Using the deployed name and updating the record.")
-    return prefix, source
+    return common.resolve_prefix(root, TRACK, owner_email, explicit)
 
 
-def _validated_prefix_or_exit(prefix: str) -> str:
-    """Reject an unusable prefix *before* any cloud call."""
-    problem = meta.validate_prefix(prefix)
-    if not problem:
-        return prefix
-    print(f"\nError: {problem}")
-    if not prefix:
-        print("$USER looks like a shared account and no owner email was available, so")
-        print("there was nothing to derive one from. Export TF_VAR_prefix=<name> and re-run,")
-        print("or run `uv run deploy` without --automated and answer the prompt.")
-    sys.exit(1)
+_explicit_prefix = common.explicit_prefix
+_validated_prefix_or_exit = common.validated_prefix_or_exit
 
 
 def _validated_pacing_or_exit(raw: str) -> str:
-    """Reject bad pacing *before* Terraform, Docker, AWS, or Confluent work.
-
-    The automated path used to call `int()` on this straight, so a stale
-    `TF_VAR_seconds_per_lap=fast` produced a raw traceback after every prereq
-    check had already run.
-    """
-    value, problem = meta.validate_seconds_per_lap(raw)
-    if problem:
-        print(f"\nError: {problem}")
-        print("Fix TF_VAR_seconds_per_lap (exported, credentials.env, or")
-        print(f"runs/{TRACK.name}/deployment.env) and re-run.")
-        sys.exit(1)
-    return str(value)
+    return common.validated_pacing_or_exit(raw, TRACK)
 
 
 def _shared_prefix(prefix: str) -> str:
@@ -223,7 +157,7 @@ def _confirm_shared_rename(deployed: str, wanted: str, automated: bool) -> None:
     print("!" * 72)
     if automated:
         print("\nRefusing to migrate unattended. Pin the current name with the export above,")
-        print("or re-run `uv run deploy` without --automated to confirm the rename.")
+        print("or re-run `uv run deploy --track standalone` without --automated to confirm the rename.")
         sys.exit(1)
     if input("\nProceed with the rename? (y/n): ").strip().lower() != "y":
         print("Cancelled.")
@@ -246,18 +180,17 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
             "aws_bedrock_key": creds.get("TF_VAR_aws_bedrock_access_key", ""),
             "aws_bedrock_secret": creds.get("TF_VAR_aws_bedrock_secret_key", ""),
             "aws_session_token": creds.get("TF_VAR_aws_session_token", ""),
+            "llm_provider": common.llm_provider_for(root, TRACK, creds),
         }
-        missing = [
-            key
-            for key, value in {
-                "TF_VAR_confluent_cloud_api_key": cfg["api_key"],
-                "TF_VAR_confluent_cloud_api_secret": cfg["api_secret"],
-                "TF_VAR_owner_email": cfg["owner_email"],
-                "TF_VAR_aws_bedrock_access_key": cfg["aws_bedrock_key"],
-                "TF_VAR_aws_bedrock_secret_key": cfg["aws_bedrock_secret"],
-            }.items()
-            if not value
-        ]
+        required = {
+            "TF_VAR_confluent_cloud_api_key": cfg["api_key"],
+            "TF_VAR_confluent_cloud_api_secret": cfg["api_secret"],
+            "TF_VAR_owner_email": cfg["owner_email"],
+        }
+        if cfg["llm_provider"] == "bedrock":
+            required["TF_VAR_aws_bedrock_access_key"] = cfg["aws_bedrock_key"]
+            required["TF_VAR_aws_bedrock_secret_key"] = cfg["aws_bedrock_secret"]
+        missing = [key for key, value in required.items() if not value]
         if missing:
             print(f"Error: credentials.env is missing required values: {', '.join(missing)}")
             sys.exit(1)
@@ -274,21 +207,8 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
         _persist(root, creds_file, cfg, interactive=False)
         return cfg
 
-    generate = input("\nGenerate new Confluent Cloud API keys? (y/n) [n]: ").strip().lower()
-    if generate == "y":
-        # The Confluent CLI session is needed *here and only here*. Terraform's
-        # Confluent provider authenticates with TF_VAR_confluent_cloud_api_key/
-        # _secret, so a user who already has an OrganizationAdmin key never needs
-        # to log in — and shouldn't be pushed through a prompt that writes their
-        # Confluent password into credentials.env in plaintext.
-        if not ensure_confluent_login(creds, creds_file=creds_file, interactive=True):
-            sys.exit(1)
-        api_key, api_secret = generate_confluent_api_keys()
-        if api_key and api_secret:
-            set_key(str(creds_file), "TF_VAR_confluent_cloud_api_key", api_key)
-            set_key(str(creds_file), "TF_VAR_confluent_cloud_api_secret", api_secret)
-            creds["TF_VAR_confluent_cloud_api_key"] = api_key
-            creds["TF_VAR_confluent_cloud_api_secret"] = api_secret
+    common.offer_key_generation(creds, creds_file)
+    llm_provider = common.prompt_llm_provider(root, TRACK, creds)
 
     print("\n--- Configuration ---\n")
 
@@ -305,6 +225,7 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
         "api_key": ask("Confluent Cloud API Key", "TF_VAR_confluent_cloud_api_key"),
         "api_secret": ask("Confluent Cloud API Secret", "TF_VAR_confluent_cloud_api_secret", secret=True),
         "owner_email": ask("Owner email (for AWS resource tagging)", "TF_VAR_owner_email"),
+        "llm_provider": llm_provider,
     }
 
     # Offered as the prompt default rather than imposed: derived from $USER (or a
@@ -336,7 +257,11 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
     # there, use them rather than re-asking for values the user just generated.
     saved_bedrock_key = creds.get("TF_VAR_aws_bedrock_access_key", "")
     saved_bedrock_secret = creds.get("TF_VAR_aws_bedrock_secret_key", "")
-    if saved_bedrock_key and saved_bedrock_secret:
+    if llm_provider != "bedrock":
+        # CSP Hosted inference needs no AWS keys; pass along whatever is saved.
+        cfg["aws_bedrock_key"] = saved_bedrock_key
+        cfg["aws_bedrock_secret"] = saved_bedrock_secret
+    elif saved_bedrock_key and saved_bedrock_secret:
         cfg["aws_bedrock_key"] = saved_bedrock_key
         cfg["aws_bedrock_secret"] = saved_bedrock_secret
         print(f"  Bedrock keys:  {saved_bedrock_key[:8]}... (from credentials.env)")
@@ -355,7 +280,7 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
         print(f"  {problem}")
 
     cfg["aws_session_token"] = ""
-    if cfg["aws_bedrock_key"].startswith("ASIA"):
+    if llm_provider == "bedrock" and cfg["aws_bedrock_key"].startswith("ASIA"):
         cfg["aws_session_token"] = ask(
             "AWS Session Token (required for temporary credentials)", "TF_VAR_aws_session_token"
         )
@@ -374,7 +299,7 @@ def _persist(root, creds_file, cfg: dict[str, str], interactive: bool) -> None:
     Prefix and pacing are also mirrored into credentials.env in **both** paths.
     Prefix because `uv run destroy` sources the `aws` tier's Terraform variables
     from that file; pacing so that
-    `export TF_VAR_seconds_per_lap=15; uv run deploy --automated` sticks, which it
+    `export TF_VAR_seconds_per_lap=15; uv run deploy --automated --track standalone` sticks, which it
     never did before (set_key only ran in the interactive branch). Self-service no
     longer writes `TF_VAR_prefix` there, so that key now belongs to this track.
     """
@@ -392,6 +317,9 @@ def _persist(root, creds_file, cfg: dict[str, str], interactive: bool) -> None:
     mirror = {
         "TF_VAR_prefix": cfg["prefix"],
         "TF_VAR_seconds_per_lap": cfg["seconds_per_lap"],
+        # A user choice, so credentials.env (the source of truth) records it on
+        # every path — same rule as the self-service track.
+        common.LLM_PROVIDER_KEY: cfg["llm_provider"],
     }
     if interactive:
         # Only the interactive path prompted for these, so only it has anything
@@ -447,43 +375,18 @@ def _build_labs_and_restart(tf: dict, root) -> bool:
     return True
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Deploy a single F1 environment (Confluent + Postgres/CDC/ECS)")
-    parser.add_argument(
-        "--automated",
-        action="store_true",
-        default=False,
-        help="Use credentials.env values without prompting.",
-    )
-    parser.add_argument(
-        "--with-labs",
-        action="store_true",
-        default=False,
-        help=(
-            "Also build the LAB 3 / LAB 4 Flink objects from docs/demo-reference/ and restart "
-            "the race behind them — a ready-to-demo environment in one command. Omit to "
-            "get a bare environment (what the workshop hands attendees)."
-        ),
-    )
-    args = parser.parse_args()
-
-    print("=== F1 Demo — Standalone Deploy (shared + one attendee) ===\n")
-
-    root = get_project_root()
-
-    # First, and before resolving the prefix: reading an existing deployment's
-    # prefix out of Terraform state shells out to the terraform binary.
-    if not check_terraform_installed():
-        print("Error: Terraform not found. Install from https://developer.hashicorp.com/terraform/install")
-        sys.exit(1)
-    print("  Terraform installed")
-
-    creds_file, creds = load_or_create_credentials_file(root)
+def deploy_standalone(args: argparse.Namespace, root, creds_file, creds: dict) -> None:
+    print("\n=== F1 Demo — Standalone Deploy (shared + one attendee) ===\n")
 
     # Everything is resolved and validated here — a bad prefix or bad pacing must
     # fail before the Docker/AWS probes, let alone before an apply.
     cfg = _collect_config(root, creds_file, creds, args.automated)
+    common.check_bedrock_or_exit(cfg, args.automated)
 
+    if not docker_installed():
+        print("\nError: Docker is not installed (needed to build the simulator image).")
+        print(docker_start_hint())
+        sys.exit(1)
     if not check_docker_running():
         print("\nDocker is not running (needed to build the simulator image).")
         started = False
@@ -491,7 +394,7 @@ def main():
             started = start_docker()
         if not started:
             print("\nError: Docker is not ready.")
-            print("Start Docker Desktop or run `colima start`, then verify with: docker info")
+            print(docker_start_hint())
             sys.exit(1)
     print("\n  Docker running")
 
@@ -504,17 +407,21 @@ def main():
     shared_prefix = _shared_prefix(cfg["prefix"])
     deployed_shared = _deployed_shared_prefix(shared_path / "terraform.tfstate")
 
-    print("\n--- Deployment Summary ---")
-    print(f"  Region:   {REGION}")
-    print(f"  Owner:    {cfg['owner_email']}")
-    print(f"  Prefix:   {cfg['prefix']}   (Confluent env: RIVER-RACING-{cfg['prefix']}-ENV)")
-    print(f"  Shared:   {shared_prefix}   (ECR repo {shared_prefix}-simulator)")
-    print(f"  Postgres: {os.environ.get('TF_VAR_postgres_instance_type') or DEFAULT_POSTGRES_INSTANCE_TYPE}")
-    print(f"  CC Key:   {cfg['api_key'][:8]}...")
-    print(f"  Bedrock:  {cfg['aws_bedrock_key'][:8]}..." if cfg["aws_bedrock_key"] else "  Bedrock:  (not set)")
-    print(f"  Pacing:   {cfg['seconds_per_lap']}s/lap (~{60 * int(cfg['seconds_per_lap']) // 60}-min race)")
-    print(f"  Labs:     {'prebuilt (LAB 3 + LAB 4)' if args.with_labs else 'not built (attendee writes them)'}")
-    print("  Deploys:  aws-shared -> aws")
+    common.print_summary(
+        "Deployment Summary",
+        {
+            "Region": REGION,
+            "Owner": cfg["owner_email"],
+            "Prefix": f"{cfg['prefix']}   (Confluent env: RIVER-RACING-{cfg['prefix']}-ENV)",
+            "Shared": f"{shared_prefix}   (ECR repo {shared_prefix}-simulator)",
+            "Postgres": os.environ.get("TF_VAR_postgres_instance_type") or DEFAULT_POSTGRES_INSTANCE_TYPE,
+            "LLM": common.LLM_PROVIDERS[cfg["llm_provider"]],
+            "Pacing": f"{cfg['seconds_per_lap']}s/lap (~{60 * int(cfg['seconds_per_lap']) // 60}-min race)",
+            "Labs": "prebuilt (LAB 3 + LAB 4)" if args.with_labs else "not built (attendee writes them)",
+            "Deploys": "aws-shared -> aws",
+        },
+        creds_file,
+    )
 
     if deployed_shared and deployed_shared != shared_prefix:
         _confirm_shared_rename(deployed_shared, shared_prefix, args.automated)
@@ -560,6 +467,7 @@ def main():
         "TF_VAR_aws_bedrock_access_key": cfg["aws_bedrock_key"],
         "TF_VAR_aws_bedrock_secret_key": cfg["aws_bedrock_secret"],
         "TF_VAR_aws_session_token": cfg["aws_session_token"],
+        "TF_VAR_llm_provider": cfg["llm_provider"],
         "TF_VAR_seconds_per_lap": cfg["seconds_per_lap"],
         "TF_VAR_shared_vpc_id": shared["vpc_id"],
         "TF_VAR_shared_subnet_ids": json.dumps(shared["subnet_ids"]),
@@ -578,17 +486,7 @@ def main():
     # write one here from the fresh outputs (same generator the workshop and
     # self-service flows use, so the card format is identical everywhere).
     attendee_out = run_terraform_output(attendee_path / "terraform.tfstate")
-    creds_dir = root / "runs" / RUN_NAME / "credentials"
-    creds_dir.mkdir(parents=True, exist_ok=True)
-    fields = creds_mod._card_fields(cfg["prefix"], cfg["owner_email"], attendee_out, social_feed_url="", region=REGION)
-    creds_mod._write_env(creds_dir, fields)
-    creds_mod._write_md(creds_dir, fields)
-    card = f"runs/{RUN_NAME}/credentials/{cfg['prefix']}.env"
-
-    # Point credentials.env at the new card so f1-sql / f1-pitwall find it with
-    # no flags, in any terminal — nothing for the user to export or remember.
-    set_active_card(root, root / card)
-    meta.save_meta(root, TRACK, **{meta.KEY_CARD: card})
+    card = common.write_card(root, TRACK, cfg, attendee_out, rtce_keys=False).relative_to(root)
 
     # --- 4. Optional: prebuild the labs ---
     labs_ok = True
@@ -597,6 +495,7 @@ def main():
 
     print("\n=== Deployment Complete ===\n")
     print(f"Your credential card:  {card}")
+    print(f"Flink SQL Workspace:   {common.flink_workspace_url(attendee_out)}")
     print("It's recorded as F1_CARD in credentials.env, so the tools below need no flags.\n")
     if args.with_labs and labs_ok:
         print("LAB 3 and LAB 4 are already running and the ECS race simulator is live.")
@@ -612,8 +511,54 @@ def main():
     print("3. Open the live dashboard (second terminal):")
     print("     uv run f1-pitwall")
     print("\nTear down all resources:  uv run destroy")
+    if not args.automated:
+        # The ECS race is never started from here: with labs it is already
+        # running, and without them `car_state` has to exist first.
+        common.offer_start(root, None)
     if not labs_ok:
         sys.exit(1)
+
+
+def main(argv: list[str] | None = None):
+    parser = argparse.ArgumentParser(description="Deploy one F1 environment: self-service or standalone")
+    parser.add_argument(
+        "--track",
+        choices=list(common.TRACKS),
+        help="self-service (Confluent-only) or standalone (Confluent + AWS). Prompted when omitted.",
+    )
+    parser.add_argument(
+        "--automated",
+        action="store_true",
+        default=False,
+        help="Use credentials.env values without prompting.",
+    )
+    parser.add_argument(
+        "--with-labs",
+        action="store_true",
+        default=False,
+        help=(
+            "Also build the LAB 3 / LAB 4 Flink objects from docs/demo-reference/ — a "
+            "ready-to-demo environment in one command. Omit to get a bare environment "
+            "(what the workshop hands attendees)."
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    print("=== F1 Pit Wall — Deploy ===\n")
+    root = get_project_root()
+
+    # First, and before resolving the prefix: reading an existing deployment's
+    # prefix out of Terraform state shells out to the terraform binary.
+    if not check_terraform_installed():
+        print("Error: Terraform not found. Install from https://developer.hashicorp.com/terraform/install")
+        sys.exit(1)
+
+    track = common.pick_track(root, args.track, args.automated)
+    creds_file, creds = load_or_create_credentials_file(root)
+    if track is meta.SELFSERVICE:
+        selfservice.deploy(args, root, creds_file, creds)
+    else:
+        deploy_standalone(args, root, creds_file, creds)
 
 
 if __name__ == "__main__":

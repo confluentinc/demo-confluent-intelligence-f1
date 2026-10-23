@@ -72,10 +72,19 @@ uv run f1-social-feed --mock                                    # offline demo/d
 RTCE_API_KEY=... RTCE_API_SECRET=... uv run f1-social-feed-rtce --creds-glob 'runs/*/credentials/*.env'
 RTCE_API_KEY=... RTCE_API_SECRET=... uv run f1-social-feed-rtce --probe --creds <card>.env  # validate RTCE contract
 
+# One deploy command for both solo tracks. It prompts for the track (default: the one
+#   already deployed, else self-service); --track skips that prompt. --automated needs
+#   --track unless exactly one track is deployed. Prefer `uv run deploy` in docs/output;
+#   `uv run selfservice up|down` remain as forwarding shortcuts (see below).
+#   Every run: saved Confluent login → optional key minting → LLM provider (CSP Hosted,
+#   the default, or Bedrock) → live Bedrock invoke test (Bedrock only) → masked summary of
+#   credentials.env → apply → card + Flink workspace URL → offer to start the
+#   dashboard (and the race, when --with-labs made that safe).
+
 # Standalone demo: single environment (smoke test / presenter) — shared then attendee
-uv run deploy                  # prompts → credentials.env → terraform/aws-shared → terraform/aws
-uv run deploy --automated      # same, no prompts (reads credentials.env)
-uv run deploy --with-labs      # also build LAB 3 + LAB 4 from docs/demo-reference/ and restart the
+uv run deploy --track standalone              # prompts → credentials.env → terraform/aws-shared → terraform/aws
+uv run deploy --track standalone --automated  # same, no prompts (reads credentials.env)
+uv run deploy --track standalone --with-labs  # also build LAB 3 + LAB 4 from docs/demo-reference/ and restart the
                                #   race behind them — ready to demo. Omit for a bare environment
                                #   (what the workshop hands attendees).
                                # Prefix is derived from $USER (+ track suffix) and pinned in
@@ -84,16 +93,24 @@ uv run deploy --with-labs      # also build LAB 3 + LAB 4 from docs/demo-referen
                                # Postgres defaults to t3.small here (aws-shared's own default,
                                #   which wsa uses, stays t3.large).
 uv run destroy                 # pick which local deployment(s) to tear down, confirm, destroy
+uv run destroy --force         #   no prompts; add --delete-credentials to also drop credentials.env
                                #   groups: "deploy" (aws + aws-shared) / "self-service"
+                               #   --yes = --force; --only deploy|self-service scopes it.
+                               #   After success: asks to delete credentials.env (default yes,
+                               #   default no while another deployment is still live). Once
+                               #   nothing is left deployed it also removes the setup-mcp /
+                               #   setup-rtce Claude Code registrations + confluent-mcp.env.
                                #   A wsa workshop is unreachable (wsa keeps state in its own
                                #   run dir) — tear one down with `wsa clean`. Hand-applied
                                #   aws-shared state IS reachable, behind a typed confirmation.
 
 # Self-service (solo): Confluent-only, NO AWS infra (no Postgres/CDC/ECS/ECR/Docker)
-uv run selfservice up          # apply terraform/self-service → credential card → seed driver_race_history
-uv run selfservice up --automated   # no prompts (reads credentials.env)
-uv run selfservice up --with-labs   # also prebuild LAB 3 + LAB 4 from docs/demo-reference/
-uv run selfservice down        # tear down terraform/self-service (--yes to skip the prompt)
+uv run deploy --track self-service          # apply terraform/self-service → credential card → seed driver_race_history
+uv run deploy --track self-service --automated   # no prompts (reads credentials.env)
+uv run deploy --track self-service --with-labs   # also prebuild LAB 3 + LAB 4 from docs/demo-reference/
+uv run destroy --only self-service          # tear down just this track (see above)
+uv run selfservice up [--automated] [--with-labs]   # shortcut = deploy --track self-service
+uv run selfservice down [--yes] [--delete-credentials]  # shortcut = destroy --only self-service
 uv run f1-race                 # local simulator (ECS stand-in); --once, --seconds-per-lap N, --20
                                #   Pacing: flag > runs/<track>/deployment.env > 20. Minimum 10s/lap.
                                #   Sets PRE_RACE_WARMUP_LAPS=0 (the ECS path keeps the default 4).

@@ -27,7 +27,7 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-# Set by deploy.py / `selfservice up` in credentials.env, read by resolve_card().
+# Set by deploy.py / `deploy --track self-service` in credentials.env, read by resolve_card().
 CARD_POINTER_KEY = "F1_CARD"
 
 # Recognizing a card that arrived as ONE flattened line. The wsa dispenser renders
@@ -72,10 +72,7 @@ def load_or_create_credentials_file(root: Path) -> tuple[Path, dict[str, str]]:
 
 def _is_card(values: dict[str, str | None]) -> bool:
     """A parsed .env is a credential card if it carries F1_* keys of its own."""
-    return any(
-        key.startswith("F1_") and key not in {CARD_POINTER_KEY, *LEGACY_NON_CARD_KEYS}
-        for key in values
-    )
+    return any(key.startswith("F1_") and key not in {CARD_POINTER_KEY, *LEGACY_NON_CARD_KEYS} for key in values)
 
 
 def resolve_card(explicit: str | None = None, root: Path | None = None) -> Path:

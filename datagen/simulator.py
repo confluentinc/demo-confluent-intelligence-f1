@@ -234,9 +234,7 @@ def run_race():
             lap_start = _lap_deadline(race_start, lap, config.SECONDS_PER_LAP)
             behind = time.time() - lap_start
             if behind > 0.5:
-                logger.warning(
-                    f"Lap {lap} started {behind:.2f}s behind its scheduled boundary"
-                )
+                logger.warning(f"Lap {lap} started {behind:.2f}s behind its scheduled boundary")
 
             # Preserve the pre-stop snapshot for the scheduled pit lap. The simulator
             # applies the hard-coded stop while advancing its internal race state, but

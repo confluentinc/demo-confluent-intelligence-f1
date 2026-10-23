@@ -59,10 +59,11 @@ class DestroyHarness:
 
         with (
             patch.object(destroy, "run_terraform_destroy", side_effect=fake_destroy),
-            patch("builtins.input", side_effect=answers),
+            # Trailing "": Enter at the credentials.env prompt that follows a clean run.
+            patch("builtins.input", side_effect=[*answers, ""]),
         ):
             try:
-                destroy.main()
+                destroy.main([])
             except SystemExit as exc:
                 self.exit_code = exc.code
             else:
@@ -96,7 +97,7 @@ class DestroyOrderingTests(DestroyHarness, unittest.TestCase):
         self.make_state("aws", "aws-shared", "self-service")
 
         # Both groups selected (Enter = all), then confirm.
-        with patch("scripts.selfservice.cli.export_selfservice_tf_env"):
+        with patch("scripts.selfservice.provision.export_selfservice_tf_env"):
             self.run_destroy(answers=["", "y"], fail_tiers={"aws"})
 
         self.assertIn("self-service", self.destroyed)
@@ -107,7 +108,7 @@ class DestroyOrderingTests(DestroyHarness, unittest.TestCase):
     def test_self_service_failure_does_not_block_the_deploy_group(self):
         self.make_state("aws", "aws-shared", "self-service")
 
-        with patch("scripts.selfservice.cli.export_selfservice_tf_env"):
+        with patch("scripts.selfservice.provision.export_selfservice_tf_env"):
             self.run_destroy(answers=["", "y"], fail_tiers={"self-service"})
 
         self.assertEqual(self.destroyed, ["aws", "aws-shared", "self-service"])
@@ -116,7 +117,7 @@ class DestroyOrderingTests(DestroyHarness, unittest.TestCase):
     def test_selecting_only_self_service_leaves_the_aws_tiers_alone(self):
         self.make_state("aws", "aws-shared", "self-service")
 
-        with patch("scripts.selfservice.cli.export_selfservice_tf_env"):
+        with patch("scripts.selfservice.provision.export_selfservice_tf_env"):
             self.run_destroy(answers=["2", "y"], fail_tiers=set())
 
         self.assertEqual(self.destroyed, ["self-service"])
@@ -151,7 +152,7 @@ class DeadCardCleanupTests(DestroyHarness, unittest.TestCase):
         selfservice = self.make_track_files("selfservice", "demos")
         (self.root / "credentials.env").write_text("F1_CARD=runs/selfservice/credentials/demos.env\n")
 
-        with patch("scripts.selfservice.cli.export_selfservice_tf_env"):
+        with patch("scripts.selfservice.provision.export_selfservice_tf_env"):
             self.run_destroy(answers=["2", "y"], fail_tiers=set())
 
         for name, path in selfservice.items():
@@ -166,7 +167,7 @@ class DeadCardCleanupTests(DestroyHarness, unittest.TestCase):
         selfservice = self.make_track_files("selfservice", "demos")
         (self.root / "credentials.env").write_text("F1_CARD=runs/selfservice/credentials/demos.env\n")
 
-        with patch("scripts.selfservice.cli.export_selfservice_tf_env"):
+        with patch("scripts.selfservice.provision.export_selfservice_tf_env"):
             self.run_destroy(answers=["y"], fail_tiers={"self-service"})
 
         self.assertEqual(self.exit_code, 1)
@@ -240,9 +241,7 @@ class SharedVarInjectionTest(unittest.TestCase):
             destroy._inject_shared_vars(self.root)
 
         self.assertEqual(destroy.os.environ["TF_VAR_shared_vpc_id"], "vpc-real")
-        self.assertEqual(
-            json.loads(destroy.os.environ["TF_VAR_shared_subnet_ids"]), ["subnet-a", "subnet-b"]
-        )
+        self.assertEqual(json.loads(destroy.os.environ["TF_VAR_shared_subnet_ids"]), ["subnet-a", "subnet-b"])
 
     def test_empty_output_falls_back_to_placeholder(self):
         # An aws-shared state that yields a blank output must not leave the

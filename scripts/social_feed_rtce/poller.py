@@ -61,9 +61,7 @@ async def poll_once(client: RTCEClient, feed: FeedState, seen: dict) -> None:
         logger.debug("[%s] %s query failed (append topic, may be unsupported): %s", feed.prefix, CAR_STATE_TOPIC, e)
 
     try:
-        latest = _latest_by_lap(
-            await client.query(PIT_DECISIONS_TOPIC, f'"CAR_NUMBER" = {OUR_CAR_NUMBER}')
-        )
+        latest = _latest_by_lap(await client.query(PIT_DECISIONS_TOPIC, f'"CAR_NUMBER" = {OUR_CAR_NUMBER}'))
         # Only add a decision when it's for a newer lap, so re-polling the same
         # latest row doesn't fill the decisions buffer with duplicates.
         if latest is not None and (latest.get("lap") or 0) != seen.get("decision_lap"):

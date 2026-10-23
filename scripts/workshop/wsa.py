@@ -246,10 +246,7 @@ def resolve_email_pattern(root: Path, override: str = "", interactive: bool = Tr
     # permits an exported setting to work in a fresh clone without side effects.
     creds = dotenv_values(creds_file) if creds_file.exists() else {}
     explicit = override.strip()
-    from_env = (
-        os.environ.get(EMAIL_PATTERN_ENV, "").strip()
-        or os.environ.get(WSA_EMAIL_PATTERN_ENV, "").strip()
-    )
+    from_env = os.environ.get(EMAIL_PATTERN_ENV, "").strip() or os.environ.get(WSA_EMAIL_PATTERN_ENV, "").strip()
     from_file = str(creds.get(EMAIL_PATTERN_ENV) or "").strip()
     chosen = explicit or from_env or from_file
 
@@ -293,8 +290,7 @@ def _account_numbers(accounts: str, account_count: int | None) -> list[int]:
         match = re.fullmatch(r"(\d+)(?:-(\d+))?", part.strip())
         if match is None:
             raise SystemExit(
-                "--accounts must be comma-separated positive account numbers or ranges, "
-                "for example 1-20 or 1,4-10."
+                "--accounts must be comma-separated positive account numbers or ranges, for example 1-20 or 1,4-10."
             )
         start = int(match.group(1))
         end = int(match.group(2) or start)
@@ -511,9 +507,7 @@ def _require_run(root: Path, action: str) -> Run:
     return run
 
 
-def _stream_wsa(
-    binary: Path, root: Path, subcommand: str, extra: list[str], spec_path: Path | None = None
-) -> int:
+def _stream_wsa(binary: Path, root: Path, subcommand: str, extra: list[str], spec_path: Path | None = None) -> int:
     """Run `wsa <subcommand>` from `root`, streaming its output live.
 
     Builds take tens of minutes, so the child inherits this process's stdout
@@ -588,9 +582,7 @@ def _is_full_workshop(accounts: str) -> bool:
     return not accounts.strip() or re.fullmatch(r"1(-\d+)?", accounts.strip()) is not None
 
 
-def _upload_dispenser(
-    root: Path, run: Run, binary: Path, skip: bool = False, full_workshop: bool = True
-) -> None:
+def _upload_dispenser(root: Path, run: Run, binary: Path, skip: bool = False, full_workshop: bool = True) -> None:
     """Push this run's ``build-output.csv`` into the dispenser Google Sheet.
 
     Must run *after* `_write_cards`: `creds.py`'s `_write_dispenser_csv` curates the
@@ -605,13 +597,9 @@ def _upload_dispenser(
     Never fatal. The build succeeded and the cards are on disk; a failed upload is
     one command to retry, not a reason to exit nonzero.
     """
-    manual = (
-        f"  {binary} dispenser-upload --run-id {run.run_id} "
-        f"--sheets-credentials <oauth-client.json> --yes"
-    )
+    manual = f"  {binary} dispenser-upload --run-id {run.run_id} --sheets-credentials <oauth-client.json> --yes"
     stale = (
-        "  Attendees claiming from the sheet would get the previous workshop's\n"
-        "  credentials, which no longer exist."
+        "  Attendees claiming from the sheet would get the previous workshop's\n  credentials, which no longer exist."
     )
     if not dispenser_configured(root):
         print(
@@ -623,8 +611,7 @@ def _upload_dispenser(
         return
     if skip:
         print(
-            f"\nSkipping the dispenser upload (--no-dispenser-upload).\n{stale}\n"
-            f"  When you want it:\n{manual}",
+            f"\nSkipping the dispenser upload (--no-dispenser-upload).\n{stale}\n  When you want it:\n{manual}",
             file=sys.stderr,
         )
         return
@@ -778,9 +765,7 @@ def build(args: argparse.Namespace) -> None:
         raise SystemExit(code)
 
     if run is None:
-        raise SystemExit(
-            f"wsa build reported success but no build report appeared under {root / OUTPUT_DIR}."
-        )
+        raise SystemExit(f"wsa build reported success but no build report appeared under {root / OUTPUT_DIR}.")
     if not run.csv.exists():
         raise SystemExit(f"wsa build reported success but {run.csv} is missing.")
     if args.no_cards:
@@ -1013,7 +998,7 @@ def add_build_arguments(p: argparse.ArgumentParser) -> None:
         type=int,
         default=None,
         help="Override the spec's account_count. Cosmetic — it only fixes wsa's "
-        "\"(N accounts)\" banner, since --accounts decides what actually gets built. "
+        '"(N accounts)" banner, since --accounts decides what actually gets built. '
         "create-workshop sets this from --attendees.",
     )
     p.add_argument(
@@ -1089,8 +1074,7 @@ def add_clean_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--accounts-only",
         action="store_true",
-        help="Destroy the per-account phase only, keeping shared infra for reuse "
-        "(maps to wsa's `--phases accounts`)",
+        help="Destroy the per-account phase only, keeping shared infra for reuse (maps to wsa's `--phases accounts`)",
     )
     p.add_argument(
         "--shared-only",

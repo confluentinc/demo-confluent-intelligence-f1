@@ -1,7 +1,7 @@
 # =============================================================================
 # Self-service (solo) variables. Confluent-only — no AWS infrastructure.
 #
-# The self-service CLI (`uv run selfservice up`) injects these as TF_VAR_*.
+# The self-service CLI (`uv run deploy --track self-service`) injects these as TF_VAR_*.
 # Bedrock keys are still required (they back the Flink AI connections for LAB 4),
 # but they are credentials, not infrastructure — no EC2/ECS/VPC is created here.
 # =============================================================================
@@ -60,18 +60,38 @@ variable "flink_max_cfu" {
   default     = 10
 }
 
-# --- AWS Bedrock (credentials only — no AWS infrastructure) ---
+# --- LLM provider ---
+
+variable "llm_provider" {
+  description = "Backs llm_textgen_model: 'bedrock' (your AWS Bedrock keys) or 'confluent' (CSP Hosted Flink Model Inference — no keys, the default)"
+  type        = string
+  default     = "confluent"
+  validation {
+    condition     = contains(["bedrock", "confluent"], var.llm_provider)
+    error_message = "llm_provider must be 'bedrock' or 'confluent'."
+  }
+}
+
+variable "csp_hosted_model" {
+  description = "Model id for llm_provider = 'confluent'. Case-sensitive: the model service matches it exactly."
+  type        = string
+  default     = "anthropic.claude-sonnet-4-6"
+}
+
+# --- AWS Bedrock (credentials only — no AWS infrastructure; unused when llm_provider = 'confluent') ---
 
 variable "aws_bedrock_access_key" {
   description = "AWS Bedrock Access Key for the Flink AI connections"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "aws_bedrock_secret_key" {
   description = "AWS Bedrock Secret Key for the Flink AI connections"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "aws_session_token" {

@@ -202,7 +202,7 @@ def save_meta(root: Path, track: Track, **fields: str) -> Path:
     lines = [
         f"# {track.label}",
         "# Resolved deployment inputs for this track. Not secrets — see credentials.env.",
-        "# Written by `uv run deploy` / `uv run selfservice up`; read by re-runs and destroy.",
+        "# Written by `uv run deploy` / `uv run deploy --track self-service`; read by re-runs and destroy.",
         *(f"{k}={v}" for k, v in sorted(merged.items())),
         "",
     ]
@@ -215,9 +215,9 @@ def clear_meta(root: Path, track: Track) -> None:
     meta_path(root, track).unlink(missing_ok=True)
 
 
-# Written by `selfservice up` once driver_race_history is populated, so a re-run
+# Written by `deploy --track self-service` once driver_race_history is populated, so a re-run
 # doesn't re-seed. It has to be removed by *either* teardown path: it used to
-# survive `uv run destroy`, and the next `selfservice up` then printed "already
+# survive `uv run destroy`, and the next `deploy --track self-service` then printed "already
 # seeded" over an empty table — LAB 2's COUNT(*) returns 0 and LAB 4's history
 # join returns nothing, with no error anywhere.
 SEED_MARKER = ".seeded"

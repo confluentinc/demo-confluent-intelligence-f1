@@ -17,8 +17,9 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import deploy
+from scripts.common import deploy_common as common
 from scripts.common import deployment_meta as meta
-from scripts.selfservice import cli as ss_cli
+from scripts.selfservice import provision as ss_cli
 
 EMAIL = "kevin@example.com"
 
@@ -106,10 +107,13 @@ class CrossTrackTests(PrefixTestCase):
     def test_tracks_in_one_checkout_get_distinct_prefixes(self):
         with self.as_user("alice"):
             standalone, _ = deploy._resolve_prefix(self.root, EMAIL, None)
-            selfservice, _ = ss_cli._resolve_prefix(self.root, EMAIL, None)
+            selfservice, _ = common.resolve_prefix(
+                self.root, meta.SELFSERVICE, EMAIL, None, fixed_default=ss_cli.DEFAULT_PREFIX
+            )
 
+        # Self-service pins a fixed label instead of deriving one (one person per checkout).
         self.assertEqual(standalone, "alice")
-        self.assertEqual(selfservice, "alices")
+        self.assertEqual(selfservice, ss_cli.DEFAULT_PREFIX)
         self.assertNotEqual(standalone, selfservice)
 
     def test_metadata_is_per_track(self):
@@ -132,7 +136,7 @@ class CrossTrackTests(PrefixTestCase):
         people whose file says `solo` the same ECR repository).
         """
         self.assertIsNone(deploy._explicit_prefix())
-        self.assertIsNone(ss_cli._explicit_prefix())
+        self.assertIsNone(common.explicit_prefix())
         with patch.dict("os.environ", {"TF_VAR_prefix": "exported"}):
             self.assertEqual(deploy._explicit_prefix(), "exported")
 

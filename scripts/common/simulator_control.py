@@ -2,7 +2,7 @@
 
 Extracted from scripts/reset.py so three callers can share one implementation:
 ``uv run race`` (scripts/race_control.py), ``uv run reset``, and the
-``--with-labs`` paths of ``uv run deploy`` / ``uv run selfservice up``.
+``--with-labs`` paths of ``uv run deploy`` / ``uv run deploy --track self-service``.
 
 Everything here is deliberately **single-deployment**. It reads the ECS cluster
 and service names out of *this* checkout's ``terraform/aws`` state and updates

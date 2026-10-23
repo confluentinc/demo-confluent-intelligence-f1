@@ -31,6 +31,8 @@ from scripts.common.login_checks import (
     check_aws_configured,
     check_docker_running,
     check_terraform_installed,
+    docker_installed,
+    docker_start_hint,
     ensure_confluent_login,
 )
 from scripts.common.terraform import get_project_root
@@ -54,11 +56,7 @@ def _expand_prefix(pattern: str, n: int) -> str:
     Matches wsa's own placeholder substitution — longest token first so ``{NNN}``
     is replaced before ``{NN}``/``{N}`` (otherwise ``{NNN}`` becomes ``1NN``).
     """
-    return (
-        pattern.replace("{NNN}", f"{n:03d}")
-        .replace("{NN}", f"{n:02d}")
-        .replace("{N}", str(n))
-    )
+    return pattern.replace("{NNN}", f"{n:03d}").replace("{NN}", f"{n:02d}").replace("{N}", str(n))
 
 
 _PLACEHOLDER_RE = re.compile(r"\{N+\}")
@@ -205,10 +203,7 @@ def _check_env_name_collisions(prefix_pattern: str, attendees: int) -> None:
         print("  env-name check:  skipped (no Confluent API key available)")
         return
 
-    expected = {
-        f"RIVER-RACING-{_expand_prefix(prefix_pattern, n)}-ENV": n
-        for n in range(1, attendees + 1)
-    }
+    expected = {f"RIVER-RACING-{_expand_prefix(prefix_pattern, n)}-ENV": n for n in range(1, attendees + 1)}
 
     try:
         existing = _list_confluent_environments(api_key, api_secret)
@@ -363,7 +358,8 @@ def create(args: argparse.Namespace) -> None:
     print("  terraform:   ok")
 
     if not check_docker_running():
-        raise SystemExit("Docker is not running. Start Docker Desktop (needed for the simulator image build).")
+        state = "running" if docker_installed() else "installed"
+        raise SystemExit(f"Docker is not {state} (needed for the simulator image build).\n{docker_start_hint()}")
     print("  docker:      ok")
 
     if not check_aws_configured():
@@ -441,9 +437,7 @@ def create(args: argparse.Namespace) -> None:
 
     # --- 5. Spec validation ---
     print("\n=== Spec validation (wsa validate) ===\n")
-    wsa_mod.spec_validate(
-        argparse.Namespace(email_pattern=email_pattern, email_pattern_interactive=False)
-    )
+    wsa_mod.spec_validate(argparse.Namespace(email_pattern=email_pattern, email_pattern_interactive=False))
 
     # --- 6. Build ---
     _export_attendee_count(attendees)

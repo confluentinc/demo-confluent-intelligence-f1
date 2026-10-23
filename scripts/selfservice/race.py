@@ -115,7 +115,7 @@ def main() -> None:
     def need(key: str) -> str:
         v = card.get(key)
         if not v:
-            sys.exit(f"Credential card is missing {key}. Regenerate it with `uv run selfservice up`.")
+            sys.exit(f"Credential card is missing {key}. Regenerate it with `uv run deploy --track self-service`.")
         return v
 
     # Map card F1_* vars to the simulator's expected env (datagen/config.py).

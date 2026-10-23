@@ -346,7 +346,7 @@ def warn_on_empty_card_fields(card: dict[str, str]) -> list[str]:
     if missing:
         print("Warning: the credential card is missing values for: " + ", ".join(missing))
         print("  Regenerate it with whichever command created this environment:")
-        print("    uv run deploy | uv run selfservice up | uv run workshop creds")
+        print("    uv run deploy | uv run deploy --track self-service | uv run workshop creds")
         print("    (workshop attendee: re-save your dispenser Env File block as credentials.env)")
     return missing
 
@@ -509,8 +509,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="uv run setup-mcp",
         description=(
-            "Register the Confluent MCP server with a local coding agent, using this "
-            "deployment's credential card."
+            "Register the Confluent MCP server with a local coding agent, using this deployment's credential card."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(

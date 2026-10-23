@@ -9,6 +9,7 @@ Provides functions for:
 - Checking Terraform installation
 """
 
+import getpass
 import os
 import shutil
 import subprocess
@@ -133,6 +134,23 @@ def ensure_confluent_login(creds: dict | None = None, creds_file=None, interacti
     return False
 
 
+def ensure_saved_confluent_login(creds: dict, creds_file) -> bool:
+    """Make sure credentials.env holds a working Confluent Cloud login, then log in.
+
+    Unlike `ensure_confluent_login`, a live CLI session is not enough: when no
+    email/password is saved yet, prompt for them (verified by a real login before
+    they are written) so later runs, and the CLI's 8-hour token refresh, never
+    need the user again. Mirrors quickstart-streaming-agents' deploy step 0.
+    """
+    username = (creds.get(USERNAME_KEY) or "").strip()
+    password = (creds.get(PASSWORD_KEY) or "").strip()
+    if not (username and password):
+        # Skipped or failed three times: fall back to whatever session the CLI
+        # already has rather than asking a second time.
+        return _prompt_and_save_login(creds_file, creds) or check_confluent_login()
+    return ensure_confluent_login(creds, creds_file=creds_file, interactive=True)
+
+
 def check_terraform_installed() -> bool:
     """
     Check if Terraform CLI is installed.
@@ -156,10 +174,77 @@ def check_docker_running() -> bool:
         return False
 
 
-def start_docker(timeout: int = 180) -> bool:
-    """Try to start a Docker daemon: Docker Desktop first, then Colima.
+def _docker_socket_permission_denied() -> bool:
+    """True when a Docker daemon is up but this user can't open its socket.
 
-    Returns True once `docker info` succeeds, False if neither runtime is
+    The usual state on a fresh Linux VM: docker-ce is installed and running,
+    but the login user isn't in the `docker` group.
+    """
+    try:
+        result = subprocess.run(["docker", "info"], capture_output=True, text=True, timeout=10)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode != 0 and "permission denied" in result.stderr.lower()
+
+
+def _start_docker_linux() -> bool:
+    """Start the systemd docker service and grant this user its socket.
+
+    Replaces the manual `systemctl enable --now docker` / `usermod -aG docker`
+    / `newgrp docker` steps. `usermod` only takes effect at the next login, so
+    an ACL on the socket gives this already-running process (and the
+    Terraform/docker children it spawns) access right away.
+    """
+    if shutil.which("systemctl") is None:
+        return False
+    sudo = [] if os.geteuid() == 0 else ["sudo"]
+    if not check_docker_running() and not _docker_socket_permission_denied():
+        unit = subprocess.run(["systemctl", "cat", "docker.service"], capture_output=True, text=True)
+        if unit.returncode != 0:
+            return False
+        print("  Starting the docker service (sudo may ask for your password)...")
+        subprocess.run([*sudo, "systemctl", "enable", "--now", "docker"])
+    if _docker_socket_permission_denied():
+        user = getpass.getuser()
+        socket = os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock").removeprefix("unix://")
+        print(f"  Giving {user} access to the docker socket...")
+        subprocess.run([*sudo, "usermod", "-aG", "docker", user])
+        subprocess.run([*sudo, "setfacl", "-m", f"u:{user}:rw", socket])
+    return check_docker_running()
+
+
+RHEL_DOCKER_INSTALL = (
+    "sudo dnf -y install dnf-plugins-core"
+    " && sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo"
+    " && sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin"
+)
+LINUX_DOCKER_ENABLE = "sudo systemctl enable --now docker && sudo usermod -aG docker $USER && newgrp docker"
+
+
+def docker_installed() -> bool:
+    return shutil.which("docker") is not None
+
+
+def docker_start_hint() -> str:
+    """The one-paste fix to print when Docker is missing or its daemon can't be reached."""
+    if sys.platform.startswith("linux"):
+        if docker_installed():
+            return f"Run:\n  {LINUX_DOCKER_ENABLE}\nthen verify with: docker info"
+        install = RHEL_DOCKER_INSTALL if shutil.which("dnf") else "curl -fsSL https://get.docker.com | sudo sh"
+        return f"Install and start it with:\n  {install} && {LINUX_DOCKER_ENABLE}\nthen verify with: docker info"
+    if not docker_installed():
+        return (
+            "Install Docker Desktop (https://docs.docker.com/desktop/) or run:\n"
+            "  brew install colima docker && colima start\n"
+            "then verify with: docker info"
+        )
+    return "Start Docker Desktop or run `colima start`, then verify with: docker info"
+
+
+def start_docker(timeout: int = 180) -> bool:
+    """Try to start a Docker daemon: Docker Desktop, the Linux systemd service, then Colima.
+
+    Returns True once `docker info` succeeds, False if no runtime is
     installed or the daemon is not up within `timeout` seconds.
     """
     if shutil.which("docker") is None:
@@ -172,6 +257,8 @@ def start_docker(timeout: int = 180) -> bool:
             if check_docker_running():
                 return True
             time.sleep(3)
+    if sys.platform.startswith("linux") and _start_docker_linux():
+        return True
     if shutil.which("colima"):
         print("  Starting Colima...")
         try:

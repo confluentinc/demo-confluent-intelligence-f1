@@ -17,6 +17,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import deploy
+from scripts.common import deploy_common as common
 from scripts.common import deployment_meta as meta
 from scripts.selfservice import race
 
@@ -89,9 +90,10 @@ class NoCloudWorkBeforeValidationTests(PacingTestCase):
             patch.object(deploy, "check_terraform_installed", return_value=True),
             patch.object(deploy, "check_docker_running") as docker,
             patch.object(deploy, "check_aws_configured") as aws,
-            patch.object(deploy, "ensure_confluent_login") as login,
+            patch.object(common, "ensure_confluent_login") as login,
+            patch.object(common, "ensure_saved_confluent_login") as saved_login,
             patch.object(deploy, "run_terraform") as terraform,
-            patch("sys.argv", ["deploy", "--automated"]),
+            patch("sys.argv", ["deploy", "--automated", "--track", "standalone"]),
             patch.dict("os.environ", {"TF_VAR_seconds_per_lap": "fast"}),
         ):
             out = io.StringIO()
@@ -103,6 +105,7 @@ class NoCloudWorkBeforeValidationTests(PacingTestCase):
         docker.assert_not_called()
         aws.assert_not_called()
         login.assert_not_called()
+        saved_login.assert_not_called()
         terraform.assert_not_called()
 
     def test_automated_never_touches_the_confluent_cli(self):
@@ -114,13 +117,15 @@ class NoCloudWorkBeforeValidationTests(PacingTestCase):
             patch.object(deploy, "get_project_root", return_value=self.root),
             patch.object(deploy, "check_terraform_installed", return_value=True),
             patch.object(deploy, "check_docker_running", return_value=False),
-            patch.object(deploy, "ensure_confluent_login") as login,
-            patch("sys.argv", ["deploy", "--automated"]),
+            patch.object(common, "ensure_confluent_login") as login,
+            patch.object(common, "ensure_saved_confluent_login") as saved_login,
+            patch("sys.argv", ["deploy", "--automated", "--track", "standalone"]),
         ):
             with redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
                 deploy.main()
 
         login.assert_not_called()
+        saved_login.assert_not_called()
 
 
 class RaceCommandTests(PacingTestCase):
