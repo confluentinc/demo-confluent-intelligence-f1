@@ -39,6 +39,17 @@ You need a [Confluent Cloud account](https://confluent.cloud/signup), an AWS acc
 
     </details>
 
+    <details>
+    <summary>for Linux (RHEL)</summary>
+
+    If Docker is already installed, skip this: `uv run deploy` starts the docker service and gives your user access to it. Otherwise, install and start it in one paste:
+
+    ```bash
+    sudo dnf -y install dnf-plugins-core && sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo && sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin && sudo systemctl enable --now docker && sudo usermod -aG docker $USER && newgrp docker
+    ```
+
+    </details>
+
 2. Clone the repo:
 
     ```bash

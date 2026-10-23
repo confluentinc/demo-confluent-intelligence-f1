@@ -39,6 +39,8 @@ from scripts.common.login_checks import (
     check_aws_configured,
     check_docker_running,
     check_terraform_installed,
+    docker_installed,
+    docker_start_hint,
     start_docker,
 )
 from scripts.common.simulator_control import (
@@ -381,6 +383,10 @@ def deploy_standalone(args: argparse.Namespace, root, creds_file, creds: dict) -
     cfg = _collect_config(root, creds_file, creds, args.automated)
     common.check_bedrock_or_exit(cfg, args.automated)
 
+    if not docker_installed():
+        print("\nError: Docker is not installed (needed to build the simulator image).")
+        print(docker_start_hint())
+        sys.exit(1)
     if not check_docker_running():
         print("\nDocker is not running (needed to build the simulator image).")
         started = False
@@ -388,7 +394,7 @@ def deploy_standalone(args: argparse.Namespace, root, creds_file, creds: dict) -
             started = start_docker()
         if not started:
             print("\nError: Docker is not ready.")
-            print("Start Docker Desktop or run `colima start`, then verify with: docker info")
+            print(docker_start_hint())
             sys.exit(1)
     print("\n  Docker running")
 

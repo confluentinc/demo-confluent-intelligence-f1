@@ -31,6 +31,8 @@ from scripts.common.login_checks import (
     check_aws_configured,
     check_docker_running,
     check_terraform_installed,
+    docker_installed,
+    docker_start_hint,
     ensure_confluent_login,
 )
 from scripts.common.terraform import get_project_root
@@ -356,7 +358,8 @@ def create(args: argparse.Namespace) -> None:
     print("  terraform:   ok")
 
     if not check_docker_running():
-        raise SystemExit("Docker is not running. Start Docker Desktop (needed for the simulator image build).")
+        state = "running" if docker_installed() else "installed"
+        raise SystemExit(f"Docker is not {state} (needed for the simulator image build).\n{docker_start_hint()}")
     print("  docker:      ok")
 
     if not check_aws_configured():
