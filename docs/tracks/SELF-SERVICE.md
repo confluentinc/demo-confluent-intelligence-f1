@@ -91,20 +91,13 @@ You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.co
 
     | Prompt | Where to get it |
     |---|---|
-    | Confluent Cloud Email / Password | The **email and password you used to sign up**. They are verified with a real login, then saved to `credentials.env` so later commands log in automatically. (SSO login? Press **Enter** to skip, and run `confluent login` before re-running.) |
+    | Confluent Cloud Email / Password | The **email and password you used to sign up**. They are verified with a real login, then saved to `credentials.env` so later commands log in automatically. (**Single sign-on?** Press **Enter** at the email prompt. If you are not already logged in, it offers to run the SSO login for you. You can also run `confluent login --no-browser` first.) |
     | Generate new Confluent Cloud API keys? | Answer `y` — `uv` creates the API key and secret for you |
     | LLM provider for the pit-strategy agent | Press **Enter** for **CSP Hosted Flink Model Inference** (the default), which runs Claude on Confluent and needs no AWS keys. Option 2 is **AWS Bedrock** with your own keys |
     | Confluent Cloud API Key / Secret | Press **Enter** to confirm the key and secret `uv` just created |
     | Owner email | Press **Enter** — it defaults to the email you just logged in with |
     | AWS Bedrock Access Key / Secret Key | Your AWS IAM user's access key with Bedrock access (or the one your instructor gave you). Skipped when you chose CSP Hosted inference |
 
-    Before anything is created, it test-invokes Claude on Bedrock with your keys (skipped for CSP Hosted inference) and prints a summary of `credentials.env` with secrets masked; answer `y` at **Ready to provision?**
-
-    It then provisions your Confluent environment, cluster, Flink compute pool, source topics, `driver_race_history` seed data, and the `llm_textgen_model` (plus its Bedrock connection when you chose Bedrock). It also writes your credential card to `runs/selfservice/credentials/DEMO.env` and records it as `F1_CARD` in `credentials.env` so local tools (`f1-race`, `f1-pitwall`, `setup-rtce`) find it automatically. At the end it prints your Flink SQL Workspace link and offers to start the Pit Wall dashboard in the background.
-
-    > `uv run selfservice up` and `uv run selfservice down` still work as shortcuts for this command and for teardown.
-
-    > **Tip:** Pass `uv run deploy --track self-service --with-labs` if you want `car_state`, `pit_strategy_agent`, and `pit_decisions` prebuilt for you instead of creating them in Sections 1–3.
 
 ## 1. Enhance the data with built-in ML functions and start the race
 

@@ -64,6 +64,8 @@ You need a [Confluent Cloud account](https://confluent.cloud/signup), an AWS acc
     confluent login
     ```
 
+    If you use single sign-on (SSO) to log into Confluent Cloud, log into the Confluent CLI first with `confluent login --no-browser`, then press **Enter** at the email prompt in `deploy`.
+
     `uv run api-keys create` writes the Bedrock keys straight into `credentials.env` so `deploy` picks them up automatically.
 
 4. Provision the environment:

@@ -55,6 +55,25 @@ def _try_confluent_login(username: str, password: str) -> bool:
         return False
 
 
+SSO_NOTE = "If you use single sign-on (SSO) to log into Confluent Cloud, log into the Confluent CLI first."
+
+
+def _sso_login() -> bool:
+    """Interactive Confluent CLI login for single sign-on accounts.
+
+    `--no-browser` prints a URL to open on any machine and prompts for the code
+    it returns, so it also works on a headless VM. `--save` stores the SSO refresh
+    token so later runs re-authenticate without asking again. Output is not
+    captured: the CLI needs the terminal to show the URL and read the code.
+    """
+    try:
+        subprocess.run(["confluent", "login", "--no-browser", "--save"])
+    except FileNotFoundError:
+        print("  The Confluent CLI is not installed.")
+        return False
+    return check_confluent_login()
+
+
 def _prompt_and_save_login(creds_file, creds: dict) -> bool:
     """Prompt for Confluent Cloud login once and persist it for future auto-login.
 
@@ -63,12 +82,17 @@ def _prompt_and_save_login(creds_file, creds: dict) -> bool:
     (callers decide whether that is fatal).
     """
     print("\nConfluent Cloud login (saved to credentials.env so you're not asked again):")
+    print(f"  {SSO_NOTE}")
     creds_file = Path(creds_file)
     creds_file.touch(exist_ok=True)  # set_key needs the file to exist
     for attempt in range(3):
-        username = input("  Email (press Enter to skip): ").strip()
+        username = input("  Email (press Enter if you use SSO or want to skip): ").strip()
         if not username:
-            print("  Skipped. Run `confluent login` manually if your session expires.")
+            if check_confluent_login():
+                return True
+            if input("  Log in with single sign-on now? (y/n) [y]: ").strip().lower() in ("", "y", "yes"):
+                return _sso_login()
+            print("  Skipped. Run `confluent login --no-browser` manually if you need a CLI session.")
             return False
         password = prompt_secret("  Password: ")
 
@@ -85,7 +109,7 @@ def _prompt_and_save_login(creds_file, creds: dict) -> bool:
             print(f"  Login failed. {remaining} attempt{'s' if remaining > 1 else ''} remaining.")
         else:
             print("  Login failed. Run `confluent login` manually.")
-            print("  (SSO accounts cannot auto-login — use `confluent login --no-browser`.)")
+            print("  (SSO accounts: run `confluent login --no-browser`.)")
     return False
 
 
@@ -129,7 +153,7 @@ def ensure_confluent_login(creds: dict | None = None, creds_file=None, interacti
         return _prompt_and_save_login(creds_file, creds)
 
     print("Error: Not logged into Confluent Cloud.")
-    print("Run: confluent login --save")
+    print("Run: confluent login --save   (SSO: confluent login --no-browser --save)")
     print(f"(Or set {USERNAME_KEY} and {PASSWORD_KEY} in credentials.env for auto-login)")
     return False
 
@@ -145,6 +169,9 @@ def ensure_saved_confluent_login(creds: dict, creds_file) -> bool:
     username = (creds.get(USERNAME_KEY) or "").strip()
     password = (creds.get(PASSWORD_KEY) or "").strip()
     if not (username and password):
+        # A live session (SSO, or a prior `confluent login`) needs no prompt.
+        if check_confluent_login():
+            return True
         # Skipped or failed three times: fall back to whatever session the CLI
         # already has rather than asking a second time.
         return _prompt_and_save_login(creds_file, creds) or check_confluent_login()
