@@ -204,6 +204,17 @@ def _spec_terraform_prefix(root: Path) -> str:
     return str((spec.get("terraform_vars") or {}).get("prefix", ""))
 
 
+def shared_prefix_for(attendee_prefix: str) -> str:
+    """Naming prefix for the shared phase (ECR repo), derived from the attendee prefix.
+
+    ``f1wp{NNN}`` -> ``f1-f1wp``: the account placeholder is stripped, and the ``f1-``
+    lead matches deploy.py's standalone derivation. Lowercase because it names an
+    ECR repository.
+    """
+    base = re.sub(r"\{[^}]*\}", "", attendee_prefix).lower()
+    return f"f1-{base}"
+
+
 def _spec_account_count(root: Path) -> int | None:
     """The committed spec's ``account_count``, or None when it isn't set."""
     spec = yaml.safe_load(_spec_path(root).read_text()) or {}
@@ -399,6 +410,11 @@ def _derive_spec(
     spec = yaml.safe_load(_spec_path(root).read_text()) or {}
     if prefix:
         spec.setdefault("terraform_vars", {})["prefix"] = prefix
+        # The shared phase's repo name follows the workshop prefix, so a second
+        # workshop instance never collides with the first one's ECR repository.
+        for phase in spec.get("phases") or []:
+            if phase.get("name") == "shared":
+                phase.setdefault("terraform_vars", {})["prefix"] = shared_prefix_for(prefix)
     if account_count is not None:
         spec["account_count"] = account_count
     out = root / GENERATED_SPEC

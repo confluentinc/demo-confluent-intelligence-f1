@@ -108,8 +108,10 @@ class CrossTrackTests(PrefixTestCase):
             standalone, _ = deploy._resolve_prefix(self.root, EMAIL, None)
             selfservice, _ = ss_cli._resolve_prefix(self.root, EMAIL, None)
 
+        # Standalone derives a per-user prefix; self-service has no per-user identity
+        # requirement and uses its fixed default (see selfservice.cli._resolve_prefix).
         self.assertEqual(standalone, "alice")
-        self.assertEqual(selfservice, "alices")
+        self.assertEqual(selfservice, ss_cli.DEFAULT_PREFIX)
         self.assertNotEqual(standalone, selfservice)
 
     def test_metadata_is_per_track(self):

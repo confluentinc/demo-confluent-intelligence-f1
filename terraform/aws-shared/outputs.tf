@@ -1,10 +1,10 @@
 # Networking — injected into each attendee's terraform/aws workspace.
 output "vpc_id" {
-  value = data.aws_vpc.default.id
+  value = aws_vpc.simulator.id
 }
 
 output "subnet_ids" {
-  value = data.aws_subnets.default.ids
+  value = aws_subnet.simulator[*].id
 }
 
 # Shared Postgres — every attendee's CDC connector points here (each with its

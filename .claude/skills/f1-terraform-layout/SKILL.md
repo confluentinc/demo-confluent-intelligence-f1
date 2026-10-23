@@ -22,6 +22,12 @@ embedding connection/model, but no lab ever referenced `llm_embedding_model`
 and it failed to provision (CreateModel error on the embedding connection);
 both tiers dropped it and inlined just the working textgen half.
 
+**Networking:** `aws-shared/network.tf` creates a dedicated simulator VPC (two public
+subnets, internet gateway, no NAT; CIDR `simulator_vpc_cidr`, default `10.42.0.0/16`).
+The `vpc_id`/`subnet_ids` output names are unchanged, so the `shared_*` contract and
+wsa need no changes. The Postgres host is not in that VPC (it still lands in the
+default VPC); the simulator never connects to it, only the Confluent CDC connector does.
+
 **Naming:** per-attendee CC resources use `RIVER-RACING-${prefix}` (e.g.
 `RIVER-RACING-f1wp001-ENV`); ECS resources use the lowercased
 `river-racing-${prefix}-<hex>-simulator` (the instructor scripts filter on
