@@ -345,8 +345,6 @@ Next we create the `pit_decisions` table, which invokes `pit_strategy_agent` on 
 >
 > As `car_state` and `pit_decisions` produce rows, the Pit Wall dashboard unlocks its **Anomaly Detection** and **AI Pit Strategist** panels:
 
-![Pit Wall dashboard showing the lap 24 anomaly](../assets/self-service/pitwall-anomaly.png)
-
 ![Pit Wall dashboard with both Anomaly Detection and AI Pit Strategist panels unlocked, showing the PIT NOW call at lap 24](../assets/self-service/pitwall-pit-now.png)
 
 ## (Optional) Expose `car_telemetry` to AI agents with Real-Time Context Engine
