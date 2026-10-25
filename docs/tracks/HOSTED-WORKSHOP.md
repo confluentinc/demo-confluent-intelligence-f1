@@ -407,6 +407,9 @@ Feel free to use one of the following prompts to draft your next post:
 
 ## 🧩 Challenge #2 — Analyze race data with Lightning Queries 
 
+> [!IMPORTANT]
+> Lightning Queries must be enabled for your Confluent organization. If `uv run setup-rtce --lightning` reports `api_not_enabled`, skip this challenge and ask your instructor.
+
 Now, we'll see how this real-time context becomes queryable with Lightning Tables and Lightning Queries. Lightning Queries read an RTCE-enabled topic over low-latency REST, so enable RTCE on `car_telemetry` in the Console first if you haven't already.
 
 From the repo directory, print a ready-to-run query:

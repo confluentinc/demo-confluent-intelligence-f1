@@ -183,13 +183,13 @@ The provisioning step sets up source tables for car telemetry, live race standin
 
     Leave it running. `car_state` emits one row per 20-second window. After 12 windows (~4 minutes) it has enough history to detect temperature anomalies on the front-left tire; at lap 24 the tire spikes to ~145°C and `anomaly_tire_temp_fl` becomes `true`.
 
-4. In a **second terminal**, open the Pit Wall dashboard:
+4. Open the Pit Wall dashboard. If you accepted the deploy prompt to start it, it's already running at http://localhost:8000. Otherwise, in a **second terminal**, run:
 
     ```bash
     uv run f1-pitwall
     ```
 
-    A browser opens at http://localhost:8000 with the Silverstone track map, the live leaderboard, and car #88's tyre/fuel gauges. The **Anomaly Detection** panel unlocks as `car_state` emits rows, and the **AI Pit Strategist** panel unlocks once you create `pit_decisions` in Section 3.
+    The dashboard at http://localhost:8000 shows the Silverstone track map, the live leaderboard, and car #88's tyre/fuel gauges. The **Anomaly Detection** panel unlocks as `car_state` emits rows, and the **AI Pit Strategist** panel unlocks once you create `pit_decisions` in Section 3.
 
     ![Pit Wall dashboard showing a nominal front-left tire temperature](../assets/self-service/pitwall-nominal.png)
 
@@ -331,10 +331,12 @@ Next we create the `pit_decisions` table, which invokes `pit_strategy_agent` on 
 >
 > | Lap | Position | Suggestion | What's happening |
 > |---|---|---|---|
-> | 1–20 | P3 → P1 | `STAY OUT` | Competitive, nominal tire temps |
-> | 21–23 | P1 → P8 | `PIT SOON` | Aging SOFTs enter the strategic pit window |
+> | 1–18 | P3 → P1 | `STAY OUT` | Competitive, nominal tire temps |
+> | ~19–23 | P1 → P8 | `PIT SOON` | Aging SOFTs enter the strategic pit window |
 > | **24** | **P8** | **`PIT NOW`** | **Front-left anomaly (~145°C) triggers an immediate stop** |
 > | 25–60 | P14 → P1–P2 | `STAY OUT` | Recovery stint to the flag on fresh MEDIUMs |
+>
+> `PIT SOON` can start anywhere from about lap 19 to 23. The exact laps vary by run.
 >
 > As `car_state` and `pit_decisions` produce rows, the Pit Wall dashboard unlocks its **Anomaly Detection** and **AI Pit Strategist** panels:
 
@@ -402,6 +404,9 @@ Feel free to use one of the following prompts to draft your next post:
 **Success looks like:** Claude calls `queryData` against `car_state` and `pit_decisions` (you'll see the tool calls in the transcript) and returns a drafted post citing the real lap number, position, and strategy call from your live feed — not invented numbers. If it says the feed is quiet, the race may not be running yet, or RTCE isn't enabled on one of the two topics.
 
 ## 🧩 (Optional) Challenge #2 — Analyze race data with Lightning Queries
+
+> [!IMPORTANT]
+> Lightning Queries must be enabled for your Confluent organization. If `uv run setup-rtce --lightning` reports `api_not_enabled`, skip this challenge and ask your instructor.
 
 Now, we'll see how this real-time context becomes queryable with Lightning Tables and Lightning Queries. Lightning Queries read an RTCE-enabled topic over low-latency REST, so enable RTCE on `car_telemetry` in the Console first if you haven't already.
 

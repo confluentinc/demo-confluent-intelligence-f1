@@ -351,10 +351,12 @@ Next we create the `pit_decisions` table, which invokes `pit_strategy_agent` on 
 >
 > | Lap | Position | Suggestion | What's happening |
 > |---|---|---|---|
-> | 1–20 | P3 → P1 | `STAY OUT` | Competitive, nominal tire temps |
-> | 21–23 | P1 → P8 | `PIT SOON` | Aging SOFTs enter the strategic pit window |
+> | 1–18 | P3 → P1 | `STAY OUT` | Competitive, nominal tire temps |
+> | ~19–23 | P1 → P8 | `PIT SOON` | Aging SOFTs enter the strategic pit window |
 > | **24** | **P8** | **`PIT NOW`** | **Front-left anomaly (~145°C) triggers an immediate stop** |
 > | 25–60 | P14 → P1–P2 | `STAY OUT` | Recovery stint to the flag on fresh MEDIUMs |
+>
+> `PIT SOON` can start anywhere from about lap 19 to 23. The exact laps vary by run.
 >
 > As `car_state` and `pit_decisions` produce rows, the Pit Wall dashboard unlocks its **Anomaly Detection** and **AI Pit Strategist** panels:
 
