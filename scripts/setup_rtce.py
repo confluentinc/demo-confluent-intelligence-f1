@@ -41,6 +41,8 @@ import re
 import shlex
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import tomlkit
@@ -63,8 +65,8 @@ def basic_token(key: str, secret: str) -> str:
     return base64.b64encode(f"{key}:{secret}".encode()).decode()
 
 
-def lightning_command(card: dict[str, str]) -> str:
-    """Build a shell-safe request from existing RTCE and deployment fields."""
+def _lightning_request(card: dict[str, str]) -> tuple[str, str, str]:
+    """Return (url, json payload, basic token) from existing RTCE and deployment fields."""
     endpoint = card.get("F1_RTCE_MCP_ENDPOINT", "")
     match = re.fullmatch(
         r"https://mcp\.([a-z0-9-]+)\.([a-z0-9-]+)\.confluent\.cloud/"
@@ -94,6 +96,12 @@ def lightning_command(card: dict[str, str]) -> str:
         indent=2,
     )
     token = basic_token(card["F1_RTCE_API_KEY"], card["F1_RTCE_API_SECRET"])
+    return url, payload, token
+
+
+def lightning_command(card: dict[str, str]) -> str:
+    """Build a shell-safe curl command for the Lightning Query request."""
+    url, payload, token = _lightning_request(card)
     return " \\\n  ".join(
         (
             "curl -sS -X POST " + shlex.quote(url),
@@ -102,6 +110,33 @@ def lightning_command(card: dict[str, str]) -> str:
             "-d " + shlex.quote(payload),
         )
     )
+
+
+def lightning_unavailable(card: dict[str, str]) -> str | None:
+    """Probe the Lightning endpoint; return a message only if the org lacks the REST API.
+
+    Any other outcome (success, other HTTP errors, network failure) returns None so the
+    caller still prints the curl and lets the attendee see the real response.
+    """
+    url, payload, token = _lightning_request(card)
+    request = urllib.request.Request(
+        url,
+        data=payload.encode(),
+        headers={"Authorization": f"Basic {token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(request, timeout=10).close()
+    except urllib.error.HTTPError as exc:
+        if exc.code == 403 and "api_not_enabled" in exc.read().decode(errors="replace"):
+            return (
+                "Lightning Queries are not enabled for this Confluent organization "
+                "(403 api_not_enabled), so Challenge #2 can't run here. Ask your instructor, "
+                "or skip it; your RTCE key still works for the MCP steps."
+            )
+    except OSError:
+        pass
+    return None
 
 
 def claude_argv(endpoint: str, token: str) -> tuple[list[str], list[str]]:
@@ -385,9 +420,13 @@ def main() -> None:
         card_path, card = load_card(args.creds, root=get_project_root())
         card = resolve_rtce_credentials(card, card_path)
         try:
-            print(lightning_command(card))
+            command = lightning_command(card)
         except ValueError as exc:
             sys.exit(str(exc))
+        unavailable = lightning_unavailable(card)
+        if unavailable:
+            sys.exit(unavailable)
+        print(command)
         return
     if args.client is None:
         clients = _prompt_for_clients()

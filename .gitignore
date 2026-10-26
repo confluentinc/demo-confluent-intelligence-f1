@@ -49,12 +49,8 @@ Thumbs.db
 *.swp
 *.swo
 
-# Claude Code. Ship reusable project skills, but keep every other Claude
-# workspace artifact (including nested worktrees) local.
+# Claude Code. Keep every Claude workspace artifact (skills, nested worktrees) local.
 .claude/*
-!.claude/skills/
-!.claude/skills/**
-.claude/skills/.DS_Store
 CLAUDE.md
 claude-*
 

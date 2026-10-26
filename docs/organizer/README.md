@@ -178,6 +178,8 @@ Run the API-key health check against **only this run's** cards before distributi
 uv run workshop validate --creds-glob 'runs/<run-name>/credentials/*.env'
 ```
 
+**Lightning Queries (Challenge #2).** Challenge #2 needs the Confluent REST Lightning Queries API enabled for your organization. Before the workshop, run `uv run setup-rtce --lightning` against one card. If it reports `api_not_enabled`, ask Confluent to enable it, or tell attendees to skip Challenge #2.
+
 ---
 
 ## 4. Run the workshop (day-of)
