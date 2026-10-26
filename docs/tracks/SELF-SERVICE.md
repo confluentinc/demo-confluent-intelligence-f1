@@ -8,7 +8,7 @@
 
 ## 0. Clone, install, and provision
 
-You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.confluent.io/confluent-cloud/tryfree/?utm_campaign=tm.plg_cd.techxchange2026&utm_source=lab&utm_medium=github)) No AWS keys are needed with the default LLM provider, CSP Hosted Flink Model Inference; AWS Bedrock API keys in `us-east-1` are only needed if you pick Bedrock at the setup prompt. If you want Bedrock but don't have keys yet, you can mint scoped IAM keys with `uv run api-keys create` once you are logged into the AWS CLI.
+You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.confluent.io/confluent-cloud/tryfree/?utm_campaign=tm.plg_cd.techxchange2026&utm_source=lab&utm_medium=github)) No AWS keys are needed with the default LLM provider, CSP Hosted Flink Model Inference; AWS Bedrock API keys in `us-east-1` are only needed if you deploy with `uv run deploy --bedrock`. If you want Bedrock but don't have keys yet, you can mint scoped IAM keys with `uv run api-keys create` once you are logged into the AWS CLI.
 
 > [!TIP]
 > **TechXChange attendee, or provided a workstation by the workshop host?** Skip step 2 (install the prerequisites) — it's already set up for you. Start with step 1 to add your promo code.
@@ -91,20 +91,13 @@ You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.co
 
     | Prompt | Where to get it |
     |---|---|
-    | Confluent Cloud Email / Password | The **email and password you used to sign up**. They are verified with a real login, then saved to `credentials.env` so later commands log in automatically. (SSO login? Press **Enter** to skip, and run `confluent login` before re-running.) |
+    | Confluent Cloud Email / Password | The **email and password you used to sign up**. They are verified with a real login, then saved to `credentials.env` so later commands log in automatically. (**Single sign-on?** Press **Enter** at the email prompt. If you are not already logged in, it offers to run the SSO login for you. You can also run `confluent login --no-browser` first.) |
     | Generate new Confluent Cloud API keys? | Answer `y` — `uv` creates the API key and secret for you |
     | LLM provider for the pit-strategy agent | Press **Enter** for **CSP Hosted Flink Model Inference** (the default), which runs Claude on Confluent and needs no AWS keys. Option 2 is **AWS Bedrock** with your own keys |
     | Confluent Cloud API Key / Secret | Press **Enter** to confirm the key and secret `uv` just created |
     | Owner email | Press **Enter** — it defaults to the email you just logged in with |
     | AWS Bedrock Access Key / Secret Key | Your AWS IAM user's access key with Bedrock access (or the one your instructor gave you). Skipped when you chose CSP Hosted inference |
 
-    Before anything is created, it test-invokes Claude on Bedrock with your keys (skipped for CSP Hosted inference) and prints a summary of `credentials.env` with secrets masked; answer `y` at **Ready to provision?**
-
-    It then provisions your Confluent environment, cluster, Flink compute pool, source topics, `driver_race_history` seed data, and the `llm_textgen_model` (plus its Bedrock connection when you chose Bedrock). It also writes your credential card to `runs/selfservice/credentials/DEMO.env` and records it as `F1_CARD` in `credentials.env` so local tools (`f1-race`, `f1-pitwall`, `setup-rtce`) find it automatically. At the end it prints your Flink SQL Workspace link and offers to start the Pit Wall dashboard in the background.
-
-    > `uv run selfservice up` and `uv run selfservice down` still work as shortcuts for this command and for teardown.
-
-    > **Tip:** Pass `uv run deploy --track self-service --with-labs` if you want `car_state`, `pit_strategy_agent`, and `pit_decisions` prebuilt for you instead of creating them in Sections 1–3.
 
 ## 1. Enhance the data with built-in ML functions and start the race
 
@@ -190,13 +183,13 @@ The provisioning step sets up source tables for car telemetry, live race standin
 
     Leave it running. `car_state` emits one row per 20-second window. After 12 windows (~4 minutes) it has enough history to detect temperature anomalies on the front-left tire; at lap 24 the tire spikes to ~145°C and `anomaly_tire_temp_fl` becomes `true`.
 
-4. In a **second terminal**, open the Pit Wall dashboard:
+4. Open the Pit Wall dashboard. If you accepted the deploy prompt to start it, it's already running at http://localhost:8000. Otherwise, in a **second terminal**, run:
 
     ```bash
     uv run f1-pitwall
     ```
 
-    A browser opens at http://localhost:8000 with the Silverstone track map, the live leaderboard, and car #88's tyre/fuel gauges. The **Anomaly Detection** panel unlocks as `car_state` emits rows, and the **AI Pit Strategist** panel unlocks once you create `pit_decisions` in Section 3.
+    The dashboard at http://localhost:8000 shows the Silverstone track map, the live leaderboard, and car #88's tyre/fuel gauges. The **Anomaly Detection** panel unlocks as `car_state` emits rows, and the **AI Pit Strategist** panel unlocks once you create `pit_decisions` in Section 3.
 
     ![Pit Wall dashboard showing a nominal front-left tire temperature](../assets/self-service/pitwall-nominal.png)
 
@@ -338,10 +331,12 @@ Next we create the `pit_decisions` table, which invokes `pit_strategy_agent` on 
 >
 > | Lap | Position | Suggestion | What's happening |
 > |---|---|---|---|
-> | 1–20 | P3 → P1 | `STAY OUT` | Competitive, nominal tire temps |
-> | 21–23 | P1 → P8 | `PIT SOON` | Aging SOFTs enter the strategic pit window |
+> | 1–18 | P3 → P1 | `STAY OUT` | Competitive, nominal tire temps |
+> | ~19–23 | P1 → P8 | `PIT SOON` | Aging SOFTs enter the strategic pit window |
 > | **24** | **P8** | **`PIT NOW`** | **Front-left anomaly (~145°C) triggers an immediate stop** |
 > | 25–60 | P14 → P1–P2 | `STAY OUT` | Recovery stint to the flag on fresh MEDIUMs |
+>
+> `PIT SOON` can start anywhere from about lap 19 to 23. The exact laps vary by run.
 >
 > As `car_state` and `pit_decisions` produce rows, the Pit Wall dashboard unlocks its **Anomaly Detection** and **AI Pit Strategist** panels:
 
@@ -409,6 +404,9 @@ Feel free to use one of the following prompts to draft your next post:
 **Success looks like:** Claude calls `queryData` against `car_state` and `pit_decisions` (you'll see the tool calls in the transcript) and returns a drafted post citing the real lap number, position, and strategy call from your live feed — not invented numbers. If it says the feed is quiet, the race may not be running yet, or RTCE isn't enabled on one of the two topics.
 
 ## 🧩 (Optional) Challenge #2 — Analyze race data with Lightning Queries
+
+> [!IMPORTANT]
+> Lightning Queries must be enabled for your Confluent organization. If `uv run setup-rtce --lightning` reports `api_not_enabled`, skip this challenge and ask your instructor.
 
 Now, we'll see how this real-time context becomes queryable with Lightning Tables and Lightning Queries. Lightning Queries read an RTCE-enabled topic over low-latency REST, so enable RTCE on `car_telemetry` in the Console first if you haven't already.
 

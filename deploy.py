@@ -208,7 +208,7 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
         return cfg
 
     common.offer_key_generation(creds, creds_file)
-    llm_provider = common.prompt_llm_provider(root, TRACK, creds)
+    llm_provider = common.llm_provider_for(root, TRACK, creds)
 
     print("\n--- Configuration ---\n")
 
@@ -542,7 +542,15 @@ def main(argv: list[str] | None = None):
             "(what the workshop hands attendees)."
         ),
     )
+    parser.add_argument(
+        "--bedrock",
+        action="store_true",
+        default=False,
+        help="Back the pit-strategy agent with AWS Bedrock (your own AWS keys) instead of CSP Hosted inference.",
+    )
     args = parser.parse_args(argv)
+    if args.bedrock:
+        os.environ[common.LLM_PROVIDER_KEY] = "bedrock"
 
     print("=== F1 Pit Wall — Deploy ===\n")
     root = get_project_root()

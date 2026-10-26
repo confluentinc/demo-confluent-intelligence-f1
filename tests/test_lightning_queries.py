@@ -48,6 +48,7 @@ def test_lightning_cli_prints_only_curl_without_registering(capsys):
         patch("sys.argv", ["setup-rtce", "--lightning"]),
         patch.dict(os.environ, {}, clear=True),
         patch.object(setup_rtce, "load_card", return_value=("test.env", CARD)),
+        patch.object(setup_rtce, "lightning_unavailable", return_value=None),
         patch.object(setup_rtce, "_prompt_for_clients", side_effect=AssertionError),
         patch.object(setup_rtce, "register_claude", side_effect=AssertionError),
         patch.object(setup_rtce, "write_codex_config", side_effect=AssertionError),
@@ -62,6 +63,7 @@ def test_standalone_environment_credentials(capsys):
         patch("sys.argv", ["setup-rtce", "--lightning"]),
         patch.dict(os.environ, {"RTCE_API_KEY": "global-key", "RTCE_API_SECRET": "global-secret"}, clear=True),
         patch.object(setup_rtce, "load_card", return_value=("test.env", card)),
+        patch.object(setup_rtce, "lightning_unavailable", return_value=None),
     ):
         setup_rtce.main()
     assert setup_rtce.basic_token("global-key", "global-secret") in capsys.readouterr().out
@@ -197,3 +199,35 @@ def test_noninteractive_missing_keys_fail_without_prompt():
         pytest.raises(SystemExit, match="No interactive terminal"),
     ):
         setup_rtce.resolve_rtce_credentials(dict(CARD, F1_RTCE_API_KEY=""))
+
+
+def _http_error(code, body):
+    import io
+    import urllib.error
+
+    return urllib.error.HTTPError("https://x", code, "err", {}, io.BytesIO(body.encode()))
+
+
+def test_lightning_reports_api_not_enabled():
+    err = _http_error(403, '{"errors":[{"code":"api_not_enabled"}]}')
+    with patch("urllib.request.urlopen", side_effect=err):
+        assert "not enabled" in setup_rtce.lightning_unavailable(CARD)
+
+
+def test_lightning_ignores_other_failures():
+    with patch("urllib.request.urlopen", side_effect=_http_error(500, "boom")):
+        assert setup_rtce.lightning_unavailable(CARD) is None
+    with patch("urllib.request.urlopen", side_effect=OSError):
+        assert setup_rtce.lightning_unavailable(CARD) is None
+
+
+def test_lightning_cli_exits_when_unavailable(capsys):
+    with (
+        patch("sys.argv", ["setup-rtce", "--lightning"]),
+        patch.dict(os.environ, {}, clear=True),
+        patch.object(setup_rtce, "load_card", return_value=("test.env", CARD)),
+        patch.object(setup_rtce, "lightning_unavailable", return_value="not enabled"),
+        pytest.raises(SystemExit, match="not enabled"),
+    ):
+        setup_rtce.main()
+    assert "curl" not in capsys.readouterr().out
