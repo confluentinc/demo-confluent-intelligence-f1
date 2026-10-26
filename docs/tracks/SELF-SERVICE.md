@@ -376,13 +376,19 @@ Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP
     How has the engine temperature been trending over the last few laps?
     ```
 
+    ![Claude answering how the engine temperature has trended over the last few laps by calling the Real-Time Context Engine](../assets/self-service/rtce-engine-trend.png)
+
     ```text
     What topics do I have access to in the Real-Time Context Engine?
     ```
 
+    ![Claude listing the topics enabled in the Real-Time Context Engine](../assets/hosted/rtce-listtopics.png)
+
     ```text
     What's the front-left tire temperature on car 88 right now?
     ```
+
+    ![Claude answering the front-left tire temperature question by calling the Real-Time Context Engine](../assets/hosted/rtce-cartemp.png)
 
     ```text
     At what lap in the race does the engine temperature peak?
@@ -391,12 +397,6 @@ Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP
     ```text
     What is the front right tire temperature at lap 30?
     ```
-
-    ![Claude answering how the engine temperature has trended over the last few laps by calling the Real-Time Context Engine](../assets/self-service/rtce-engine-trend.png)
-
-    ![Claude listing the topics enabled in the Real-Time Context Engine](../assets/hosted/rtce-listtopics.png)
-
-    ![Claude answering the front-left tire temperature question by calling the Real-Time Context Engine](../assets/hosted/rtce-cartemp.png)
 
 ## 🧩 (Optional) Challenge #1 — Social Media Agent (Claude + Real-Time Context Engine)
 
