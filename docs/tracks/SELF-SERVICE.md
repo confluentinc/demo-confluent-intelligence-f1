@@ -85,10 +85,10 @@ The Confluent CLI has no reliable winget package. Download the latest `confluent
 4. **Only if you signed up for Confluent Cloud with SSO**: sign in to the Confluent CLI first. If you signed up with an email and password, skip this step.
 
     ```bash
-    confluent login --no-browser
+    confluent login
     ```
 
-    Open the URL it prints, sign in with your SSO provider, and paste the verification code back into the terminal.
+    Enter your email when prompted. Your browser opens so you can finish signing in with your SSO provider.
 
 5. Provision the environment:
 
