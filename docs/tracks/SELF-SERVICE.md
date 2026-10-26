@@ -26,40 +26,40 @@ You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.co
 
         <img src="../assets/self-service/billing-promo-code.png" alt="Billing and payment — Promos, + Promo code" width="500">
 
+2. Install the prerequisites:
+
 > [!TIP]
 > **TechXChange attendee, or provided a workstation by the workshop host?** Skip step 2 (install the prerequisites) — it's already set up for you. Start with step 1 to add your promo code.
 
-2. Install the prerequisites:
+<details>
+<summary><strong>Prerequisites for your own machine</strong> — skip this step if you are a TechXChange attendee or were given a workstation (click to expand)</summary>
 
-    <details>
-    <summary><strong>Prerequisites for your own machine</strong> — skip this step if you are a TechXChange attendee or were given a workstation (click to expand)</summary>
+<details>
+<summary>for Mac</summary>
 
-    <details>
-    <summary>for Mac</summary>
+```bash
+brew install git uv
+brew tap hashicorp/tap
+brew install hashicorp/tap/terraform
+brew install --cask confluent-cli
+```
 
-    ```bash
-    brew install git uv
-    brew tap hashicorp/tap
-    brew install hashicorp/tap/terraform
-    brew install --cask confluent-cli
-    ```
+</details>
 
-    </details>
+<details>
+<summary>for Windows</summary>
 
-    <details>
-    <summary>for Windows</summary>
+```powershell
+winget install --id Git.Git -e
+winget install --id astral-sh.uv -e
+winget install --id Hashicorp.Terraform -e
+```
 
-    ```powershell
-    winget install --id Git.Git -e
-    winget install --id astral-sh.uv -e
-    winget install --id Hashicorp.Terraform -e
-    ```
+The Confluent CLI has no reliable winget package. Download the latest `confluent_*_windows_amd64.zip` from the [Confluent CLI releases](https://github.com/confluentinc/cli/releases/latest), unzip it, and add the folder containing `confluent.exe` to your `PATH`. Then close and reopen the terminal so every tool is on your `PATH`.
 
-    The Confluent CLI has no reliable winget package. Download the latest `confluent_*_windows_amd64.zip` from the [Confluent CLI releases](https://github.com/confluentinc/cli/releases/latest), unzip it, and add the folder containing `confluent.exe` to your `PATH`. Then close and reopen the terminal so every tool is on your `PATH`.
+</details>
 
-    </details>
-
-    </details>
+</details>
 
 3. Open a **Terminal** on your machine — click **Activities** (top-left), then the **Terminal** icon in the dock.
 
