@@ -4,7 +4,7 @@
 
 > [!NOTE]
 >
-> Use this path when you have your own Confluent Cloud login and will provision a Confluent-only environment (`uv run deploy --track self-service`) with the race simulator running on your machine. **If your instructor gave you a workshop login and password,** use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md). **If you are deploying the full AWS-backed architecture (Postgres CDC + ECS Fargate simulator) with `uv run deploy --track standalone`,** use the [standalone demo walkthrough](./STANDALONE-DEMO.md).
+> Use this path when you have your own Confluent Cloud login and will provision a Confluent-only environment (`uv run deploy --track self-service`) with the race simulator running on your machine. **If your instructor gave you a workshop login and password,** use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md).
 
 ## 0. Clone, install, and provision
 
