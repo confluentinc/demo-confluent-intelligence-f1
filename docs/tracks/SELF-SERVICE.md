@@ -82,7 +82,7 @@ The Confluent CLI has no reliable winget package. Download the latest `confluent
 
     </details>
 
-4. **SSO users only:** sign in to the Confluent CLI first. Skip this if you log in with an email and password.
+4. **Only if you signed up for Confluent Cloud with SSO** (for example, "Continue with Google" or your company's single sign-on): sign in to the Confluent CLI first. If you signed up with an email and password, skip this step.
 
     ```bash
     confluent login --no-browser
