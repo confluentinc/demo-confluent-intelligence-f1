@@ -10,8 +10,8 @@
 
 You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.confluent.io/confluent-cloud/tryfree/?utm_campaign=tm.plg_cd.techxchange2026&utm_source=lab&utm_medium=github))
 
-> [!NOTE]
-> You may be asked to create a cluster during sign-up. **Skip it** — Terraform creates your cluster later.
+> [!WARNING]
+> ⚠️ You may be asked to create a cluster during sign-up. **Skip it** — Terraform creates your cluster later.
 
 1. Add a payment method (credit card or promo code) in Confluent Cloud.
 
