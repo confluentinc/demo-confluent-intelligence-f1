@@ -4,14 +4,14 @@
 
 > [!NOTE]
 >
-> Use this path when you have your own Confluent Cloud login and will provision a Confluent-only environment (`uv run deploy --track self-service`) with the race simulator running on your machine. **If your instructor gave you a workshop login and password,** use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md). **If you are deploying the full AWS-backed architecture (Postgres CDC + ECS Fargate simulator) with `uv run deploy --track standalone`,** use the [standalone demo walkthrough](./STANDALONE-DEMO.md).
+> Use this path when you have your own Confluent Cloud login and will provision a Confluent-only environment (`uv run deploy --track self-service`) with the race simulator running on your machine. **If your instructor gave you a workshop login and password,** use the [hosted workshop walkthrough](./HOSTED-WORKSHOP.md).
 
 ## 0. Clone, install, and provision
 
-You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.confluent.io/confluent-cloud/tryfree/?utm_campaign=tm.plg_cd.techxchange2026&utm_source=lab&utm_medium=github)) No AWS keys are needed with the default LLM provider, CSP Hosted Flink Model Inference; AWS Bedrock API keys in `us-east-1` are only needed if you deploy with `uv run deploy --bedrock`. If you want Bedrock but don't have keys yet, you can mint scoped IAM keys with `uv run api-keys create` once you are logged into the AWS CLI.
+You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.confluent.io/confluent-cloud/tryfree/?utm_campaign=tm.plg_cd.techxchange2026&utm_source=lab&utm_medium=github))
 
-> [!TIP]
-> **TechXChange attendee, or provided a workstation by the workshop host?** Skip step 2 (install the prerequisites) — it's already set up for you. Start with step 1 to add your promo code.
+> [!WARNING]
+> ⚠️ You may be asked to create a cluster during sign-up. **Skip it** — Terraform creates your cluster later.
 
 1. Add a payment method (credit card or promo code) in Confluent Cloud.
 
@@ -28,35 +28,38 @@ You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.co
 
 2. Install the prerequisites:
 
-    <details>
-    <summary><strong>Prerequisites for your own machine</strong> — skip this step if you are a TechXChange attendee or were given a workstation (click to expand)</summary>
+> [!TIP]
+> **TechXChange attendee, or provided a workstation by the workshop host?** Skip step 2 (install the prerequisites) — it's already set up for you. Start with step 1 to add your promo code.
 
-    <details>
-    <summary>for Mac</summary>
+<details>
+<summary><strong>Prerequisites for your own machine</strong> — skip this step if you are a TechXChange attendee or were given a workstation (click to expand)</summary>
 
-    ```bash
-    brew install git uv
-    brew tap hashicorp/tap
-    brew install hashicorp/tap/terraform
-    brew install --cask confluent-cli
-    ```
+<details>
+<summary>for Mac</summary>
 
-    </details>
+```bash
+brew install git uv
+brew tap hashicorp/tap
+brew install hashicorp/tap/terraform
+brew install --cask confluent-cli
+```
 
-    <details>
-    <summary>for Windows</summary>
+</details>
 
-    ```powershell
-    winget install --id Git.Git -e
-    winget install --id astral-sh.uv -e
-    winget install --id Hashicorp.Terraform -e
-    ```
+<details>
+<summary>for Windows</summary>
 
-    The Confluent CLI has no reliable winget package. Download the latest `confluent_*_windows_amd64.zip` from the [Confluent CLI releases](https://github.com/confluentinc/cli/releases/latest), unzip it, and add the folder containing `confluent.exe` to your `PATH`. Then close and reopen the terminal so every tool is on your `PATH`.
+```powershell
+winget install --id Git.Git -e
+winget install --id astral-sh.uv -e
+winget install --id Hashicorp.Terraform -e
+```
 
-    </details>
+The Confluent CLI has no reliable winget package. Download the latest `confluent_*_windows_amd64.zip` from the [Confluent CLI releases](https://github.com/confluentinc/cli/releases/latest), unzip it, and add the folder containing `confluent.exe` to your `PATH`. Then close and reopen the terminal so every tool is on your `PATH`.
 
-    </details>
+</details>
+
+</details>
 
 3. Open a **Terminal** on your machine — click **Activities** (top-left), then the **Terminal** icon in the dock.
 
@@ -91,13 +94,10 @@ You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.co
 
     | Prompt | Where to get it |
     |---|---|
-    | Confluent Cloud Email / Password | The **email and password you used to sign up**. They are verified with a real login, then saved to `credentials.env` so later commands log in automatically. (**Single sign-on?** Press **Enter** at the email prompt. If you are not already logged in, it offers to run the SSO login for you. You can also run `confluent login --no-browser` first.) |
+    | Confluent Cloud Email / Password | The **email and password you used to sign up**. They are verified with a real login, then saved to `credentials.env` so later commands log in automatically. (**Single sign-on?** Press **Enter** at the email prompt. If you are not already logged in, it offers to run the SSO login for you.) |
     | Generate new Confluent Cloud API keys? | Answer `y` — `uv` creates the API key and secret for you |
-    | LLM provider for the pit-strategy agent | Press **Enter** for **CSP Hosted Flink Model Inference** (the default), which runs Claude on Confluent and needs no AWS keys. Option 2 is **AWS Bedrock** with your own keys |
     | Confluent Cloud API Key / Secret | Press **Enter** to confirm the key and secret `uv` just created |
     | Owner email | Press **Enter** — it defaults to the email you just logged in with |
-    | AWS Bedrock Access Key / Secret Key | Your AWS IAM user's access key with Bedrock access (or the one your instructor gave you). Skipped when you chose CSP Hosted inference |
-
 
 ## 1. Enhance the data with built-in ML functions and start the race
 
@@ -363,16 +363,22 @@ Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP
     This registers RTCE as an MCP server with Claude Code (or prints a config snippet for Codex CLI), using the `F1_RTCE_MCP_ENDPOINT`, `F1_RTCE_API_KEY`, and `F1_RTCE_API_SECRET` fields on your credential card. Restart your coding agent, then ask questions in plain English:
 
     ```text
+    What topics do I have access to in the Real-Time Context Engine?
+    ```
+
+    ![Claude listing the topics enabled in the Real-Time Context Engine](../assets/hosted/rtce-listtopics.png)
+
+    ```text
     How has the engine temperature been trending over the last few laps?
     ```
 
-    ```text
-    What topics do I have access to in the Real-Time Context Engine?
-    ```
+    ![Claude answering how the engine temperature has trended over the last few laps by calling the Real-Time Context Engine](../assets/self-service/rtce-engine-trend.png)
 
     ```text
     What's the front-left tire temperature on car 88 right now?
     ```
+
+    ![Claude answering the front-left tire temperature question by calling the Real-Time Context Engine](../assets/hosted/rtce-cartemp.png)
 
     ```text
     At what lap in the race does the engine temperature peak?
@@ -381,12 +387,6 @@ Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP
     ```text
     What is the front right tire temperature at lap 30?
     ```
-
-    ![Claude answering how the engine temperature has trended over the last few laps by calling the Real-Time Context Engine](../assets/self-service/rtce-engine-trend.png)
-
-    ![Claude listing the topics enabled in the Real-Time Context Engine](../assets/hosted/rtce-listtopics.png)
-
-    ![Claude answering the front-left tire temperature question by calling the Real-Time Context Engine](../assets/hosted/rtce-cartemp.png)
 
 ## 🧩 (Optional) Challenge #1 — Social Media Agent (Claude + Real-Time Context Engine)
 
