@@ -35,8 +35,8 @@ TRACKS = {
 
 # What backs `llm_textgen_model` (`llm_provider` in terraform/self-service and
 # terraform/aws). "confluent" is CSP Hosted Flink Model Inference: no AWS keys at
-# all. Bedrock stays the default until CSP-hosted inference is confirmed on trial
-# orgs. Saved in credentials.env — the source of truth for the user's choices.
+# all, and the default; `uv run deploy --bedrock` opts into Bedrock. Saved in
+# credentials.env — the source of truth for the user's choices.
 LLM_PROVIDER_KEY = "TF_VAR_llm_provider"
 LLM_PROVIDERS = {
     "confluent": "CSP Hosted Flink Model Inference (Confluent-hosted, no AWS keys)",
@@ -193,19 +193,6 @@ def llm_provider_for(root: Path, track: meta.Track, creds: dict) -> str:
     return deployed or saved
 
 
-def prompt_llm_provider(root: Path, track: meta.Track, creds: dict) -> str:
-    current = llm_provider_for(root, track, creds)
-    order = [current] + [k for k in LLM_PROVIDERS if k != current]
-    print("\nLLM provider for the pit-strategy agent:")
-    for i, key in enumerate(order, 1):
-        print(f"  {i}. {LLM_PROVIDERS[key]}{'  [default]' if i == 1 else ''}")
-    while True:
-        choice = input(f"Enter choice (1-{len(order)}) [1]: ").strip() or "1"
-        if choice.isdigit() and 1 <= int(choice) <= len(order):
-            return order[int(choice) - 1]
-        print(f"  Please enter a number between 1 and {len(order)}.")
-
-
 def offer_key_generation(creds: dict, creds_file: Path) -> None:
     """Save/verify the Confluent Cloud login, then offer to mint an OrganizationAdmin key.
 
@@ -273,7 +260,7 @@ def check_bedrock_or_exit(cfg: dict, automated: bool) -> None:
         return
     print(f"  Bedrock check failed: {detail}")
     print("  Without working keys the pit-strategy agent in LAB 4 returns nothing.")
-    print("  Mint new ones with `uv run api-keys create`, or choose CSP Hosted inference.")
+    print("  Mint new ones with `uv run api-keys create`, or drop --bedrock to use CSP Hosted inference.")
     if automated or input("Deploy anyway? (y/n) [n]: ").strip().lower() != "y":
         sys.exit(1)
 

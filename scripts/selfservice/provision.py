@@ -138,7 +138,7 @@ def _collect_config(root, creds_file, creds: dict, automated: bool) -> dict[str,
 
     common.offer_key_generation(creds, creds_file)
 
-    llm_provider = common.prompt_llm_provider(root, TRACK, creds)
+    llm_provider = common.llm_provider_for(root, TRACK, creds)
     use_bedrock = llm_provider == "bedrock"
 
     print("\n--- Configuration ---\n")

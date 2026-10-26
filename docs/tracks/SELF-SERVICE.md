@@ -8,7 +8,7 @@
 
 ## 0. Clone, install, and provision
 
-You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.confluent.io/confluent-cloud/tryfree/?utm_campaign=tm.plg_cd.techxchange2026&utm_source=lab&utm_medium=github)) No AWS keys are needed with the default LLM provider, CSP Hosted Flink Model Inference; AWS Bedrock API keys in `us-east-1` are only needed if you pick Bedrock at the setup prompt. If you want Bedrock but don't have keys yet, you can mint scoped IAM keys with `uv run api-keys create` once you are logged into the AWS CLI.
+You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.confluent.io/confluent-cloud/tryfree/?utm_campaign=tm.plg_cd.techxchange2026&utm_source=lab&utm_medium=github)) No AWS keys are needed with the default LLM provider, CSP Hosted Flink Model Inference; AWS Bedrock API keys in `us-east-1` are only needed if you deploy with `uv run deploy --bedrock`. If you want Bedrock but don't have keys yet, you can mint scoped IAM keys with `uv run api-keys create` once you are logged into the AWS CLI.
 
 > [!TIP]
 > **TechXChange attendee, or provided a workstation by the workshop host?** Skip step 2 (install the prerequisites) — it's already set up for you. Start with step 1 to add your promo code.

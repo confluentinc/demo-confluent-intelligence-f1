@@ -8,7 +8,7 @@
 
 ## 0. Clone, install, and provision
 
-You need a [Confluent Cloud account](https://confluent.cloud/signup), an AWS account with the AWS CLI configured (`aws sts get-caller-identity`), Docker running (`docker info`, used once to build and push the simulator image to ECR), and, only if you pick AWS Bedrock over the default CSP Hosted Flink Model Inference, Bedrock API keys in `us-east-1`. If you want Bedrock but don't have keys yet, you can mint scoped IAM keys (`InvokeModel` only) with `uv run api-keys create`.
+You need a [Confluent Cloud account](https://confluent.cloud/signup), an AWS account with the AWS CLI configured (`aws sts get-caller-identity`), Docker running (`docker info`, used once to build and push the simulator image to ECR), and, only if you run `uv run deploy --bedrock` instead of the default CSP Hosted Flink Model Inference, Bedrock API keys in `us-east-1`. If you want Bedrock but don't have keys yet, you can mint scoped IAM keys (`InvokeModel` only) with `uv run api-keys create`.
 
 1. Install the prerequisites:
 
@@ -74,7 +74,7 @@ You need a [Confluent Cloud account](https://confluent.cloud/signup), an AWS acc
     uv run deploy --track standalone
     ```
 
-    The command prompts for your Confluent Cloud login (saved so later commands log in automatically), offers to generate an OrganizationAdmin API key via the Confluent CLI, then asks for the LLM provider (**CSP Hosted Flink Model Inference** by default, which needs no AWS keys, or **AWS Bedrock**), owner email (for AWS resource tagging), deployment prefix, AWS Bedrock keys (Bedrock only), and seconds per lap (default **20s/lap**, matching the 20-second `TUMBLE` window in Section 1). With Bedrock it test-invokes Claude with your keys first; either way it shows a masked summary before applying. Answers are saved to `credentials.env`, so subsequent runs can use `uv run deploy --automated --track standalone`.
+    The command prompts for your Confluent Cloud login (saved so later commands log in automatically), offers to generate an OrganizationAdmin API key via the Confluent CLI, then asks for owner email (for AWS resource tagging), deployment prefix, AWS Bedrock keys (only with `--bedrock`; otherwise the LLM is **CSP Hosted Flink Model Inference**, which needs no AWS keys), and seconds per lap (default **20s/lap**, matching the 20-second `TUMBLE` window in Section 1). With Bedrock it test-invokes Claude with your keys first; either way it shows a masked summary before applying. Answers are saved to `credentials.env`, so subsequent runs can use `uv run deploy --automated --track standalone`.
 
     Two Terraform tiers apply back-to-back (~25–30 minutes total, mostly EC2 Postgres and the Docker image build):
     - **`terraform/aws-shared`** — VPC lookup, EC2 Postgres seeded with 198 historical race rows, and the ECR repository + simulator Docker image.
