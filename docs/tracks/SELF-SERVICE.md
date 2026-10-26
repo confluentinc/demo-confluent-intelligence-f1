@@ -373,16 +373,16 @@ Real-Time Context Engine (RTCE) exposes a Kafka topic as an MCP tool, so any MCP
     This registers RTCE as an MCP server with Claude Code (or prints a config snippet for Codex CLI), using the `F1_RTCE_MCP_ENDPOINT`, `F1_RTCE_API_KEY`, and `F1_RTCE_API_SECRET` fields on your credential card. Restart your coding agent, then ask questions in plain English:
 
     ```text
-    How has the engine temperature been trending over the last few laps?
-    ```
-
-    ![Claude answering how the engine temperature has trended over the last few laps by calling the Real-Time Context Engine](../assets/self-service/rtce-engine-trend.png)
-
-    ```text
     What topics do I have access to in the Real-Time Context Engine?
     ```
 
     ![Claude listing the topics enabled in the Real-Time Context Engine](../assets/hosted/rtce-listtopics.png)
+
+    ```text
+    How has the engine temperature been trending over the last few laps?
+    ```
+
+    ![Claude answering how the engine temperature has trended over the last few laps by calling the Real-Time Context Engine](../assets/self-service/rtce-engine-trend.png)
 
     ```text
     What's the front-left tire temperature on car 88 right now?
