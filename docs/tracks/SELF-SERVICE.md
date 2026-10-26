@@ -26,10 +26,10 @@ You need a Confluent Cloud account ([Sign up for Confluent Cloud](https://www.co
 
         <img src="../assets/self-service/billing-promo-code.png" alt="Billing and payment — Promos, + Promo code" width="500">
 
-2. Install the prerequisites:
+> [!TIP]
+> **TechXChange attendee, or provided a workstation by the workshop host?** Skip step 2 (install the prerequisites) — it's already set up for you. Start with step 1 to add your promo code.
 
-    > [!TIP]
-    > **TechXChange attendee, or provided a workstation by the workshop host?** Skip step 2 (install the prerequisites) — it's already set up for you. Start with step 1 to add your promo code.
+2. Install the prerequisites:
 
     <details>
     <summary><strong>Prerequisites for your own machine</strong> — skip this step if you are a TechXChange attendee or were given a workstation (click to expand)</summary>
