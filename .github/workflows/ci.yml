@@ -30,8 +30,11 @@ jobs:
 
       # Read-only: never rewrites files, and never runs plan/apply/validate.
       # `validate` needs initialized providers — add it once CI can install or
-      # cache them predictably.
-      - run: terraform fmt -check -recursive terraform
+      # cache them predictably. Both Terraform roots: the workshop tiers under
+      # terraform/ and the customer platform team's module in platform-team/.
+      - run: |
+          terraform fmt -check -recursive terraform
+          terraform fmt -check -recursive platform-team
 
       - name: Check tracked Markdown links
         run: uv run python scripts/check_markdown_links.py

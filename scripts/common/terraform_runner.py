@@ -375,8 +375,11 @@ def run_terraform_destroy(env_path: Path, auto_approve: bool = True) -> bool:
         if returncode != 0 and _is_dead_flink_key(output):
             # The Flink API key in state is already gone (e.g. an earlier partial
             # destroy deleted it), so refreshing/deleting Flink statements and
-            # connections 401s forever. Those objects live inside the compute pool
-            # and are removed with the environment, so forgetting them is safe.
+            # connections 401s forever. The tables and model they created live in
+            # the cluster (the Flink database), which this destroy removes, so
+            # forgetting them is safe. Where the environment is kept
+            # (pre-provisioned), a forgotten connection or finished statement
+            # record stays in it until the platform team removes the environment.
             dropped = _forget_flink_objects(env_path)
             if dropped:
                 print(

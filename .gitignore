@@ -194,3 +194,6 @@ api-key-*.txt
 
 # Internal recording script and early-access launch notes.
 /TIGHT-5MIN-DEMO.md
+
+# Local-markdown issue tracker (docs/agents/issue-tracker.md)
+.scratch/

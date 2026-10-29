@@ -1,5 +1,5 @@
 """
-Destroy what YOU deployed on this machine with `uv run deploy` (either track).
+Destroy what YOU deployed on this machine with `uv run deploy` (any track).
 Pick what to tear down, confirm, then destroy. `--force` skips every prompt.
 
 After a fully successful teardown you are offered to delete credentials.env too
@@ -7,6 +7,9 @@ After a fully successful teardown you are offered to delete credentials.env too
 left deployed, the Claude Code MCP registrations `setup-mcp` / `setup-rtce` made
 for this project are removed as well — they point at the dead environment.
 `--only self-service` scopes the run to one group (`uv run selfservice down`).
+`--only pre-provisioned` deletes the three API keys the pre-provisioned track
+minted, then its card. That track runs no Terraform: the platform team built
+everything in the environment, and the environment and all of it stay.
 
 Deployments are offered as groups, not raw Terraform tiers, because `aws` and
 `aws-shared` are never created independently: `uv run deploy` always applies
@@ -38,8 +41,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import requests
+from dotenv import dotenv_values
+
+from . import deployment_meta as meta
 from .credentials import load_or_create_credentials_file
-from .deployment_meta import TRACKS, has_state, retire_track
+from .deployment_meta import TRACKS, is_deployed, retire_track
 from .terraform import cleanup_terraform_artifacts, get_project_root, run_terraform_output
 from .terraform_runner import run_terraform_destroy
 
@@ -100,12 +107,22 @@ GROUPS = [
     ("self-service", ["self-service"], "solo, Confluent-only (no AWS infra)"),
 ]
 
+# Offered after them, but not a Terraform group: the pre-provisioned track has no
+# state. Its whole deployment is the three API keys runs/pre-provisioned/
+# deployment.env records, all owned by the developer, and its teardown deletes
+# exactly those over REST, then the card. The environment, and everything the
+# platform team built in it, stays; the teardown says so before and after, so
+# nobody expects (or fears) the environment going with it.
+PREPROVISIONED = "pre-provisioned"
+PREPROVISIONED_DESC = "solo, in your platform team's environment (your API keys only; the environment stays)"
+
 # Which deployment track each Terraform tier belongs to, so a successful destroy
 # can clean up everything that track left behind (see _retire_tier). Derived from
 # the Track definitions rather than re-listed here, so the run directory, the tier
 # name, and the prefix suffix can never drift apart. `aws-shared` owns no card and
-# no track — it is shared infrastructure.
-TIER_TRACKS = {track.tier: track for track in TRACKS.values()}
+# no track — it is shared infrastructure. The pre-provisioned track has no tier;
+# it retires itself (see _destroy_preprovisioned).
+TIER_TRACKS = {track.tier: track for track in TRACKS.values() if track is not meta.PREPROVISIONED}
 
 
 def _retire_tier(root: Path, tier: str) -> None:
@@ -153,6 +170,145 @@ def _looks_like_workshop_shared(root: Path) -> bool:
     if not (tf / "aws-shared" / "terraform.tfstate").exists():
         return False
     return not (tf / "aws" / "terraform.tfstate").exists()
+
+
+# --- the pre-provisioned track: three API keys, no Terraform ---------------------------
+
+
+def _environment_label(saved: dict[str, str]) -> str:
+    """'<name> (<id>)' of the pre-provisioned environment, from deployment.env alone."""
+    env_id, name = saved.get(meta.KEY_ENVIRONMENT_ID, ""), saved.get(meta.KEY_ENVIRONMENT_NAME, "")
+    if env_id and name:
+        return f"{name} ({env_id})"
+    return env_id or name or "your environment"
+
+
+def _key_list(ids: dict[str, str]) -> list[str]:
+    """'Kafka key <id>', ... for recorded key IDs, in the order given."""
+    from scripts.preprovisioned.provision import KEY_LABELS
+
+    return [f"{KEY_LABELS[field]} key {key_id}" for field, key_id in ids.items()]
+
+
+def _preprovisioned_group(root: Path) -> tuple[str, list[str], str] | None:
+    """The pre-provisioned entry for the deployment list; None when no key is recorded.
+
+    Its middle element lists the keys, where the Terraform groups list tiers.
+    `main` shows it but never walks it as tiers.
+    """
+    ids = meta.recorded_key_ids(root, meta.PREPROVISIONED)
+    return (PREPROVISIONED, _key_list(ids), PREPROVISIONED_DESC) if ids else None
+
+
+def _explain_preprovisioned(root: Path) -> None:
+    """Say what the pre-provisioned teardown deletes, and what it keeps, before it runs."""
+    label = _environment_label(meta.load_meta(root, meta.PREPROVISIONED))
+    ids = meta.recorded_key_ids(root, meta.PREPROVISIONED)
+    print(f"\nWill delete your pre-provisioned keys and credential card: {', '.join(_key_list(ids))}.")
+    print(f"  Your environment {label} and everything in it stay — they belong to your platform team.")
+
+
+def _card_global_key(root: Path, saved: dict[str, str]) -> tuple[str, str] | None:
+    """(key, secret) of the Global key on the card deployment.env records; None without one.
+
+    That key authenticates every deletion, its own last. It's the card's Flink key.
+    """
+    from scripts.preprovisioned.provision import CARD_FIELDS
+
+    card = root / saved[meta.KEY_CARD] if saved.get(meta.KEY_CARD) else None
+    if card is None or not card.is_file():
+        return None
+    values = dotenv_values(card)
+    key_field, secret_field = CARD_FIELDS[meta.KEY_GLOBAL_KEY_ID]
+    key, secret = values.get(key_field), values.get(secret_field)
+    return (key, secret) if key and secret else None
+
+
+def _retire_preprovisioned(root: Path, label: str) -> None:
+    """Forget the pre-provisioned deployment: card, deployment.env, F1_CARD. Its keys are gone."""
+    removed = retire_track(root, meta.PREPROVISIONED)
+    if removed:
+        print(f"  Removed dead {meta.PREPROVISIONED.name} files: {', '.join(removed)}")
+    print(f"  Kept your environment {label} and everything in it.")
+
+
+def _delete_by_hand(root: Path, ids: dict[str, str], label: str, force: bool) -> bool:
+    """When nothing can authenticate the deletes: list the keys for the Console, offer to forget them.
+
+    The record stays unless the developer says they're gone (never under
+    --force): it's all that names them, and a re-deploy deletes what it records.
+    """
+    from scripts.preprovisioned.provision import KEY_LOCATION
+
+    record = meta.meta_path(root, meta.PREPROVISIONED).relative_to(root)
+    print(f"  Delete them yourself under {KEY_LOCATION}:")
+    for key in _key_list(ids):
+        print(f"    {key}")
+    if not force:
+        answer = input(f"\n  Once they're deleted there, forget them here (your card and {record})? (y/n) [n]: ")
+        if answer.strip().lower() in ("y", "yes"):
+            _retire_preprovisioned(root, label)
+            return True
+    print(f"  Kept {record}. Once they're deleted, re-run `uv run destroy` (without --force) and answer y.")
+    return False
+
+
+def _destroy_preprovisioned(root: Path, force: bool) -> bool:
+    """Delete the keys deployment.env records, Global last, then the card. True when all are gone.
+
+    Over REST, authenticated with the card's Global key, which may delete
+    itself. Each ID leaves deployment.env the moment its key is gone, "already
+    gone" included, so a retry deletes only what's left. Any failure keeps the
+    rest of the record and the card, and keeps the Global key too: a retry needs
+    it to delete the others. Nothing here touches the environment: the developer's
+    own statements in it keep running, as the user, and the platform team's
+    teardown copes with them.
+    """
+    from scripts.preprovisioned import keys
+    from scripts.preprovisioned.provision import KEY_LABELS, KEY_LOCATION
+
+    track = meta.PREPROVISIONED
+    saved = meta.load_meta(root, track)
+    ids = meta.recorded_key_ids(root, track)
+    label = _environment_label(saved)
+    print("\n-> Deleting your pre-provisioned keys...")
+
+    auth = _card_global_key(root, saved)
+    if auth is None:
+        print("  Can't delete them: your credential card, whose Global key authenticates the deletes, is missing.")
+        return _delete_by_hand(root, ids, label, force)
+    try:
+        usable = keys.key_exists(auth, auth[0])
+    except requests.RequestException as e:
+        print(f"  Could not reach the Confluent Cloud API: {e}")
+        print("  Nothing was deleted. Re-run `uv run destroy`.")
+        return False
+    if not usable:
+        print(f"  Can't delete them: your card's Global key {auth[0]} is no longer accepted (deleted or revoked?).")
+        return _delete_by_hand(root, ids, label, force)
+
+    left: dict[str, str] = {}
+    for field, key_id in ids.items():
+        key = f"{KEY_LABELS[field]} key {key_id}"
+        if field == meta.KEY_GLOBAL_KEY_ID and left:
+            print(f"  Not deleting {key} yet: a retry needs it to delete the others.")
+            left[field] = key_id
+            continue
+        result = keys.delete_api_key(auth, key_id)
+        if result == "failed":
+            print(f"  Could not delete {key}.")
+            left[field] = key_id
+            continue
+        meta.drop_meta(root, track, field)
+        print(f"  Deleted {key}." if result == "deleted" else f"  {key}: already gone.")
+
+    if left:
+        print(f"\n  Still to delete: {', '.join(_key_list(left))}.")
+        print(f"  They stay recorded in {meta.meta_path(root, track).relative_to(root)}, and your card stays.")
+        print(f"  Re-run `uv run destroy` to retry, or delete them under {KEY_LOCATION}.")
+        return False
+    _retire_preprovisioned(root, label)
+    return True
 
 
 # Project-local Claude Code registrations made by `uv run setup-mcp` and
@@ -230,7 +386,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--only",
-        choices=[name for name, _tiers, _desc in GROUPS],
+        choices=[*(name for name, _tiers, _desc in GROUPS), PREPROVISIONED],
         help="Consider only this deployment group (`uv run selfservice down` passes self-service)",
     )
     parser.add_argument(
@@ -249,7 +405,7 @@ def _select_groups(available: list[tuple[str, list[str], str]]) -> list[tuple[st
     """
     print("\nFound deployments:")
     for i, (name, tiers, desc) in enumerate(available, 1):
-        print(f"  {i}. {name:<15} {desc}")
+        print(f"  {i}. {name:<16} {desc}")
         print(f"     {' + '.join(tiers)}")
 
     if len(available) == 1:
@@ -298,18 +454,28 @@ def main(argv: list[str] | None = None):
         if present == ["aws-shared"]:
             name, desc = "shared-infra", "shared infra ONLY — may back a workshop (see warning below)"
         available.append((name, present, desc))
+    # ...and the pre-provisioned track, whose deployment is the keys it recorded.
+    preprovisioned = _preprovisioned_group(root) if args.only in (None, PREPROVISIONED) else None
+    if preprovisioned:
+        available.append(preprovisioned)
 
     if not available:
         all_tiers = [t for n, tiers, _d in GROUPS if not args.only or n == args.only for t in tiers]
-        print(f"Nothing to destroy — no terraform state in: {', '.join(all_tiers)}")
+        looked = [f"no terraform state in: {', '.join(all_tiers)}"] if all_tiers else []
+        if args.only in (None, PREPROVISIONED):
+            looked.append(f"no keys recorded in {meta.meta_path(root, meta.PREPROVISIONED).relative_to(root)}")
+        print(f"Nothing to destroy — {'; '.join(looked)}")
         print("(A wsa-provisioned workshop is torn down with `wsa clean`, not this script.)")
         sys.exit(0)
 
     selected = available if args.force else _select_groups(available)
-    envs_to_destroy = [t for _n, tiers, _d in selected for t in tiers]
+    envs_to_destroy = [t for n, tiers, _d in selected if n != PREPROVISIONED for t in tiers]
 
-    print(f"\nWill destroy: {', '.join(envs_to_destroy)}")
-    print("WARNING: This will permanently destroy all resources!")
+    if envs_to_destroy:
+        print(f"\nWill destroy: {', '.join(envs_to_destroy)}")
+        print("WARNING: This will permanently destroy all resources!")
+    if preprovisioned in selected:
+        _explain_preprovisioned(root)
 
     if not args.force and input("\nProceed? (y/n): ").strip().lower() != "y":
         print("Cancelled.")
@@ -349,11 +515,16 @@ def main(argv: list[str] | None = None):
     # an independently-selected self-service teardown, which is why the group
     # boundary has to still exist here.
     for group_name, tiers, _desc in selected:
+        if group_name == PREPROVISIONED:
+            # No tiers to walk: its "tiers" are the keys, deleted over REST.
+            if not _destroy_preprovisioned(root, args.force):
+                failed.append(f"{PREPROVISIONED} (API keys)")
+            continue
         for position, env in enumerate(tiers):
             env_path = root / "terraform" / env
             state_file = env_path / "terraform.tfstate"
 
-            # Both non-shared tiers have required variables that Terraform evaluates
+            # Every non-shared tier has required variables that Terraform evaluates
             # even on destroy — populate them before running.
             if env == "aws":
                 # shared_* variables come from the aws-shared outputs.
@@ -394,9 +565,10 @@ def main(argv: list[str] | None = None):
     print("\nDestroy process completed!")
 
     # MCP servers only once nothing at all is deployed from here: they may still
-    # serve a deployment that wasn't selected.
+    # serve a deployment that wasn't selected. "Deployed" is Terraform state, or —
+    # for the pre-provisioned track — keys still recorded in its deployment.env.
     shared_live = (root / "terraform" / "aws-shared" / "terraform.tfstate").exists()
-    still_deployed = shared_live or any(has_state(root, track) for track in TRACKS.values())
+    still_deployed = shared_live or any(is_deployed(root, track) for track in TRACKS.values())
     if not still_deployed:
         _cleanup_mcp(root)
     _offer_credentials_cleanup(_creds_file, args, still_deployed)

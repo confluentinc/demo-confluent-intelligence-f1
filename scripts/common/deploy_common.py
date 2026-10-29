@@ -1,8 +1,9 @@
-"""Pieces `uv run deploy` shares between its two tracks.
+"""Pieces `uv run deploy` shares between its tracks.
 
 `deploy.py` asks which track to deploy, then hands off to the standalone
-(Confluent + AWS) or self-service (Confluent-only) flow. Everything both flows
-prompt for, validate, print, or write lives here, so the two can't drift apart
+(Confluent + AWS), self-service (Confluent-only) or pre-provisioned
+(Confluent-only, in a customer's existing environment) flow. Everything the flows
+prompt for, validate, print, or write lives here, so they can't drift apart
 again: prefix resolution, pacing, the LLM provider choice, Confluent key
 generation, the Bedrock smoke test, the masked summary, the credential card, and
 the post-deploy offer to start the dashboard.
@@ -31,6 +32,10 @@ DEFAULT_SECONDS_PER_LAP = "20"
 TRACKS = {
     "self-service": (meta.SELFSERVICE, "Self-service — Confluent Cloud only; the race runs on this machine"),
     "standalone": (meta.STANDALONE, "Standalone — Confluent Cloud + AWS (Postgres CDC, ECS simulator)"),
+    "pre-provisioned": (
+        meta.PREPROVISIONED,
+        "Pre-provisioned — self-service in an environment your platform team created for you",
+    ),
 }
 
 # What backs `llm_textgen_model` (`llm_provider` in terraform/self-service and
@@ -52,11 +57,11 @@ def pick_track(root: Path, requested: str | None, automated: bool) -> meta.Track
     """The track to deploy: --track, else a prompt, else (automated) the only live one."""
     if requested:
         return TRACKS[requested][0]
-    live = [track for track, _label in TRACKS.values() if meta.has_state(root, track)]
+    live = [track for track, _label in TRACKS.values() if meta.is_deployed(root, track)]
     if automated:
         if len(live) == 1:
             return live[0]
-        print("Error: --automated needs --track self-service or --track standalone")
+        print(f"Error: --automated needs --track ({' | '.join(TRACKS)})")
         print("       (it can only infer the track when exactly one is already deployed).")
         sys.exit(1)
     # Re-running against an existing deployment is the common case, so default to it.
@@ -276,15 +281,17 @@ def print_summary(title: str, rows: dict[str, str], creds_file: Path) -> None:
             print(f"    {key}: {display_value(key, value)}")
 
 
-def write_card(root: Path, track: meta.Track, cfg: dict, out: dict, rtce_keys: bool) -> Path:
+def write_card(root: Path, track: meta.Track, cfg: dict, out: dict, rtce_keys: bool, region: str = REGION) -> Path:
     """Write the credential card and point credentials.env's F1_CARD at it.
 
     Same generator the workshop uses, so the card format is identical everywhere.
+    `region` places the RTCE endpoint; the pre-provisioned track passes its
+    cluster's, since the platform team picks it.
     """
     creds_dir = root / "runs" / track.name / "credentials"
     creds_dir.mkdir(parents=True, exist_ok=True)
     fields = creds_mod._card_fields(
-        cfg["prefix"], cfg["owner_email"], out, social_feed_url="", region=REGION, rtce_keys=rtce_keys
+        cfg["prefix"], cfg["owner_email"], out, social_feed_url="", region=region, rtce_keys=rtce_keys
     )
     creds_mod._write_env(creds_dir, fields)
     creds_mod._write_md(creds_dir, fields)

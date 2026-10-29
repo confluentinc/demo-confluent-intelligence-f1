@@ -14,6 +14,19 @@ write every lab statement in the browser **Flink SQL workspace**. `uv run f1-sql
 is no longer taught in LAB 1-6; it stays for the standalone/self-service tracks.
 See "Attendee Console access" and "WSA (organizer provisioning)" below.
 
+A **pre-provisioned** track runs the self-service workshop inside a customer's own
+Confluent Cloud org, with no `wsa` and no AWS: the customer's platform team runs the
+self-contained `platform-team/` Terraform root with one OrganizationAdmin **Global**
+key, and it builds each developer's whole stack (a new environment bound **directly**
+as `User:` EnvironmentAdmin, cluster, Flink pool, tables, seed and CSP Hosted model —
+no service accounts, no API keys). Each developer signs in through SSO, runs
+`confluent login`, then `uv run deploy --track pre-provisioned`, which runs no
+Terraform: it mints the developer's Global, Kafka and SR keys, writes the card and
+checks the seed. Its walkthrough,
+`docs/tracks/PRE-PROVISIONED.md`, covers section 0 only and hands off to
+`SELF-SERVICE.md` §1; the catalog is the developer's environment (e.g.
+`John-Doe-c21e_env`), not `RIVER-RACING-DEMO-ENV`.
+
 **Team:** River Racing | **Driver:** John Doe (#88) | **Circuit:** Silverstone | **60 laps**
 
 ---
@@ -62,9 +75,9 @@ HTTP service (an OpenAPI tool) — everything upstream is Confluent-only.
 ## Terraform Layout
 
 Three tiers: `aws-shared` (applied once), `aws` (per attendee), and the
-Confluent-only `self-service`. The tier relationships, per-attendee resource naming,
-CDC slot isolation, and the `flink_max_cfu` / `seconds_per_lap` / `race_loop` knobs are
-in the **`f1-terraform-layout`** skill
+Confluent-only `self-service`; the pre-provisioned track has none (see below). The
+tier relationships, per-attendee resource naming, CDC slot isolation, and the
+`flink_max_cfu` / `seconds_per_lap` / `race_loop` knobs are in the **`f1-terraform-layout`** skill
 (`.claude/skills/f1-terraform-layout/SKILL.md`). Load it before editing anything under
 `terraform/`.
 
@@ -77,6 +90,31 @@ in `wsa-spec-aws.yaml` **must stay named `shared`** for the mapping to hold, whi
 the 0.3.0 migration needed zero Terraform changes. Breaking it silently starves the
 attendee tier of its shared inputs, and it also governs `wsa-spec-aws.yaml` and
 `scripts/workshop/wsa.py`.
+
+**The pre-provisioned track has one root, `platform-team/`, and it isn't a tier here:**
+it sits outside `terraform/` so the folder can be sent on its own, and the developer
+runs no Terraform at all. It runs with one OrganizationAdmin **Global** key, which is the
+provider credential and every Flink statement's `credentials {}`; every statement's
+`principal` is that key's own owner, read by `data "http"` from
+`GET /iam/v2/api-keys/{key}` (no service accounts, no API keys, no per-environment keys).
+Per email: a `confluent_user` lookup (never an invite), a `random_id` suffix kept in
+state, and one `modules/developer/` — an environment named
+`<sanitized local part>-<4 hex>_env` (Stream Governance ADVANCED) with a direct
+EnvironmentAdmin binding, `RIVER-RACING-DEMO-CLUSTER` and `RIVER-RACING-DEMO-pool`
+(fixed names: the deploy finds them by name), `IF NOT EXISTS` DDL for the three source
+tables, the CSP Hosted `llm_textgen_model`, and the 198-row seed `INSERT` from
+`driver_race_history_seed.sql`. The copied DDL and the seed file are drift-tested
+(`tests/test_platform_team_sync.py`); regenerate the seed with
+`uv run python -m scripts.selfservice.seed > platform-team/modules/developer/driver_race_history_seed.sql`.
+Terraform only sees the seed reach RUNNING, so the developer deploy's row count
+(`ensure_driver_race_history`) is the guard. It pins `confluentinc/confluent` to
+exactly `= 2.92.0` (and `hashicorp/http`/`time` exactly); the tiers keep
+`>= 2.73, < 3.0`. The name sanitizer
+(`local.sanitized` in `platform-team/main.tf`) has a Python twin,
+`sanitize_local_part` in `scripts/preprovisioned/lookup.py`, which the deploy uses to
+find the developer's environment by name — change both together and keep their pinned
+examples identical (`SANITIZER_EXAMPLES` in `tests/test_preprovisioned_lookup.py` and
+`platform-team/tests/naming.tftest.hcl`).
 
 ---
 
@@ -240,9 +278,9 @@ will mislead you here; check the CREATE TABLE options too.
 
 | File | Purpose | Created by |
 |------|---------|------------|
-| `credentials.env` | Deploy secrets (`TF_VAR_*`) + the `F1_CARD` pointer | `deploy.py` |
-| `runs/<track>/deployment.env` | Per-track deployment inputs: resolved prefix, pacing, region, card path | `deploy.py` (both tracks) |
-| `runs/<name>/credentials/<prefix>.env` | Credential card (`F1_*`) — what the attendee tools authenticate with | `workshop creds`, `deploy.py` (both tracks) |
+| `credentials.env` | Deploy secrets (`TF_VAR_*`) + the `F1_CARD` pointer (pre-provisioned writes only `F1_CARD`) | `deploy.py` |
+| `runs/<track>/deployment.env` | Per-track deployment inputs: resolved prefix, pacing, region, card path; pre-provisioned adds the environment ID/name, the user ID and the IDs of the three keys it minted (`F1_GLOBAL_KEY_ID`, `F1_KAFKA_KEY_ID`, `F1_SR_KEY_ID`), each saved the moment its key exists: that record *is* the deployment, and what `uv run destroy` deletes | `deploy.py` (every solo track) |
+| `runs/<name>/credentials/<prefix>.env` | Credential card (`F1_*`) — what the attendee tools authenticate with | `workshop creds`, `deploy.py` (every solo track) |
 | `runs/<name>/credentials/<prefix>.md` | The printed handout: Console URL/username/password first, then env IDs | `workshop creds` |
 | `confluent-mcp.env` | MCP server env (mode `0600`), rewritten whole each run | `setup-mcp` |
 
@@ -279,7 +317,7 @@ where a missing Google OAuth client leaves attendee passwords live are all in th
 
 ## File Sync Rule
 
-`docs/demo-reference/*.sql` is the executable Flink SQL source of truth. Its `CREATE TABLE car_state`, `CREATE AGENT pit_strategy_agent`, and `CREATE TABLE pit_decisions` statements must match the copy/paste SQL in all three attendee walkthroughs: `docs/tracks/HOSTED-WORKSHOP.md`, `docs/tracks/SELF-SERVICE.md`, and `docs/tracks/STANDALONE-DEMO.md`. The optional `AI_FORECAST` statement syncs only to HOSTED and STANDALONE — SELF-SERVICE no longer carries it. When changing a statement, update the source file and every walkthrough copy in the same change, then compare the fenced SQL with the source before merging. `docs/demo-reference/orchestrate_social_agent.md` remains the source of truth for the non-SQL Lab 5 configuration. The organizer guide links to the walkthrough and must not duplicate attendee SQL.
+`docs/demo-reference/*.sql` is the executable Flink SQL source of truth. Its `CREATE TABLE car_state`, `CREATE AGENT pit_strategy_agent`, and `CREATE TABLE pit_decisions` statements must match the copy/paste SQL in all three attendee walkthroughs: `docs/tracks/HOSTED-WORKSHOP.md`, `docs/tracks/SELF-SERVICE.md`, and `docs/tracks/STANDALONE-DEMO.md`. `docs/tracks/PRE-PROVISIONED.md` is deliberately not in the set: it covers setup only, hands off to SELF-SERVICE §1, and must carry no SQL. The optional `AI_FORECAST` statement syncs only to HOSTED and STANDALONE — SELF-SERVICE no longer carries it. When changing a statement, update the source file and every walkthrough copy in the same change, then compare the fenced SQL with the source before merging. `docs/demo-reference/orchestrate_social_agent.md` remains the source of truth for the non-SQL Lab 5 configuration. The organizer guide links to the walkthrough and must not duplicate attendee SQL.
 
 The old split lab files remain in git history and aren't part of the sync set.
 Do not restore `labs/instructor-led/` or copy SQL into organizer docs. The default
@@ -295,11 +333,15 @@ attendee walkthrough.
 
 | File | Purpose |
 |------|---------|
-| `deploy.py` | `uv run deploy` — the one solo deploy command: prompts for (or `--track`) self-service vs standalone; the standalone two-tier flow (shared + one attendee) lives here; `--with-labs`, `F1_SHARED_PREFIX`. Prefer it in docs and output |
+| `deploy.py` | `uv run deploy` — the one solo deploy command: prompts for (or `--track`) self-service, standalone or pre-provisioned; the standalone two-tier flow (shared + one attendee) lives here; `--with-labs`, `F1_SHARED_PREFIX`. Prefer it in docs and output |
 | `scripts/selfservice/cli.py` | `uv run selfservice up\|down` — thin shortcuts that forward to `deploy --track self-service` / `destroy --only self-service`; no logic of their own |
 | `scripts/selfservice/provision.py` | Self-service track of `uv run deploy` (terraform/self-service + seed); `export_selfservice_tf_env` is also `uv run destroy`'s entry point |
-| `scripts/common/deploy_common.py` | What both tracks share: track picker, prefix/pacing resolution, LLM provider (CSP Hosted by default, `--bedrock` opts into Bedrock; saved as `TF_VAR_llm_provider` in credentials.env; a deployed track keeps the provider its state shows unless the var is exported), key minting, live Bedrock invoke test, masked summary, card writing, Flink workspace URL, start-dashboard offer |
-| `scripts/common/destroy.py` | `uv run destroy` — the one teardown for both tracks (`--force`/`--yes`, `--only deploy\|self-service`, `--delete-credentials`); once nothing is deployed, removes the setup-mcp/setup-rtce Claude Code registrations and offers to delete credentials.env |
+| `scripts/preprovisioned/provision.py` | Pre-provisioned track of `uv run deploy --track pre-provisioned`, no Terraform: CLI login check → Global key minted with the CLI → user, email and environment lookup → what the platform team built (cluster, pool, SR by name) → Kafka + SR keys over REST → card (Flink and RTCE key = the Global key; `_outputs` keeps `terraform/self-service`'s output names so `write_card` is unchanged) → seed check. Key IDs go to `deployment.env` as they're minted; a run that stops before the card deletes them, and a re-run reuses a card whose keys all still exist. A deployed environment is locked |
+| `scripts/preprovisioned/lookup.py` | `resolve_user_id` (the key's own owner, via `GET /iam/v2/api-keys/{key}`), `user_email`, `visible_environments`, `choose_environment` (one visible → it; several → the one named `<sanitized>-????_env`, else a pick-list; none → `NoEnvironmentError`), `find_resources` (`RIVER-RACING-DEMO-CLUSTER`/`-pool` by name, the only SR, the region's Flink endpoint; `NotProvisionedError` names what's missing), and `sanitize_local_part`, the twin of `platform-team/main.tf`'s sanitizer |
+| `scripts/preprovisioned/keys.py` | The developer's three keys: `mint_global_key` (CLI; `GlobalKeyCapError` at 2), `create_api_key` (REST, 202), `key_exists`, `delete_api_key` (a Global key may delete itself, so it goes last), propagation waits |
+| `platform-team/` | The customer platform team's self-contained Terraform root + `README.md`: per `developer_emails` entry, `modules/developer/` builds the environment and direct EnvironmentAdmin binding, cluster, pool, tables, seed and model, all signed with one OrganizationAdmin Global key; `terraform output -raw handout`. Links to `docs/tracks/PRE-PROVISIONED.md` and back |
+| `scripts/common/deploy_common.py` | What the solo tracks share: track picker, prefix/pacing resolution, LLM provider (CSP Hosted by default, `--bedrock` opts into Bedrock; saved as `TF_VAR_llm_provider` in credentials.env; a deployed track keeps the provider its state shows unless the var is exported), key minting, live Bedrock invoke test, masked summary, card writing, Flink workspace URL, start-dashboard offer |
+| `scripts/common/destroy.py` | `uv run destroy` — the one teardown for every solo track (`--force`/`--yes`, `--only deploy\|self-service\|pre-provisioned`, `--delete-credentials`; pre-provisioned deletes only the developer's three keys, over REST, and the card); once nothing is deployed, removes the setup-mcp/setup-rtce Claude Code registrations and offers to delete credentials.env |
 | `scripts/reset.py` | Clear a deployment's lab objects + truncate source topics; stops the feed first, `--track`, `--with-labs` |
 | `scripts/race_control.py` | `uv run race status\|start\|stop\|restart` — scoped to THIS deployment's one ECS service |
 | `scripts/setup_mcp.py` | `uv run setup-mcp` — register `@confluentinc/mcp-confluent` with Claude Code (project-local) or Codex (user-global) from a credential card |
@@ -324,5 +366,20 @@ attendee walkthrough.
 ## Git
 
 Standalone repo with its own `.git`. Remote:
-`confluentinc/demo-confluent-intelligence-f1`. Use `git push-external` to push
-(Confluent airlock policy for org repos).
+`confluentinc/demo-confluent-intelligence-f1`. Use `git push-external` to push.
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as local markdown files under `.scratch/<feature>/`, gitignored so they stay on your machine (GitHub Issues are disabled on this repo). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary, recorded as a `Status:` line in each issue file: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root, created lazily. See `docs/agents/domain.md`.

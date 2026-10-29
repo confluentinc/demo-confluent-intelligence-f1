@@ -19,13 +19,17 @@ Build a real-time AI pit-strategy system on Confluent Cloud. Live telemetry and 
 > [!NOTE]
 >
 > **Did your instructor give you a separate workshop login?** Use the **[hosted workshop walkthrough](docs/tracks/HOSTED-WORKSHOP.md)**. Your environment and race have already been set up for you.
+>
+> **Did your company's platform team create a Confluent Cloud environment for you?** Use the **[pre-provisioned walkthrough](docs/tracks/PRE-PROVISIONED.md)**. You'll sign in with your work account, connect to the workshop your platform team built in that environment, and run the race on your computer.
 
-Still unsure? Check the credential instructions from your instructor. Your own Confluent Cloud account means **self-service**; a workshop username such as `...+f1wp###@confluent.io` means **hosted workshop**.
+Still unsure? Check the credential instructions from your instructor. Your own Confluent Cloud account means **self-service**; a workshop username such as `...+f1wp###@confluent.io` means **hosted workshop**; an environment your platform team created for you, named like `John-Doe-c21e_env`, means **pre-provisioned**.
 
 | If this describes you | Start here |
 |---|---|
 | **I'm attending a self-service workshop.** I'll use my own Confluent Cloud account, provision my environment, and run the race on my computer. | [Self-service workshop walkthrough](docs/tracks/SELF-SERVICE.md) |
 | **My instructor gave me a workshop login.** The environment and race are already running for me. | [Hosted workshop walkthrough](docs/tracks/HOSTED-WORKSHOP.md) |
+| **My platform team created an environment for me** in my company's Confluent Cloud, with the workshop already built in it. I'll connect to it and run the race on my computer. | [Pre-provisioned walkthrough](docs/tracks/PRE-PROVISIONED.md) |
+| **I'm on that platform team.** I need to build the workshop in one environment per developer in our organization. | [Platform team guide](platform-team/README.md) |
 | **I'm running the workshop.** I need to provision attendee environments and control the race. | [Organizer guide](docs/organizer/README.md) |
 | **I'm running the demo by myself.** I want the full AWS-backed deployment used by the hosted workshop. | [Standalone AWS walkthrough](docs/tracks/STANDALONE-DEMO.md) |
 
@@ -41,9 +45,11 @@ demo-confluent-intelligence-f1/
 ├── docs/
 │   ├── README.md                     # Documentation index
 │   ├── tracks/SELF-SERVICE.md       # Self-service workshop
+│   ├── tracks/PRE-PROVISIONED.md    # Setup in your platform team's environment
 │   ├── tracks/HOSTED-WORKSHOP.md    # Hosted workshop attendee labs
 │   ├── organizer/                   # Hosted workshop setup and run of show
 │   └── maintainers/                 # Constraints
+├── platform-team/                   # Customer platform team: one workshop environment per developer
 ├── scripts/                         # Workshop and self-service commands
 └── terraform/                       # Shared and per-attendee infrastructure
 ```

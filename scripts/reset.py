@@ -10,14 +10,15 @@ topics.
     uv run reset                          # blank slate, feed left stopped
     uv run reset --with-labs              # ...then rebuild LAB 3/4 and restart the race
     uv run reset --keep-source            # keep the accumulated race data
-    uv run reset --track selfservice      # when both tracks are deployed here
+    uv run reset --track selfservice      # when several tracks are deployed here
 
 **The feed is stopped first, always.** Clearing the source topics while a producer
 is still running puts the records straight back, so the truncation used to be a
 no-op that reported success. On the standalone track that means scaling *this*
 deployment's ECS service to zero and waiting for its task to die; on the
-self-service track the producer is the user's own `uv run f1-race`, which this
-command can only detect and refuse to race against (`--force` overrides).
+self-service and pre-provisioned tracks the producer is the user's own
+`uv run f1-race`, which this command can only detect and refuse to race against
+(`--force` overrides).
 
 **Plain reset does not restart the race.** `race_standings` has no
 `scan.startup.mode` override (terraform/modules/topics/main.tf), so it is read
@@ -45,7 +46,9 @@ nonzero**. A reset that half-succeeded and printed "Reset complete" was worse th
 a failure: the next lab run inherited a `car_state` table that was never dropped
 or a topic that was never cleared, with nothing in the output to explain it.
 
-This is a Confluent-only operation — it does not run Terraform.
+This is a Confluent-only operation — it does not run Terraform. It reads the
+standalone and self-service deployments out of their Terraform state; the
+pre-provisioned track has none, so it reads that one's credential card.
 """
 
 import argparse
@@ -62,11 +65,15 @@ from pathlib import Path
 from dotenv import dotenv_values
 
 from scripts.common.deployment_meta import (
+    KEY_CARD,
+    PREPROVISIONED,
     SELFSERVICE,
     STANDALONE,
     TRACKS,
     Track,
-    has_state,
+    is_deployed,
+    load_meta,
+    meta_path,
     tf_state_path,
 )
 from scripts.common.login_checks import ensure_confluent_login
@@ -179,45 +186,87 @@ def is_benign_missing(stderr: str) -> bool:
 # --- deployment selection ---------------------------------------------------
 
 
+def deployment_record(root: Path, track: Track) -> Path:
+    """Where a track's deployment is recorded.
+
+    Its Terraform state, or, for the pre-provisioned track, which runs no
+    Terraform, the deployment.env that records its keys.
+    """
+    return meta_path(root, track) if track is PREPROVISIONED else tf_state_path(root, track)
+
+
 def select_track(root: Path, requested: str | None) -> Track:
     """Which deployment this reset acts on. Ambiguity is an error, never a guess.
 
-    Both solo tracks can be deployed from one checkout, and reset is destructive:
-    it drops tables and deletes records. Picking the "probably right" one would
-    eventually wipe the wrong environment, so with state for both tracks and no
-    `--track`, this exits and lists them — the same contract `resolve_card()` uses
-    for credential cards.
+    Several solo tracks can be deployed from one checkout, and reset is
+    destructive: it drops tables and deletes records. Picking the "probably right"
+    one would eventually wipe the wrong environment, so with more than one track
+    deployed and no `--track`, this exits and lists them — the same contract
+    `resolve_card()` uses for credential cards.
     """
     if requested:
         track = TRACKS[requested]
-        if not has_state(root, track):
-            print(f"No Terraform state for the {track.name} track at {tf_state_path(root, track)}")
+        if not is_deployed(root, track):
+            if track is PREPROVISIONED:
+                print(f"No keys recorded for the {track.name} track in {deployment_record(root, track)}")
+            else:
+                print(f"No Terraform state for the {track.name} track at {deployment_record(root, track)}")
             print(f"({track.label})")
             sys.exit(1)
         return track
 
-    deployed = [t for t in (STANDALONE, SELFSERVICE) if has_state(root, t)]
+    deployed = [t for t in TRACKS.values() if is_deployed(root, t)]
 
     if not deployed:
-        print("No Terraform state found for either solo track:")
-        for track in (STANDALONE, SELFSERVICE):
-            print(f"  {tf_state_path(root, track)}")
-        print("\n`uv run reset` needs the state written by `uv run deploy` or")
-        print("`uv run deploy --track self-service`, which only exists on the machine that ran them")
+        print("No deployment found for any solo track:")
+        for track in TRACKS.values():
+            print(f"  {deployment_record(root, track)}")
+        print("\n`uv run reset` needs the record written by `uv run deploy --track <track>`,")
+        print("which only exists on the machine that ran it")
         print("(it is gitignored). If you're a workshop attendee, ask your instructor to")
         print("reset your environment — a wsa-provisioned workshop keeps its state in")
         print("wsa's own run directory, out of this checkout's reach.")
         sys.exit(1)
 
     if len(deployed) > 1:
-        print("Both solo tracks are deployed from this checkout:")
+        print("Several solo tracks are deployed from this checkout:")
         for track in deployed:
-            print(f"  --track {track.name:<12} {track.label}")
+            print(f"  --track {track.name:<16} {track.label}")
         print("\nReset drops tables and deletes records, so it won't guess which one you")
         print("meant. Name it with --track.")
         sys.exit(1)
 
     return deployed[0]
+
+
+def card_outputs(root: Path, track: Track) -> dict:
+    """The Terraform-output-shaped dict this reset needs, from a track's credential card.
+
+    For the pre-provisioned track, which has no state to read: its deploy wrote
+    the card (`runs/<track>/deployment.env` names it) from what the platform team
+    built, with the developer's own keys. Exits when the card is missing.
+    """
+    saved = load_meta(root, track).get(KEY_CARD)
+    card_path = root / saved if saved else None
+    if card_path is None or not card_path.is_file():
+        print(f"No credential card recorded in {meta_path(root, track)}.")
+        print(f"Re-run `uv run deploy --track {track.name}` to write it.")
+        sys.exit(1)
+    card = {k: v or "" for k, v in dotenv_values(card_path).items()}
+    return {
+        "organization_id": card.get("F1_ORGANIZATION_ID", ""),
+        "environment_id": card.get("F1_ENVIRONMENT_ID", ""),
+        "environment_name": card.get("F1_CATALOG", ""),
+        "cluster_id": card.get("F1_CLUSTER_ID", ""),
+        "cluster_name": card.get("F1_DATABASE", ""),
+        "cluster_bootstrap": card.get("F1_KAFKA_BOOTSTRAP", ""),
+        "kafka_api_key": card.get("F1_KAFKA_API_KEY", ""),
+        "kafka_api_secret": card.get("F1_KAFKA_API_SECRET", ""),
+        "compute_pool_id": card.get("F1_COMPUTE_POOL_ID", ""),
+        "flink_rest_endpoint": card.get("F1_FLINK_REST_ENDPOINT", ""),
+        "flink_api_key": card.get("F1_FLINK_API_KEY", ""),
+        "flink_api_secret": card.get("F1_FLINK_API_SECRET", ""),
+    }
 
 
 def flatten_outputs(tf: dict) -> dict:
@@ -611,11 +660,11 @@ def truncate_topics(admin, topics: list[str], present: set[str] | None) -> list[
 # --- next-step hints -------------------------------------------------------
 
 
-def f1_race_command(root: Path, creds: dict) -> str:
+def f1_race_command(root: Path, creds: dict, track: Track = SELFSERVICE) -> str:
     """The exact `uv run f1-race` command for this checkout.
 
     `f1-race` resolves its own card, so the bare command is right whenever
-    resolution is unambiguous. When the self-service card is one of several and
+    resolution is unambiguous. When `track`'s card is one of several and
     the F1_CARD pointer isn't already aimed at it, `--creds` is spelled out —
     otherwise the printed command would hard-exit with "Multiple credential cards
     found". Globbed directly instead of calling resolve_card(), which exits the
@@ -627,7 +676,7 @@ def f1_race_command(root: Path, creds: dict) -> str:
     destructive work already done. A less specific hint is the cheaper outcome.
     """
     try:
-        cards = sorted((root / "runs" / SELFSERVICE.name / "credentials").glob("*.env"))
+        cards = sorted((root / "runs" / track.name / "credentials").glob("*.env"))
         if len(cards) != 1:
             return "uv run f1-race"
 
@@ -647,7 +696,7 @@ def main() -> None:
     parser.add_argument(
         "--track",
         choices=sorted(TRACKS),
-        help="Which deployment to reset. Required only when both tracks have Terraform state here.",
+        help="Which deployment to reset. Required only when more than one track is deployed here.",
     )
     parser.add_argument(
         "--keep-source",
@@ -669,7 +718,7 @@ def main() -> None:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Proceed even though a local `uv run f1-race` is still producing (self-service only).",
+        help="Proceed even though a local `uv run f1-race` is still producing (self-service, pre-provisioned).",
     )
     args = parser.parse_args()
 
@@ -679,11 +728,11 @@ def main() -> None:
     creds_file = root / "credentials.env"
     creds = dotenv_values(creds_file) if creds_file.exists() else {}
 
-    # Resolved before anything interactive: the per-deployment Terraform state is
-    # the source of truth for the environment this touches, and it only exists on
-    # the machine that deployed it. Checked ahead of the Confluent login so
-    # someone who runs this by mistake gets the real answer instead of a prompt
-    # for a login they don't have.
+    # Resolved before anything interactive: the per-deployment Terraform state (or,
+    # pre-provisioned, deployment.env and the card) is the source of truth for the
+    # environment this touches, and it only exists on the machine that deployed
+    # it. Checked ahead of the Confluent login so someone who runs this by mistake
+    # gets the real answer instead of a prompt for a login they don't have.
     track = select_track(root, args.track)
     print(f"Track: {track.name} — {track.label}")
 
@@ -698,11 +747,14 @@ def main() -> None:
     if creds.get("TF_VAR_confluent_cloud_api_secret"):
         os.environ["CONFLUENT_CLOUD_API_SECRET"] = creds["TF_VAR_confluent_cloud_api_secret"]
 
-    try:
-        tf = flatten_outputs(run_terraform_output(tf_state_path(root, track)))
-    except Exception as e:
-        print(f"Error reading terraform state: {e}")
-        sys.exit(1)
+    if track is PREPROVISIONED:
+        tf = card_outputs(root, track)
+    else:
+        try:
+            tf = flatten_outputs(run_terraform_output(tf_state_path(root, track)))
+        except Exception as e:
+            print(f"Error reading terraform state: {e}")
+            sys.exit(1)
 
     env_id = tf["environment_id"]
     cluster_id = tf["cluster_id"]
@@ -831,7 +883,7 @@ def main() -> None:
         print("  Watch it: `uv run f1-pitwall`")
     elif labs_ok:
         print("Lab objects rebuilt. Start the race feed to fill them:")
-        print(f"  {f1_race_command(root, creds)}")
+        print(f"  {f1_race_command(root, creds, track)}")
         print("  `car_state` then stays empty for ~12 windows while anomaly detection")
         print("  warms up. The anomaly fires around lap 24. Watch it: `uv run f1-pitwall`")
     elif args.keep_source and not stop_feed:
@@ -841,7 +893,7 @@ def main() -> None:
         print("  The accumulated race data is still in car_telemetry and race_standings,")
         print("  so LAB 3 replays the finished races along with the new one.")
     else:
-        start = "uv run race start" if ecs_track else f1_race_command(root, creds)
+        start = "uv run race start" if ecs_track else f1_race_command(root, creds, track)
         print("Next steps:")
         print("  1. Re-run the stream-processing labs — LAB 3, then LAB 4 (`uv run f1-sql`).")
         print(f"  2. `{start}`  — starts a fresh race from lap 0.")

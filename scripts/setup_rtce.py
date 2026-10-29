@@ -11,7 +11,8 @@ local coding agent, using this deployment's credential card.
 RTCE exposes `car_telemetry` as an MCP tool, so a coding agent can query the
 live race feed directly — no Kafka client, no consumer group. The card fields
 this reads (F1_RTCE_MCP_ENDPOINT / F1_RTCE_API_KEY / F1_RTCE_API_SECRET)
-come from Terraform outputs during provisioning. Both modes also accept
+come from Terraform outputs during provisioning, or, on the pre-provisioned
+track, from the developer's own Global key. Both modes also accept
 RTCE_API_KEY / RTCE_API_SECRET overrides. Missing keys trigger an offer to
 create one through the Confluent CLI, followed by manual entry if needed.
 
@@ -272,7 +273,8 @@ def warn_on_empty_card_fields(card: dict[str, str]) -> list[str]:
     if missing:
         print("Error: the credential card has no RTCE keys — missing: " + ", ".join(missing))
         print("  Regenerate it with RTCE keys enabled:")
-        print("    uv run deploy --track self-service   |   uv run workshop creds --rtce-keys")
+        print("    uv run deploy --track self-service   |   uv run deploy --track pre-provisioned")
+        print("    uv run workshop creds --rtce-keys")
     return missing
 
 
@@ -312,7 +314,11 @@ _KEY_HELP = "https://docs.confluent.io/cloud/current/ai/real-time-context-engine
 
 
 def terraform_rtce_outputs(card: dict[str, str]) -> dict[str, str]:
-    """Read only a local state whose environment and cluster match the selected card."""
+    """Read only a local state whose environment and cluster match the selected card.
+
+    The pre-provisioned track has no state to read: it runs no Terraform, and its
+    card always carries the developer's Global key as the RTCE key.
+    """
     for track in ("aws", "self-service"):
         state = get_project_root() / "terraform" / track / "terraform.tfstate"
         if not state.exists():
@@ -340,6 +346,12 @@ def terraform_rtce_outputs(card: dict[str, str]) -> dict[str, str]:
 
 
 def offer_cli_key(service_account_id: str = "") -> tuple[str, str]:
+    if service_account_id and not service_account_id.startswith("sa-"):
+        # A user ID (u-...), such as a pre-provisioned developer's principal, has no
+        # service account to mint for, and that developer's own Global key already
+        # is the RTCE key; another would spend their last Global-key slot (2 per
+        # user). Fall through to pasting that key.
+        return "", ""
     owner = f"service account {service_account_id}" if service_account_id else "the currently logged-in CLI user"
     print(f"Create a Global API key for {owner}? [y/N] ", end="", file=sys.stderr)
     if input().strip().lower() not in ("y", "yes"):

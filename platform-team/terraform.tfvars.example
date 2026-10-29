@@ -1,0 +1,22 @@
+# Copy to terraform.tfvars (gitignored) and fill in. Or leave the key and secret
+# out of this file and export TF_VAR_confluent_cloud_api_key and
+# TF_VAR_confluent_cloud_api_secret instead.
+
+# A Global API key owned by an OrganizationAdmin. It also signs every Flink
+# statement, which is why it must be Global rather than a Cloud key.
+confluent_cloud_api_key    = "<organization-admin-global-api-key>"
+confluent_cloud_api_secret = "<organization-admin-global-api-secret>"
+
+# One email per person, instructors included. Each must already be a user in
+# the org (SSO first sign-in or an accepted invitation). Emails are compared
+# case-insensitively, so list each person once.
+developer_emails = [
+  "jane.doe@example.com",
+  "john.smith@example.com",
+]
+
+# Optional; these are the defaults. Every developer's cluster and compute pool
+# go in the one region, so check the CSP Hosted model is available there.
+# region           = "us-east-1"
+# flink_max_cfu    = 10
+# csp_hosted_model = "anthropic.claude-sonnet-4-6"

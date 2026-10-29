@@ -30,12 +30,14 @@ way.
 from __future__ import annotations
 
 import importlib.util
+import sys
 import time
 from pathlib import Path
 
 import requests
 
-from scripts.common.deployment_meta import SELFSERVICE, Track, seed_marker_path
+from scripts.common.deploy_common import TRACKS
+from scripts.common.deployment_meta import PREPROVISIONED, SELFSERVICE, Track, seed_marker_path
 from scripts.common.terraform import get_project_root
 from scripts.workshop.sql_shell import FlinkSession
 
@@ -183,6 +185,28 @@ def run_insert(session: FlinkSession, timeout: int = 240) -> tuple[bool, str]:
     return False, f"INSERT reached {phase}: {detail[:500] or 'no detail returned'}"
 
 
+def _deploy_command(track: Track) -> str:
+    """The `uv run deploy` that re-runs this seed for *track* (its CLI name, not `track.name`)."""
+    cli = next((name for name, (t, _label) in TRACKS.items() if t == track), None)
+    return f"uv run deploy --track {cli}" if cli else "uv run deploy"
+
+
+def _wrong_count_remedy(card: dict[str, str], track: Track) -> list[str]:
+    """What to do about a table that holds the wrong number of rows, for *track*.
+
+    The pre-provisioned track doesn't own the table — the platform team created
+    and seeded it — so tearing down this deployment (its keys) would fix nothing.
+    """
+    if track is PREPROVISIONED:
+        env_id = card.get("F1_ENVIRONMENT_ID") or "your environment"
+        env = f"{card['F1_CATALOG']} ({env_id})" if card.get("F1_CATALOG") else env_id
+        return [
+            f"  Ask your platform team to rebuild `{TABLE}` in {env}: it's theirs, and this",
+            f"  deploy never deletes rows. Then re-run `{_deploy_command(track)}`.",
+        ]
+    return [f"  Tear down and re-provision (`uv run destroy && {_deploy_command(track)}`)."]
+
+
 def _write_marker(root: Path, track: Track, environment_id: str) -> None:
     """Record *which environment* was verified, not merely that something was.
 
@@ -213,6 +237,7 @@ def ensure_driver_race_history(
     expected = expected_rows()
     env_id = (card.get("F1_ENVIRONMENT_ID") or "").strip()
     marker = seed_marker_path(root, track)
+    deploy = _deploy_command(track)
 
     if marker.exists():
         recorded = marker.read_text().strip()
@@ -229,7 +254,7 @@ def ensure_driver_race_history(
         # Most often a cold compute pool scheduling the first statement slowly, so
         # the fix is simply to try again. Safe to repeat *because* it counts first:
         # a re-run inserts only into a table it has confirmed to be empty.
-        print("  Re-run `uv run deploy --track self-service` — it counts before inserting, so it cannot double-seed.")
+        print(f"  Re-run `{deploy}` — it counts before inserting, so it cannot double-seed.")
         print(f"  Or check by hand: uv run f1-sql  ->  SELECT COUNT(*) FROM `{TABLE}`;")
         return False
 
@@ -241,7 +266,7 @@ def ensure_driver_race_history(
     if count != 0:
         print(f"  {TABLE} holds {count} rows, expected {expected}.")
         print("  Refusing to insert again — that would add a second copy of every row.")
-        print("  Tear down and re-provision (`uv run destroy && uv run deploy --track self-service`).")
+        print("\n".join(_wrong_count_remedy(card, track)))
         return False
 
     print(f"  Seeding {TABLE} ({expected} rows) via a bounded Flink INSERT...")
@@ -253,7 +278,7 @@ def ensure_driver_race_history(
     count, problem = count_rows(session, expected, timeout=count_timeout)
     if count is None:
         print(f"  INSERT completed but the row count could not be confirmed: {problem}")
-        print("  Re-run `uv run deploy --track self-service` to verify (it will not insert twice).")
+        print(f"  Re-run `{deploy}` to verify (it will not insert twice).")
         return False
     if count != expected:
         print(f"  INSERT completed but {TABLE} holds {count} rows, expected {expected}.")
@@ -262,3 +287,11 @@ def ensure_driver_race_history(
     print(f"  Seeded and verified {count} rows.")
     _write_marker(root, track, env_id)
     return True
+
+
+if __name__ == "__main__":
+    # platform-team/ seeds the same rows from a checked-in copy of this INSERT,
+    # because the platform team has no Python. Regenerate it from the repo root:
+    #   uv run python -m scripts.selfservice.seed > platform-team/modules/developer/driver_race_history_seed.sql
+    # tests/test_platform_team_sync.py fails when the copy drifts.
+    sys.stdout.write(build_insert())

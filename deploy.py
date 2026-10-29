@@ -8,6 +8,9 @@
        terraform/aws-shared  — shared VPC/subnets, Postgres, ECR + simulator image
        terraform/aws         — one Confluent environment + ECS simulator, wired to
                                the shared outputs
+  3. Pre-provisioned — self-service inside an environment a customer's platform
+     team created and filled. It mints the developer's own keys and writes their
+     card; it runs no Terraform. See scripts/preprovisioned/provision.py.
 
 For a real multi-attendee workshop, use `wsa` with wsa-spec-aws.yaml instead —
 the standalone track is the manual single-environment equivalent. Nothing here is
@@ -17,12 +20,13 @@ workshop's without changing workshop behavior.
 Usage:
   uv run deploy                                       # prompts for the track and inputs
   uv run deploy --track self-service                  # skip the track prompt
+  uv run deploy --track pre-provisioned               # in your platform team's environment
   uv run deploy --automated --track standalone        # no prompts; a *bare* environment
   uv run deploy --automated --track standalone --with-labs  # LAB 3 + LAB 4 prebuilt
 
 `--automated` and `--with-labs` are deliberately orthogonal: `--automated` means
 "don't prompt", not "build the labs". A smoke test wants a bare environment.
-Tear either track down with `uv run destroy`.
+Tear any track down with `uv run destroy`.
 """
 
 import argparse
@@ -52,6 +56,7 @@ from scripts.common.simulator_control import (
 from scripts.common.terraform import get_project_root, run_terraform_output
 from scripts.common.terraform_runner import run_terraform
 from scripts.common.ui import prompt_with_default
+from scripts.preprovisioned import provision as preprovisioned
 from scripts.selfservice import provision as selfservice
 
 TRACK = meta.STANDALONE
@@ -520,11 +525,16 @@ def deploy_standalone(args: argparse.Namespace, root, creds_file, creds: dict) -
 
 
 def main(argv: list[str] | None = None):
-    parser = argparse.ArgumentParser(description="Deploy one F1 environment: self-service or standalone")
+    parser = argparse.ArgumentParser(
+        description="Deploy one F1 environment: self-service, standalone, or pre-provisioned"
+    )
     parser.add_argument(
         "--track",
         choices=list(common.TRACKS),
-        help="self-service (Confluent-only) or standalone (Confluent + AWS). Prompted when omitted.",
+        help=(
+            "self-service (Confluent-only), standalone (Confluent + AWS), or pre-provisioned "
+            "(Confluent-only, in an environment your platform team created). Prompted when omitted."
+        ),
     )
     parser.add_argument(
         "--automated",
@@ -555,16 +565,21 @@ def main(argv: list[str] | None = None):
     print("=== F1 Pit Wall — Deploy ===\n")
     root = get_project_root()
 
-    # First, and before resolving the prefix: reading an existing deployment's
-    # prefix out of Terraform state shells out to the terraform binary.
-    if not check_terraform_installed():
+    # Picking the track only looks for files. Then, for the tracks that run
+    # Terraform, check for it before anything else, including resolving the
+    # prefix: reading an existing deployment's prefix out of Terraform state
+    # shells out to the terraform binary. The pre-provisioned track runs none —
+    # it mints keys and writes a card — so a developer there needs no Terraform.
+    track = common.pick_track(root, args.track, args.automated)
+    if track is not meta.PREPROVISIONED and not check_terraform_installed():
         print("Error: Terraform not found. Install from https://developer.hashicorp.com/terraform/install")
         sys.exit(1)
 
-    track = common.pick_track(root, args.track, args.automated)
     creds_file, creds = load_or_create_credentials_file(root)
     if track is meta.SELFSERVICE:
         selfservice.deploy(args, root, creds_file, creds)
+    elif track is meta.PREPROVISIONED:
+        preprovisioned.deploy(args, root, creds_file, creds)
     else:
         deploy_standalone(args, root, creds_file, creds)
 

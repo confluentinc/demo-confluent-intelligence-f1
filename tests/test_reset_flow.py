@@ -19,6 +19,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from scripts import reset
+from scripts.common import deployment_meta as meta
 
 STANDALONE_TF = {
     "environment_id": "env-1",
@@ -41,6 +42,37 @@ STANDALONE_TF = {
 # no ECS outputs at all.
 SELFSERVICE_TF = {k: v for k, v in STANDALONE_TF.items() if not k.startswith("ecs_") and not k.startswith("kafka_")}
 SELFSERVICE_TF["attendee_credentials"] = {"kafka_api_key": "K", "kafka_api_secret": "S"}
+
+# Pre-provisioned has no Terraform state at all: reset reads its credential card,
+# whose Flink key is the developer's Global key.
+PREPROVISIONED_CARD = {
+    "F1_ORGANIZATION_ID": "org-1",
+    "F1_ENVIRONMENT_ID": "env-mine",
+    "F1_CATALOG": "John-Doe-c21e_env",
+    "F1_CLUSTER_ID": "lkc-mine",
+    "F1_DATABASE": "RIVER-RACING-DEMO-CLUSTER",
+    "F1_KAFKA_BOOTSTRAP": "SASL_SSL://pkc-x.us-east-1.aws.confluent.cloud:9092",
+    "F1_KAFKA_API_KEY": "K",
+    "F1_KAFKA_API_SECRET": "S",
+    "F1_COMPUTE_POOL_ID": "lfcp-1",
+    "F1_FLINK_REST_ENDPOINT": "https://flink.example",
+    "F1_FLINK_API_KEY": "G",
+    "F1_FLINK_API_SECRET": "GS",
+}
+PREPROVISIONED_TF = {
+    "organization_id": "org-1",
+    "environment_id": "env-mine",
+    "environment_name": "John-Doe-c21e_env",
+    "cluster_id": "lkc-mine",
+    "cluster_name": "RIVER-RACING-DEMO-CLUSTER",
+    "cluster_bootstrap": "SASL_SSL://pkc-x.us-east-1.aws.confluent.cloud:9092",
+    "kafka_api_key": "K",
+    "kafka_api_secret": "S",
+    "compute_pool_id": "lfcp-1",
+    "flink_rest_endpoint": "https://flink.example",
+    "flink_api_key": "G",
+    "flink_api_secret": "GS",
+}
 
 
 class ResetFlowTests(unittest.TestCase):
@@ -280,6 +312,67 @@ class ResetFlowTests(unittest.TestCase):
 
     def test_no_state_at_all_is_an_error(self):
         self.assertEqual(self.run_reset([], STANDALONE_TF), 1)
+
+    # --- pre-provisioned: no Terraform anywhere ---
+
+    def make_preprovisioned(self, card: bool = True, keys: bool = True) -> None:
+        path = "runs/pre-provisioned/credentials/DEMO.env"
+        if card:
+            (self.root / path).parent.mkdir(parents=True)
+            (self.root / path).write_text("".join(f"{k}={v}\n" for k, v in PREPROVISIONED_CARD.items()))
+        recorded = {meta.KEY_CARD: path, meta.KEY_ENVIRONMENT_ID: "env-mine"}
+        if keys:
+            recorded[meta.KEY_GLOBAL_KEY_ID] = "G"
+        meta.save_meta(self.root, meta.PREPROVISIONED, **recorded)
+
+    def run_preprovisioned_reset(self, argv: list[str]) -> int:
+        with patch.object(reset, "run_terraform_output", side_effect=AssertionError("terraform called")):
+            return self.run_reset(argv, {})
+
+    def test_preprovisioned_reset_reads_the_card_and_runs_no_terraform(self):
+        self.make_preprovisioned()
+
+        with patch("builtins.print") as printed:
+            rc = self.run_preprovisioned_reset(["--with-labs"])
+        output = "\n".join(str(c.args[0]) for c in printed.call_args_list if c.args)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.delete_flink_statements.call_args.args[0], PREPROVISIONED_TF)
+        self.assertEqual(self.kafka_admin.call_args.args[0], PREPROVISIONED_TF)
+        self.assertEqual(self.create_lab_objects.call_args.args[0], PREPROVISIONED_TF)
+        self.assertIn("delete_topic=car_state", self.calls)
+        self.assertEqual(self.delete_topic_and_subjects.call_args.args[1:3], ("env-mine", "lkc-mine"))
+        # Its race is the local f1-race, as on self-service.
+        self.assertNotIn("scale=0", self.calls)
+        self.assertIn("uv run f1-race", output)
+
+    def test_preprovisioned_reset_refuses_while_a_local_race_runs(self):
+        self.make_preprovisioned()
+        self.local_race_processes.return_value = ["4242  uv run f1-race"]
+
+        self.assertEqual(self.run_preprovisioned_reset([]), 1)
+        self.assertNotIn("truncate_topics", self.calls)
+
+    def test_preprovisioned_without_its_card_is_an_error(self):
+        self.make_preprovisioned(card=False)
+
+        self.assertEqual(self.run_preprovisioned_reset([]), 1)
+        self.assertEqual(self.calls, [])
+
+    def test_preprovisioned_without_recorded_keys_is_not_deployed(self):
+        self.make_preprovisioned(keys=False)
+
+        self.assertEqual(self.run_preprovisioned_reset(["--track", "pre-provisioned"]), 1)
+        self.assertEqual(self.run_preprovisioned_reset([]), 1)
+        self.assertEqual(self.calls, [])
+
+    def test_preprovisioned_beside_another_track_requires_an_explicit_track(self):
+        self.make_state("self-service")
+        self.make_preprovisioned()
+
+        self.assertEqual(self.run_preprovisioned_reset([]), 1)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.run_preprovisioned_reset(["--track", "pre-provisioned"]), 0)
 
 
 class LocalRaceDetectionTests(unittest.TestCase):

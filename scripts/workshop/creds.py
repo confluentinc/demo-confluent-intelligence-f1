@@ -153,7 +153,14 @@ def _mint_rtce_key(sa_id: str, prefix: str) -> tuple[str, str]:
 
     Returns ``("", "")`` on any failure: a card without RTCE keys is degraded but
     still usable for every other lab, so this must not abort the run.
+
+    Refuses anything but a service account (``sa-...``). The pre-provisioned track
+    reports the developer's user ID as its ``service_account_id`` (a principal ID;
+    ``_outputs`` in scripts/preprovisioned/provision.py), and "delete its Global
+    keys first" would then delete the developer's own key.
     """
+    if not sa_id.startswith("sa-"):
+        return "", ""
     for stale in _existing_global_keys(sa_id):
         subprocess.run(
             ["confluent", "api-key", "delete", stale, "--force"],
@@ -228,8 +235,9 @@ def _card_fields(
     return {
         "prefix": prefix,
         "email": email,
-        # Console login. Empty on the standalone/self-service tracks, which
-        # don't set grant_console_access — those cards stay API-key-only.
+        # Console login. Empty on the standalone/self-service/pre-provisioned
+        # tracks, which don't set grant_console_access (pre-provisioned users sign
+        # in with their own SSO account) — those cards stay API-key-only.
         "console_url": out.get("console_url", "") or ac.get("environment_url", ""),
         "console_username": out.get("console_username", ""),
         "console_password": out.get("console_password", ""),

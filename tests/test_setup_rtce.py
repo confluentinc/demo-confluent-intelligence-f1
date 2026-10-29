@@ -9,8 +9,10 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from scripts.setup_rtce import basic_token, write_codex_config
+from scripts import setup_rtce
+from scripts.setup_rtce import basic_token, warn_on_empty_card_fields, write_codex_config
 
 ENDPOINT = "https://mcp.us-east-1.aws.confluent.cloud/mcp/v1/context-engine/organizations/org/environments/env/kafka-clusters/lkc"
 TOKEN = basic_token("KEY", "SECRET")
@@ -82,6 +84,50 @@ class WriteCodexConfigTests(unittest.TestCase):
             self.assertIn(ENDPOINT, out.getvalue())
             # the broken file is left untouched, not overwritten
             self.assertIn("not [ valid toml", config_path.read_text())
+
+
+class EmptyCardHintTests(unittest.TestCase):
+    def test_regenerate_hint_names_every_card_writing_deploy_track(self):
+        with redirect_stdout(io.StringIO()) as out:
+            missing = warn_on_empty_card_fields({})
+        self.assertIn("F1_RTCE_API_KEY", missing)
+        self.assertIn("uv run deploy --track self-service", out.getvalue())
+        self.assertIn("uv run deploy --track pre-provisioned", out.getvalue())
+
+
+PREPROVISIONED_CARD = {
+    "F1_ENVIRONMENT_ID": "env-mine",
+    "F1_CLUSTER_ID": "lkc-mine",
+    "F1_RTCE_API_KEY": "GLOBALKEY",
+    "F1_RTCE_API_SECRET": "GLOBALSECRET",
+}
+
+
+class PreprovisionedCardTests(unittest.TestCase):
+    """The pre-provisioned track runs no Terraform; its card carries the developer's Global key."""
+
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name)
+        # Left behind by the old developer Terraform root: never read again.
+        state = root / "terraform" / "pre-provisioned" / "terraform.tfstate"
+        state.parent.mkdir(parents=True)
+        state.write_text("{}")
+        for p in (
+            patch.object(setup_rtce, "get_project_root", return_value=root),
+            patch.object(setup_rtce.subprocess, "run", side_effect=AssertionError("terraform called")),
+            patch("builtins.input", side_effect=AssertionError("prompted")),
+        ):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_no_terraform_state_is_scanned_for_it(self):
+        self.assertEqual(setup_rtce.terraform_rtce_outputs(PREPROVISIONED_CARD), {})
+
+    def test_the_cards_global_key_is_used_as_is(self):
+        resolved = setup_rtce.resolve_rtce_credentials(PREPROVISIONED_CARD)
+        self.assertEqual((resolved["F1_RTCE_API_KEY"], resolved["F1_RTCE_API_SECRET"]), ("GLOBALKEY", "GLOBALSECRET"))
 
 
 if __name__ == "__main__":

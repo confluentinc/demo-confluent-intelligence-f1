@@ -34,14 +34,14 @@ logger = logging.getLogger("f1-pitwall")
 
 
 def _labels_for_card(path: Path) -> str:
-    """'steps' for a self-service / standalone card, 'labs' for a hosted one.
+    """'steps' for a solo-track card (any of `meta.TRACKS`), 'labs' for a hosted one.
 
-    Only `deploy --track self-service` and `deploy` write cards under runs/<track>/credentials/;
+    Only `uv run deploy --track <track>` writes cards under runs/<track>/credentials/;
     a hosted attendee's card is the pasted Env File block or an instructor-handed
     file, and the hosted walkthrough numbers its sections as labs.
     """
     resolved = path.resolve()
-    for track in (meta.SELFSERVICE, meta.STANDALONE):
+    for track in meta.TRACKS.values():
         if resolved.is_relative_to((PROJECT_ROOT / "runs" / track.name).resolve()):
             return "steps"
     return "labs"
@@ -65,8 +65,8 @@ def main() -> None:
     parser.add_argument(
         "--labels",
         choices=("steps", "labs"),
-        help="How the locked panels name their section: 'steps' (self-service/standalone) "
-        "or 'labs' (hosted workshop). Default: inferred from the credential card.",
+        help="How the locked panels name their section: 'steps' (self-service/standalone/"
+        "pre-provisioned) or 'labs' (hosted workshop). Default: inferred from the credential card.",
     )
     args = parser.parse_args()
 

@@ -403,5 +403,13 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn('KAFKA_API_KEY="KKEY7"', self.env_file())
 
 
+class EmptyCardHintTests(unittest.TestCase):
+    def test_regenerate_hint_names_every_deploy_track(self):
+        with redirect_stdout(io.StringIO()) as out:
+            setup_mcp.warn_on_empty_card_fields({})
+        for command in ("uv run deploy --track self-service", "uv run deploy --track pre-provisioned"):
+            self.assertIn(command, out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -19,8 +19,9 @@ Deliberately narrow:
   demo takes.
 - Nothing from ``scripts/instructor/`` is imported, not even a constant — the
   fan-out must not be one autocomplete away from this file.
-- Self-service has no ECS service at all (its race is the local ``uv run f1-race``
-  process), so this command refuses that tier by name rather than failing obscurely.
+- Self-service and pre-provisioned have no ECS service at all (their race is the
+  local ``uv run f1-race`` process), so this command refuses those tracks by name
+  rather than failing obscurely.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
+from scripts.common.deployment_meta import PREPROVISIONED, SELFSERVICE, is_deployed
 from scripts.common.simulator_control import (
     describe_simulator,
     has_ecs,
@@ -47,6 +49,9 @@ from scripts.common.terraform import get_project_root, run_terraform_output
 # import graph can reach the account-wide fan-out.
 DEFAULT_REGION = "us-east-1"
 
+# The solo tracks whose race feed is the local `uv run f1-race`, by display name.
+LOCAL_RACE_TRACKS = {"self-service": SELFSERVICE, "pre-provisioned": PREPROVISIONED}
+
 
 def load_deployment(root: Path) -> tuple[dict, str]:
     """This deployment's Terraform outputs plus the region to reach ECS in.
@@ -60,8 +65,11 @@ def load_deployment(root: Path) -> tuple[dict, str]:
     if not state.exists():
         print(f"No Terraform state at {state}")
         print("\n`uv run race` controls the ECS race feed created by `uv run deploy`.")
-        if (root / "terraform" / "self-service" / "terraform.tfstate").exists():
-            print("This checkout has a self-service deployment instead, which has no ECS")
+        # Self-service has Terraform state; pre-provisioned runs no Terraform, so
+        # its deployment is the keys its deployment.env records.
+        local = [name for name, track in LOCAL_RACE_TRACKS.items() if is_deployed(root, track)]
+        if local:
+            print(f"This checkout has a {' / '.join(local)} deployment instead, which has no ECS")
             print("service — its race feed is the local simulator: `uv run f1-race`.")
         else:
             print("If you're an attendee, your instructor controls the race feed.")

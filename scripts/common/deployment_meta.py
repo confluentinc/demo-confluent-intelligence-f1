@@ -92,8 +92,16 @@ class Track:
 
 STANDALONE = Track("standalone", "aws", "", "standalone demo (Confluent + Postgres/CDC/ECS)")
 SELFSERVICE = Track("selfservice", "self-service", "s", "self-service (Confluent-only)")
+# Self-service inside a customer's own org, in an environment their platform team
+# created and filled. It runs no Terraform: its deployment is the keys recorded in
+# runs/pre-provisioned/deployment.env. Its prefix is fixed (`DEMO`, matching the
+# platform team's RIVER-RACING-DEMO-* names), so the suffix only keeps a derived
+# prefix distinct should anything ever derive one.
+PREPROVISIONED = Track(
+    "pre-provisioned", "pre-provisioned", "p", "pre-provisioned (Confluent-only, in your platform team's environment)"
+)
 
-TRACKS: dict[str, Track] = {t.name: t for t in (STANDALONE, SELFSERVICE)}
+TRACKS: dict[str, Track] = {t.name: t for t in (STANDALONE, SELFSERVICE, PREPROVISIONED)}
 
 
 # --- prefix derivation ------------------------------------------------------
@@ -172,6 +180,21 @@ KEY_CARD = "F1_CARD_PATH"
 KEY_SECONDS_PER_LAP = "F1_SECONDS_PER_LAP"
 KEY_TRACK = "F1_TRACK"
 KEY_REGION = "F1_REGION"
+# Pre-provisioned only: the environment the deploy resolved (and confirmed) and
+# the developer's user ID. Saved before any key exists in it: a re-run is locked
+# to that environment, and a teardown must not have to re-query the API for it.
+KEY_ENVIRONMENT_ID = "F1_ENVIRONMENT_ID"
+KEY_ENVIRONMENT_NAME = "F1_ENVIRONMENT_NAME"
+KEY_USER_ID = "F1_USER_ID"
+# Pre-provisioned only: the IDs of the three keys the deploy minted for the
+# developer — the whole of what it creates. Each is saved the moment its key
+# exists, so a run that dies partway still leaves a record to clean up from.
+# IDs only; the secrets are on the card.
+KEY_GLOBAL_KEY_ID = "F1_GLOBAL_KEY_ID"
+KEY_KAFKA_KEY_ID = "F1_KAFKA_KEY_ID"
+KEY_SR_KEY_ID = "F1_SR_KEY_ID"
+# In deletion order: the Global key last, because it authenticates the deletes.
+KEY_ID_FIELDS = (KEY_KAFKA_KEY_ID, KEY_SR_KEY_ID, KEY_GLOBAL_KEY_ID)
 
 
 def meta_path(root: Path, track: Track) -> Path:
@@ -202,12 +225,31 @@ def save_meta(root: Path, track: Track, **fields: str) -> Path:
     lines = [
         f"# {track.label}",
         "# Resolved deployment inputs for this track. Not secrets — see credentials.env.",
-        "# Written by `uv run deploy` / `uv run deploy --track self-service`; read by re-runs and destroy.",
+        "# Written by `uv run deploy --track <track>`; read by re-runs and destroy.",
         *(f"{k}={v}" for k, v in sorted(merged.items())),
         "",
     ]
     path.write_text("\n".join(lines))
     return path
+
+
+def drop_meta(root: Path, track: Track, *keys: str) -> None:
+    """Remove `keys` from this track's metadata, keeping everything else.
+
+    `save_meta` ignores empty values, so this is the only way to forget one: a key
+    ID once its key is deleted, say.
+    """
+    merged = load_meta(root, track)
+    if not merged or not any(key in merged for key in keys):
+        return
+    clear_meta(root, track)
+    save_meta(root, track, **{k: v for k, v in merged.items() if k not in keys})
+
+
+def recorded_key_ids(root: Path, track: Track) -> dict[str, str]:
+    """{field: key ID} for every key this track's metadata records, in deletion order."""
+    saved = load_meta(root, track)
+    return {field: saved[field] for field in KEY_ID_FIELDS if saved.get(field)}
 
 
 def clear_meta(root: Path, track: Track) -> None:
@@ -278,12 +320,23 @@ def has_state(root: Path, track: Track) -> bool:
     return tf_state_path(root, track).exists()
 
 
+def is_deployed(root: Path, track: Track) -> bool:
+    """Whether this track has a deployment to re-run or tear down.
+
+    Terraform state for the tracks that have a tier; for the pre-provisioned
+    track, which runs no Terraform, a key ID recorded in its metadata.
+    """
+    return has_state(root, track) or bool(recorded_key_ids(root, track))
+
+
 def prefix_from_state(root: Path, track: Track) -> str | None:
     """The prefix the deployed environment actually uses, read from state.
 
     `terraform/aws` exposes a `prefix` output directly. `terraform/self-service`
     does not, so recover it from `environment_name`, which is composed as
     `RIVER-RACING-${var.prefix}-ENV` (terraform/self-service/main.tf:16,23).
+    The pre-provisioned track has no state (its prefix is fixed and its
+    environment is the platform team's), so it always reads as None here.
     Returns None when there is no state or nothing recognisable in it — callers
     treat that as "can't verify", not as "matches".
     """

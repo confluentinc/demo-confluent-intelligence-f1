@@ -14,6 +14,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from scripts import race_control
+from scripts.common import deployment_meta as meta
 
 TF = {
     "ecs_cluster_name": "river-racing-demo-abc-simulator",
@@ -120,6 +121,19 @@ class RaceControlScopeTests(unittest.TestCase):
 
         self.assertEqual(rc, 1)
         self.assertIn("uv run f1-race", output)
+
+    def test_pre_provisioned_deployment_is_named_rather_than_guessed_at(self):
+        # No Terraform state on this track: its deployment is the keys its
+        # deployment.env records.
+        meta.save_meta(self.root, meta.PREPROVISIONED, **{meta.KEY_GLOBAL_KEY_ID: "GLOBAL1"})
+        with patch("builtins.print") as printed:
+            rc = self.run_race("status")
+        output = "\n".join(str(c.args[0]) for c in printed.call_args_list if c.args)
+
+        self.assertEqual(rc, 1)
+        self.assertIn("pre-provisioned deployment", output)
+        self.assertIn("uv run f1-race", output)
+        self.assertNotIn("instructor", output)
 
     def test_stale_outputs_without_ecs_names_exit_nonzero(self):
         self.make_state()

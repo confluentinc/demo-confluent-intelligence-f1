@@ -94,7 +94,7 @@ class SeedTestCase(unittest.TestCase):
         self.marker = meta.seed_marker_path(self.root, meta.SELFSERVICE)
         self.marker.parent.mkdir(parents=True, exist_ok=True)
 
-    def ensure(self, session, insert_phases):
+    def ensure(self, session, insert_phases, track=meta.SELFSERVICE):
         """Run the seeder against a fake session and a scripted INSERT lifecycle."""
         responses = [_phase_response(p) for p in insert_phases]
         with (
@@ -103,7 +103,7 @@ class SeedTestCase(unittest.TestCase):
         ):
             out = io.StringIO()
             with redirect_stdout(out):
-                ok = seed.ensure_driver_race_history(CARD, self.root, meta.SELFSERVICE, count_timeout=COUNT_TIMEOUT)
+                ok = seed.ensure_driver_race_history(CARD, self.root, track, count_timeout=COUNT_TIMEOUT)
         return ok, out.getvalue()
 
 
@@ -215,6 +215,36 @@ class EnsureTests(SeedTestCase):
         self.assertFalse(self.marker.exists())
         self.assertIn("Could not verify", out.getvalue())
         self.assertEqual(session.inserts, [])
+
+
+class RerunHintTests(SeedTestCase):
+    """The remediation names the deploy command of the track being seeded."""
+
+    def test_self_service_hint(self):
+        _ok, output = self.ensure(FakeSession([[396]]), [])
+        self.assertIn("`uv run destroy && uv run deploy --track self-service`", output)
+
+    def test_pre_provisioned_refusal_points_at_the_platform_team(self):
+        # The platform team owns the table; tearing down the developer's keys fixes nothing.
+        _ok, output = self.ensure(FakeSession([[396]]), [], track=meta.PREPROVISIONED)
+        self.assertIn("Refusing to insert again", output)
+        self.assertIn(
+            f"Ask your platform team to rebuild `driver_race_history` in {CARD['F1_CATALOG']} ({ENV_ID})", output
+        )
+        self.assertIn("re-run `uv run deploy --track pre-provisioned`", output)
+        self.assertNotIn("uv run destroy", output)
+        self.assertNotIn("self-service", output)
+
+    def test_pre_provisioned_unverifiable_count_names_its_own_track(self):
+        with (
+            patch.object(seed, "FlinkSession", return_value=FakeSession([])),
+            patch.object(seed, "count_rows", return_value=(None, "endpoint unreachable")),
+        ):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                seed.ensure_driver_race_history(CARD, self.root, meta.PREPROVISIONED)
+        self.assertIn("Re-run `uv run deploy --track pre-provisioned`", out.getvalue())
+        self.assertNotIn("self-service", out.getvalue())
 
 
 class CountRowsTests(unittest.TestCase):
